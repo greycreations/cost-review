@@ -1,6 +1,10 @@
 # Cost Review — Visual Baseline
 
-Status: approved visual direction for implementation.
+Status: approved visual direction, aligned with Product Specification v1.0.
+
+The visual tokens and interaction principles in this document remain approved.
+Where the earlier expense-only information architecture conflicts with Product
+Specification v1.0, the Product Specification takes precedence.
 
 ## 1. Direction: Nordic Financial Calm
 
@@ -52,20 +56,32 @@ Tables use weak horizontal dividers, comfortable row height, aligned numeric col
 
 ## 5. Navigation
 
-Primary navigation is:
+The Release 1 information architecture expands beyond the original
+expense-only prototype. Primary destinations are expected to include:
 
 - Overview
+- Transactions
 - Expenses
+- Income
 - Analysis
-- Upcoming
-- Review
+- Budget
+- Investments
+- Attention
 - Settings
 
 Desktop navigation sits in a calm top bar with the Cost Review wordmark. The current destination is indicated by weight, text color, and a soft accent treatment—not a loud block. On narrow screens navigation may scroll horizontally or collapse into an accessible menu.
 
+Production and Demo/Test context is always visible in the application chrome.
+Demo/Test uses both a persistent text label and a distinct quiet surface
+treatment; environment identity must never rely on color alone.
+
+Sprint 1 may expose only the destinations that are implemented. Placeholder
+navigation must not imply that financial workflows already work.
+
 ## 6. Overview composition
 
-The approved information hierarchy is:
+For the recurring-cost portion of a future Overview, the approved information
+hierarchy is:
 
 1. Eyebrow: Recurring cost.
 2. Dominant value such as 14 620 kr / month.

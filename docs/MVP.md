@@ -1,236 +1,116 @@
-# Cost Review — Technical MVP Specification
-
-Status: approved product baseline for implementation.
-
-## 1. Product vision
-
-Cost Review is a private, self-hosted web application for registering, understanding, and reviewing recurring and planned expenses. It answers one question exceptionally well:
-
-> What are my financial commitments actually costing me?
-
-It is a focused cost-intelligence tool, not a full budgeting, banking, investment, or accounting product. Users enter trustworthy source data once and can then normalize, filter, compare, aggregate, and visualize it without changing that source data.
-
-The product principles are:
-
-- clarity over complexity;
-- transparency over hidden automation;
-- control over convenience at any cost;
-- insight over bookkeeping;
-- capture once, analyze freely.
-
-## 2. MVP outcomes
-
-A user can:
-
-1. Create, read, edit, duplicate, pause, reactivate, end, and permanently delete individual Expenses.
-2. Create and reuse editable Providers and Categories through searchable selectors.
-3. Store actual amounts and flexible recurrence intervals.
-4. View equivalent recurring cost per month, quarter, or year without modifying stored data.
-5. distinguish recurring commitments from one-time expenses and expected cost from actual Payments.
-6. understand totals, category distribution, provider distribution, largest commitments, and upcoming payments.
-7. explore data with filters, comparisons, tooltips, drill-down, and interactive charts.
-8. review old, expensive, or soon-due commitments.
-9. export data in CSV and JSON and back up the SQLite database.
-10. install and run the application with Docker Compose while retaining data across restarts and upgrades.
-
-## 3. Scope boundaries
-
-### In scope
-
-- Manual-first expense registration.
-- Full CRUD for Expense, Provider, and Category.
-- Reusable provider and category master data.
-- Flexible recurrence and cost normalization.
-- Exact and estimated amounts.
-- Optional payment history and amount history.
-- Overview, Expenses, Analysis, Upcoming, Review, and Settings views.
-- Interactive analysis by category and provider.
-- Single-user, self-hosted operation.
-- Persistent SQLite storage, imports/exports, and backup guidance.
-
-### Not in the MVP
-
-- Bank connections or automatic transaction detection.
-- Budgeting, net-worth, investment, tax, or accounting workflows.
-- Multi-user accounts, permissions, or cloud synchronization.
-- Automated cancellation or negotiation of subscriptions.
-- Native mobile applications.
-- Predictive or AI-generated financial advice.
-
-## 4. Domain model
-
-The complete MVP domain contains:
-
-- Provider
-- Category
-- Expense
-- Payment
-- ExpenseAmountHistory
-- ApplicationSettings
-
-Sprint 1 establishes Provider, Category, and Expense. Later vertical slices add Payment, ExpenseAmountHistory, settings, complete CRUD behavior, normalization, and analysis.
-
-Provider and Category each have a one-to-many relationship with Expense. Expense has one-to-many relationships with Payment and ExpenseAmountHistory.
-
-### Provider
-
-A Provider represents an organization or supplier such as Telia, Spotify, If, or Göteborg Energi. It is reusable master data, not a text label embedded in an Expense.
-
-Fields:
-
-- provider_id: immutable primary key.
-- name: required display name.
-- website: optional URL.
-- notes: optional free text.
-- status: active or archived.
-- created_at and updated_at.
-
-Names need not be database-unique, but the UI should warn about likely duplicates. Users can create, edit, archive, reactivate, and delete Providers. The Expense form searches existing Providers and offers an inline create action.
-
-An unused Provider may be deleted. A referenced Provider may only be deleted after the user chooses to reassign affected Expenses, remove their Provider association, or cancel. Provider deletion must never delete Expenses.
-
-### Category
-
-Category is reusable master data used for organization and analysis.
-
-Fields:
-
-- category_id: immutable primary key.
-- name: required display name.
-- description: optional free text.
-- status: active or archived.
-- sort_order: integer ordering value.
-- created_at and updated_at.
-
-Users can create, rename, archive, reactivate, reorder, and delete unused Categories. Deleting a referenced Category requires reassignment; it never silently deletes Expenses.
-
-Suggested initial categories are Housing, Utilities, Insurance, Transport, Telecom, Entertainment, Software & Services, Family, Health, Finance, Memberships, Shopping, and Other.
-
-### Expense
-
-Expense is the central financial commitment. Several Expenses may share one Provider; for example, Apple may provide iCloud+, Apple Music, and AppleCare as separate Expenses.
-
-Fields:
-
-- expense_id: immutable primary key.
-- name: required, not unique.
-- provider_id: optional foreign key.
-- category_id: required foreign key.
-- amount: required non-negative decimal.
-- currency: ISO 4217 code, initially SEK.
-- amount_type: exact or estimated.
-- recurrence_unit: day, week, month, or year when recurring.
-- recurrence_interval: positive integer when recurring.
-- expense_type: recurring or one_time.
-- start_date, end_date, and next_payment_date: optional dates.
-- payment_method: optional invoice, direct_debit, credit_card, bank_transfer, or other.
-- status: active, paused, or ended.
-- notes: optional free text.
-- created_at and updated_at.
-
-Recurring Expenses require both recurrence fields. One-time Expenses have neither. End date cannot precede start date. Amounts use decimal-safe storage and calculation.
-
-Permanent deletion requires explicit confirmation. When related history exists, the UI must state that controlled cascade deletion also removes it.
-
-### Payment
-
-A Payment is an actual financial event and remains separate from the expected Expense. Fields are payment_id, expense_id, payment_date, amount, currency, notes, created_at, and updated_at. Expense registration remains useful without payment history.
-
-### ExpenseAmountHistory
-
-Amount history prevents a legitimate price change from destroying historical analysis. Fields are history_id, expense_id, amount, valid_from, valid_to, and created_at.
-
-When an existing amount changes, the user chooses between correcting the existing value and recording a new price from a selected date.
-
-### ApplicationSettings
-
-Initial settings are default_currency, locale, default_normalization_period, upcoming_horizon_days, and review_age_months. Defaults are SEK, sv-SE, monthly, 30 days, and 12 months.
-
-## 5. Normalization model
-
-Original values are immutable inputs to presentation. A dedicated backend service owns all canonical normalization.
-
-Annualized recurring cost is calculated as follows:
-
-- every N months: amount × 12 / N;
-- every N years: amount / N;
-- every N weeks: amount × 52 / N;
-- every N days: amount × 365.2425 / N.
-
-Monthly equivalent is annualized cost / 12, quarterly equivalent is annualized cost / 4, and annual equivalent is the annualized cost. One-time Expenses are excluded from recurring KPIs unless explicitly included.
-
-The API should ultimately return both the normalized value and a human-readable calculation explanation. Estimated amounts remain visually identifiable throughout the UI and analysis.
-
-Normalization period and analysis time range are separate concepts. For example, Last 12 months normalized as Monthly is valid.
-
-## 6. Product views
-
-### Overview
-
-Shows one dominant recurring-cost total, its annual equivalent, active count, cost by category, largest commitments, upcoming actual payments, and review prompts. A global Monthly, Quarterly, Annual selector changes derived values only.
-
-### Expenses
-
-Provides searchable, sortable, filterable rows with original amount and recurrence alongside normalized cost. It supports add, edit, duplicate, pause/reactivate, end, and delete actions.
-
-### Analysis
-
-The product's primary differentiator. It supports category, provider, status, type, recurrence, time-range, and normalization filters; exact-value tooltips; clickable series; linked highlighting; drill-down to contributing Expenses; ranked costs; and comparison of selected categories or Providers.
-
-### Upcoming
-
-Shows actual expected payments by date for a configurable horizon. It does not substitute normalized values for cash events.
-
-### Review
-
-Surfaces commitments not reviewed within the configured age, expensive commitments, estimated values, annual payments due soon, and other user-controlled review signals.
-
-### Settings
-
-Manages Providers, Categories, defaults, export, and backup guidance.
-
-## 7. API baseline
-
-All endpoints live under /api/v1. Resource APIs use conventional list, read, create, partial update, and delete operations. Sprint 1 exposes a health endpoint and read-only collection endpoints for Provider, Category, and Expense to prove the full stack. Complete mutation semantics follow in the next vertical slice.
-
-Errors use a consistent JSON shape with a stable code, readable message, and optional field details. List endpoints are designed for future pagination and filtering.
-
-## 8. Deployment and data ownership
-
-The standard installation command is docker compose up -d. SQLite lives at /app/data/costreview.db through a host-mounted ./data directory. Alembic migrations run before the API starts. Restarting or rebuilding containers must not remove data.
-
-The repository must document backup, restore, and upgrade behavior. Secrets and personal financial data never enter source control. The architecture should not prevent a future move to PostgreSQL.
-
-## 9. MVP quality attributes
-
-- Trustworthy calculations and explicit destructive actions.
-- Fast local interaction for a realistically sized personal dataset.
-- Accessible keyboard navigation, focus, labels, contrast, and status messages.
-- Responsive layouts for desktop, tablet, and mobile browsers.
-- Clear loading, empty, error, and unavailable states.
-- Automated tests for domain rules, API contracts, and critical UI behavior.
-- Migrations and reproducible Docker builds.
-
-## 10. Delivery sequence
-
-### Sprint 1 — technical foundation
-
-Create the React/TypeScript frontend, FastAPI backend, SQLAlchemy models for Provider, Category, and Expense, the first Alembic migration, persistent SQLite storage, Docker Compose deployment, API connectivity, and the initial Nordic Financial Calm application shell. Do not implement advanced analytics.
-
-Acceptance criteria:
-
-- Docker Compose starts the application.
-- The frontend can reach the backend health and collection endpoints.
-- The database and tables are created through Alembic.
-- Data resides in the persistent ./data mount.
-- Provider, Category, and Expense schemas exist with their core constraints.
-- Relevant tests, builds, and configuration checks pass.
-- README.md documents architecture, setup, commands, and current scope.
-
-### Next vertical slices
-
-1. Provider and Category CRUD with reusable searchable selectors and safe deletion handling.
-2. Expense CRUD plus recurrence and normalization services.
-3. Payment and amount-history flows.
-4. First Analysis API and interactive Cost by Category experience.
-5. Review, import/export, and backup refinements.
+# Cost Review — Release 1 Core MVP delivery baseline
+
+**Status:** aligned with Product Specification v1.0
+
+**Authoritative requirements:** `docs/PRODUCT_SPECIFICATION.md`
+
+**Delivery order:** `docs/IMPLEMENTATION_BACKLOG.md`
+
+This document is a compact technical delivery guide. It does not override the
+Product Specification.
+
+## Release 1 outcome
+
+Cost Review is a self-hosted PostgreSQL-backed web application that preserves a
+trustworthy economic ledger and supports controlled classification, recurring
+events, safe import, analysis, budgeting, recovery, and a persistent isolated
+Demo/Test environment.
+
+The Release 1 Core MVP blockers are:
+
+1. Platform foundation, setup, authentication, persistence, migrations, and a
+   hard Production/Test boundary.
+2. Accounts, balances, transactions, splits, income, expenses, transfers,
+   refunds, reimbursements, adjustments, currency, and sharing.
+3. Categories, providers and aliases/links, tags, and sharing parties.
+4. Safe CRUD, audit, Recycle Bin, bulk edit, restore, and dependency-aware
+   permanent deletion.
+5. Versioned recurring definitions, Expected events, confirmation, and matching.
+6. CSV/XLSX profiles, preview, staging, validation, duplicate handling, rules,
+   import batches, and undo.
+7. Common filters, saved views, Analysis Groups, predefined dashboards, and
+   saved layouts.
+8. Flexible budgets and Actual/Periodized plus Total/My Share perspectives.
+9. Encrypted backup/restore with retention and an automated restore test.
+10. Persistent Demo/Test with safe reset, import simulation, and selective
+    one-way Production-to-Test configuration copy.
+
+Attachments, manual investment/asset/debt views, goals, reporting/export, and
+proactive alerts follow after the Core MVP is stable. The Product Specification
+defines the complete extended and post-MVP boundaries.
+
+## Platform baseline
+
+- Docker Compose deployment on Ubuntu.
+- React, TypeScript, and Vite frontend served through a same-origin gateway.
+- FastAPI backend with a versioned `/api/v1` contract.
+- SQLAlchemy 2.x and Alembic against PostgreSQL only.
+- Local username/password authentication with secure hashing, opaque
+  server-side sessions, CSRF protection, and secure cookie controls.
+- First-run setup for initial login, language, region, date/number formats, base
+  currency, week start, and timezone.
+- Explicit reverse-proxy, trusted host/origin, and secure-cookie configuration.
+
+## Production and Demo/Test boundary
+
+Production and Demo/Test use the same application images but run as separate
+data planes:
+
+- separate API processes;
+- separate PostgreSQL services and persistent volumes;
+- separate database roles and passwords;
+- separate Docker data networks;
+- separate session and CSRF cookie namespaces;
+- persistent environment identity stored in each database;
+- startup refusal if a database volume is mounted under the wrong environment;
+- Demo/Test-only destructive reset endpoint with strong confirmation;
+- automated proof that reset and ordinary Test writes cannot mutate Production.
+
+There is no shared `is_test` discriminator on economic rows. Future selective
+configuration copy is an explicit API export/import operation and never grants
+one data plane direct database access to the other.
+
+## Sprint 1 — Platform Foundation
+
+Sprint 1 implements backlog CR-001 through CR-008. It includes:
+
+- reproducible Compose services for gateway, Production API/PostgreSQL, and
+  Demo/Test API/PostgreSQL;
+- persistent database, attachment, and backup volumes;
+- initial platform migration;
+- setup lock, authentication, sessions, settings, and environment identity;
+- Swedish/English setup and shell foundations;
+- unmistakable Production and Demo/Test UI states;
+- trusted proxy/host/origin configuration;
+- PostgreSQL-only tests, migrations, Compose smoke tests, and destructive
+  isolation tests.
+
+Sprint 1 intentionally does not create the old Expense-centric schema. The
+ledger schema starts only after its transaction semantics and invariants have
+been reviewed against Product Specification v1.0.
+
+### Sprint 1 exit gate
+
+- A fresh Compose deployment becomes healthy with documented steps.
+- Both data planes migrate from empty PostgreSQL databases.
+- Setup creates the first local user and then locks.
+- Login, authenticated session lookup, logout, and settings retrieval work.
+- Production and Demo/Test identities remain stable across container recreation.
+- Both databases and storage volumes persist independently.
+- Demo/Test reset is unavailable in Production and cannot alter Production.
+- Cross-environment database credentials and network routes fail.
+- The Demo/Test UI is persistent and unmistakable.
+- Backend lint/tests, Alembic checks, frontend lint/tests/build, and Compose
+  verification pass.
+
+## Ledger sequence after Sprint 1
+
+1. Accounts and hierarchical/reusable master data.
+2. Transaction and TransactionSplit with original currency and historical FX.
+3. Expense/income, transfer, refund, reimbursement, credit-card, and adjustment
+   semantics.
+4. Sharing, balances, reconciliation, soft deletion, Recycle Bin, audit, frozen
+   historical identity, and bulk edit.
+
+Recurring/Expected events remain a separate later epic and never replace actual
+ledger events.
