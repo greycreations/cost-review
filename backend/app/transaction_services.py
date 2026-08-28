@@ -81,6 +81,12 @@ def create_manual_transaction(
 def update_manual_transaction(
     db: DbSession, model: Transaction, payload: TransactionUpdate
 ) -> Transaction:
+    if model.transaction_kind not in (TransactionKind.EXPENSE, TransactionKind.INCOME):
+        raise ApiError(
+            409,
+            "specialized_transaction_workflow_required",
+            "Transfers and other linked events must be edited through their dedicated workflow.",
+        )
     if model.source_type != "manual":
         raise ApiError(
             409,
@@ -190,6 +196,17 @@ def get_transaction(db: DbSession, transaction_id: int) -> Transaction:
     return model
 
 
+def get_manual_transaction(db: DbSession, transaction_id: int) -> Transaction:
+    model = get_transaction(db, transaction_id)
+    if model.transaction_kind not in (TransactionKind.EXPENSE, TransactionKind.INCOME):
+        raise ApiError(
+            404,
+            "not_found",
+            "Transaction was not found in the income and expense workflow.",
+        )
+    return model
+
+
 def list_transactions(
     db: DbSession,
     *,
@@ -205,7 +222,7 @@ def list_transactions(
     tag_id: int | None,
     search: str | None,
 ) -> dict[str, Any]:
-    filters = []
+    filters = [Transaction.transaction_kind.in_(("expense", "income"))]
     if not include_archived:
         filters.append(Transaction.status == "active")
     if date_from is not None:

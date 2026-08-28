@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from http.cookiejar import CookieJar
 from urllib.error import HTTPError
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
-BASE_URL = "http://localhost:8080"
+BASE_URL = os.environ.get("COST_REVIEW_BASE_URL", "http://localhost:8080")
 PASSWORD = "integration test password"
 
 
@@ -102,6 +103,28 @@ def main() -> int:
         {**account_payload, "name": "Test isolation account"},
         test_csrf,
     )
+    _, prod_transfer_target = call(
+        prod,
+        f"{prod_base}/accounts",
+        "POST",
+        {
+            **account_payload,
+            "name": "Production transfer target",
+            "account_type": "savings",
+        },
+        prod_csrf,
+    )
+    _, test_transfer_target = call(
+        test,
+        f"{test_base}/accounts",
+        "POST",
+        {
+            **account_payload,
+            "name": "Test transfer target",
+            "account_type": "savings",
+        },
+        test_csrf,
+    )
     transaction_payload = {
         "transaction_kind": "expense",
         "transaction_date": "2026-08-28",
@@ -128,6 +151,38 @@ def main() -> int:
             **transaction_payload,
             "account_id": test_account["account_id"],
             "description": "Test isolation transaction",
+        },
+        test_csrf,
+    )
+    transfer_payload = {
+        "purpose": "savings",
+        "transaction_date": "2026-08-28",
+        "source_posting_date": "2026-08-28",
+        "destination_posting_date": "2026-08-28",
+        "source_amount": "75.00",
+        "destination_amount": "75.00",
+    }
+    call(
+        prod,
+        f"{prod_base}/transfers",
+        "POST",
+        {
+            **transfer_payload,
+            "source_account_id": prod_account["account_id"],
+            "destination_account_id": prod_transfer_target["account_id"],
+            "description": "Production isolation transfer",
+        },
+        prod_csrf,
+    )
+    call(
+        test,
+        f"{test_base}/transfers",
+        "POST",
+        {
+            **transfer_payload,
+            "source_account_id": test_account["account_id"],
+            "destination_account_id": test_transfer_target["account_id"],
+            "description": "Test isolation transfer",
         },
         test_csrf,
     )
@@ -167,6 +222,24 @@ def main() -> int:
         item["description"] == "Production isolation transaction"
         for item in test_transactions_before["items"]
     )
+    _, prod_transfers_before = call(prod, f"{prod_base}/transfers")
+    _, test_transfers_before = call(test, f"{test_base}/transfers")
+    assert any(
+        item["description"] == "Production isolation transfer"
+        for item in prod_transfers_before["items"]
+    )
+    assert not any(
+        item["description"] == "Test isolation transfer"
+        for item in prod_transfers_before["items"]
+    )
+    assert any(
+        item["description"] == "Test isolation transfer"
+        for item in test_transfers_before["items"]
+    )
+    assert not any(
+        item["description"] == "Production isolation transfer"
+        for item in test_transfers_before["items"]
+    )
     _, prod_before = call(prod, f"{prod_base}/auth/session")
     _, prod_environment_before = call(prod, f"{prod_base}/environment")
 
@@ -183,8 +256,11 @@ def main() -> int:
     _, prod_accounts_after = call(prod, f"{prod_base}/accounts")
     _, test_transactions_after = call(test, f"{test_base}/transactions")
     _, prod_transactions_after = call(prod, f"{prod_base}/transactions")
+    _, test_transfers_after = call(test, f"{test_base}/transfers")
+    _, prod_transfers_after = call(prod, f"{prod_base}/transfers")
     assert test_accounts_after["total"] == 0
     assert test_transactions_after["total"] == 0
+    assert test_transfers_after["total"] == 0
     assert any(
         account["name"] == "Production isolation account"
         for account in prod_accounts_after["items"]
@@ -192,6 +268,10 @@ def main() -> int:
     assert any(
         item["description"] == "Production isolation transaction"
         for item in prod_transactions_after["items"]
+    )
+    assert any(
+        item["description"] == "Production isolation transfer"
+        for item in prod_transfers_after["items"]
     )
 
     _, prod_after = call(prod, f"{prod_base}/auth/session")

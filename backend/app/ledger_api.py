@@ -38,6 +38,10 @@ from app.ledger_schemas import (
     TransactionCreate,
     TransactionRead,
     TransactionUpdate,
+    TransferCreate,
+    TransferPurpose,
+    TransferRead,
+    TransferUpdate,
 )
 from app.ledger_services import (
     archive_category,
@@ -74,11 +78,19 @@ from app.models import (
 )
 from app.transaction_services import (
     create_manual_transaction,
-    get_transaction,
+    get_manual_transaction,
     ledger_summary,
     list_transactions,
     transaction_values,
     update_manual_transaction,
+)
+from app.transfer_services import (
+    create_transfer,
+    get_transfer,
+    list_transfers,
+    set_transfer_archived,
+    transfer_values,
+    update_transfer,
 )
 
 router = APIRouter(tags=["ledger-master-data"])
@@ -144,7 +156,7 @@ def get_transaction_summary(
 def get_transaction_by_id(
     transaction_id: int, _: Auth, db: DatabaseSession
 ) -> dict[str, object]:
-    return transaction_values(get_transaction(db, transaction_id))
+    return transaction_values(get_manual_transaction(db, transaction_id))
 
 
 @router.patch("/transactions/{transaction_id}", response_model=TransactionRead)
@@ -155,7 +167,7 @@ def patch_transaction(
     db: DatabaseSession,
 ) -> dict[str, object]:
     return transaction_values(
-        update_manual_transaction(db, get_transaction(db, transaction_id), payload)
+        update_manual_transaction(db, get_manual_transaction(db, transaction_id), payload)
     )
 
 
@@ -163,14 +175,90 @@ def patch_transaction(
 def archive_transaction(
     transaction_id: int, _: CsrfAuth, db: DatabaseSession
 ) -> dict[str, object]:
-    return transaction_values(archive_model(db, get_transaction(db, transaction_id)))
+    return transaction_values(archive_model(db, get_manual_transaction(db, transaction_id)))
 
 
 @router.post("/transactions/{transaction_id}/restore", response_model=TransactionRead)
 def restore_transaction(
     transaction_id: int, _: CsrfAuth, db: DatabaseSession
 ) -> dict[str, object]:
-    return transaction_values(restore_model(db, get_transaction(db, transaction_id)))
+    return transaction_values(restore_model(db, get_manual_transaction(db, transaction_id)))
+
+
+@router.get("/transfers", response_model=Page[TransferRead])
+def get_transfers(
+    _: Auth,
+    db: DatabaseSession,
+    limit: Limit = 50,
+    offset: Offset = 0,
+    include_archived: bool = False,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    account_id: int | None = Query(default=None, gt=0),
+    purpose: TransferPurpose | None = None,
+    search: str | None = Query(default=None, max_length=240),
+) -> dict[str, object]:
+    _validate_date_range(date_from, date_to)
+    return list_transfers(
+        db,
+        limit=limit,
+        offset=offset,
+        include_archived=include_archived,
+        date_from=date_from,
+        date_to=date_to,
+        account_id=account_id,
+        purpose=purpose.value if purpose is not None else None,
+        search=search,
+    )
+
+
+@router.post("/transfers", response_model=TransferRead, status_code=201)
+def post_transfer(
+    payload: TransferCreate, auth: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    return transfer_values(create_transfer(db, payload, auth.user.settings.base_currency))
+
+
+@router.get("/transfers/{transfer_link_id}", response_model=TransferRead)
+def get_transfer_by_id(
+    transfer_link_id: int, _: Auth, db: DatabaseSession
+) -> dict[str, object]:
+    return transfer_values(get_transfer(db, transfer_link_id))
+
+
+@router.patch("/transfers/{transfer_link_id}", response_model=TransferRead)
+def patch_transfer(
+    transfer_link_id: int,
+    payload: TransferUpdate,
+    auth: CsrfAuth,
+    db: DatabaseSession,
+) -> dict[str, object]:
+    return transfer_values(
+        update_transfer(
+            db,
+            get_transfer(db, transfer_link_id),
+            payload,
+            auth.user.settings.base_currency,
+        )
+    )
+
+
+@router.post("/transfers/{transfer_link_id}/archive", response_model=TransferRead)
+def archive_transfer(
+    transfer_link_id: int, _: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    return transfer_values(
+        set_transfer_archived(db, get_transfer(db, transfer_link_id), archived=True)
+    )
+
+
+@router.post("/transfers/{transfer_link_id}/restore", response_model=TransferRead)
+def restore_transfer(
+    transfer_link_id: int, _: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    return transfer_values(
+        set_transfer_archived(db, get_transfer(db, transfer_link_id), archived=False)
+    )
 
 
 @router.get("/accounts", response_model=Page[AccountRead])

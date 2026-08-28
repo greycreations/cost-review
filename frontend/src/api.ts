@@ -111,6 +111,12 @@ export type SharingParty = {
 };
 
 export type TransactionKind = "expense" | "income";
+export type TransferPurpose =
+  | "internal"
+  | "savings"
+  | "investment"
+  | "credit_card_payment"
+  | "debt_repayment";
 
 export type Transaction = {
   transaction_id: number;
@@ -152,6 +158,52 @@ export type TransactionInput = {
   category_id: number | null;
   tag_ids: number[];
   is_base_cost: boolean;
+  source_reference?: string | null;
+  notes?: string | null;
+};
+
+export type Transfer = {
+  transfer_link_id: number;
+  source_account_id: number;
+  destination_account_id: number;
+  purpose: TransferPurpose;
+  transaction_date: string;
+  source_posting_date: string;
+  destination_posting_date: string;
+  description: string;
+  source_amount: string;
+  source_currency: string;
+  source_converted_amount: string | null;
+  source_fx_rate: string | null;
+  source_fx_rate_status: "not_required" | "manual" | "automatic" | "missing";
+  destination_amount: string;
+  destination_currency: string;
+  destination_converted_amount: string | null;
+  destination_fx_rate: string | null;
+  destination_fx_rate_status: "not_required" | "manual" | "automatic" | "missing";
+  base_currency: string;
+  source_reference: string | null;
+  notes: string | null;
+  status: LifecycleStatus;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TransferInput = {
+  source_account_id: number;
+  destination_account_id: number;
+  purpose: TransferPurpose;
+  transaction_date: string;
+  source_posting_date: string;
+  destination_posting_date: string;
+  description: string;
+  source_amount: string;
+  destination_amount: string;
+  source_converted_amount?: string | null;
+  source_fx_rate?: string | null;
+  destination_converted_amount?: string | null;
+  destination_fx_rate?: string | null;
   source_reference?: string | null;
   notes?: string | null;
 };
@@ -520,6 +572,67 @@ export function setTransactionArchived(
   return request(
     environment,
     `/transactions/${transactionId}/${archived ? "archive" : "restore"}`,
+    { method: "POST" },
+    true,
+  );
+}
+
+export function getTransfers(
+  environment: Environment,
+  filters: {
+    dateFrom?: string;
+    dateTo?: string;
+    accountId?: number | null;
+    purpose?: TransferPurpose | "";
+    search?: string;
+    includeArchived?: boolean;
+    limit?: number;
+  } = {},
+): Promise<Page<Transfer>> {
+  const query = new URLSearchParams();
+  query.set("limit", String(filters.limit ?? 100));
+  if (filters.dateFrom) query.set("date_from", filters.dateFrom);
+  if (filters.dateTo) query.set("date_to", filters.dateTo);
+  if (filters.accountId) query.set("account_id", String(filters.accountId));
+  if (filters.purpose) query.set("purpose", filters.purpose);
+  if (filters.search?.trim()) query.set("search", filters.search.trim());
+  if (filters.includeArchived) query.set("include_archived", "true");
+  return request(environment, `/transfers?${query.toString()}`);
+}
+
+export function createTransfer(
+  environment: Environment,
+  payload: TransferInput,
+): Promise<Transfer> {
+  return request(
+    environment,
+    "/transfers",
+    { method: "POST", body: JSON.stringify(payload) },
+    true,
+  );
+}
+
+export function updateTransfer(
+  environment: Environment,
+  transferId: number,
+  payload: Partial<TransferInput>,
+): Promise<Transfer> {
+  return request(
+    environment,
+    `/transfers/${transferId}`,
+    { method: "PATCH", body: JSON.stringify(payload) },
+    true,
+  );
+}
+
+export function setTransferArchived(
+  environment: Environment,
+  transferId: number,
+  archived: boolean,
+): Promise<Transfer> {
+  return request(
+    environment,
+    `/transfers/${transferId}/${archived ? "archive" : "restore"}`,
     { method: "POST" },
     true,
   );

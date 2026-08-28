@@ -123,6 +123,14 @@ class TransactionSource(StrEnum):
     SYSTEM = "system"
 
 
+class TransferPurpose(StrEnum):
+    INTERNAL = "internal"
+    SAVINGS = "savings"
+    INVESTMENT = "investment"
+    CREDIT_CARD_PAYMENT = "credit_card_payment"
+    DEBT_REPAYMENT = "debt_repayment"
+
+
 class FxRateStatus(StrEnum):
     NOT_REQUIRED = "not_required"
     MANUAL = "manual"
@@ -530,4 +538,49 @@ class TransactionSplitTag(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class TransferLink(TimestampMixin, Base):
+    __tablename__ = "transfer_links"
+    __table_args__ = (
+        CheckConstraint(
+            "outgoing_transaction_id <> incoming_transaction_id",
+            name="transactions_distinct",
+        ),
+        CheckConstraint(
+            "purpose IN ('internal', 'savings', 'investment', "
+            "'credit_card_payment', 'debt_repayment')",
+            name="purpose_allowed",
+        ),
+        Index("uq_transfer_links_outgoing", "outgoing_transaction_id", unique=True),
+        Index("uq_transfer_links_incoming", "incoming_transaction_id", unique=True),
+    )
+
+    transfer_link_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    outgoing_transaction_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "transactions.transaction_id",
+            name="fk_transfer_links_outgoing_transaction_id_transactions",
+            ondelete="RESTRICT",
+        )
+    )
+    incoming_transaction_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "transactions.transaction_id",
+            name="fk_transfer_links_incoming_transaction_id_transactions",
+            ondelete="RESTRICT",
+        )
+    )
+    purpose: Mapped[str] = mapped_column(
+        String(24), default="internal", server_default="internal"
+    )
+
+    outgoing_transaction: Mapped[Transaction] = relationship(
+        foreign_keys=[outgoing_transaction_id]
+    )
+    incoming_transaction: Mapped[Transaction] = relationship(
+        foreign_keys=[incoming_transaction_id]
     )
