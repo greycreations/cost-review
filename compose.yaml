@@ -1,0 +1,159 @@
+name: cost-review
+
+services:
+  db-prod:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: cost_review
+      POSTGRES_USER: cost_review_prod
+      POSTGRES_PASSWORD: ${POSTGRES_PROD_PASSWORD:?Set POSTGRES_PROD_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: --data-checksums
+    volumes:
+      - prod-db-data:/var/lib/postgresql/data
+    networks:
+      - prod-data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cost_review_prod -d cost_review"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  db-test:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: cost_review
+      POSTGRES_USER: cost_review_test
+      POSTGRES_PASSWORD: ${POSTGRES_TEST_PASSWORD:?Set POSTGRES_TEST_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: --data-checksums
+    volumes:
+      - test-db-data:/var/lib/postgresql/data
+    networks:
+      - test-data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cost_review_test -d cost_review"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api-prod:
+    build:
+      context: ./backend
+    environment:
+      APP_ENVIRONMENT: production
+      APP_ENVIRONMENT_LABEL: Production
+      DB_HOST: db-prod
+      DB_PORT: 5432
+      DB_NAME: cost_review
+      DB_USER: cost_review_prod
+      DB_PASSWORD: ${POSTGRES_PROD_PASSWORD:?Set POSTGRES_PROD_PASSWORD in .env}
+      SESSION_COOKIE_NAME: cost_review_production_session
+      CSRF_COOKIE_NAME: cost_review_production_csrf
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:-http://localhost:8080}
+      APP_ALLOWED_HOSTS: ${APP_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      APP_TRUSTED_PROXY_IPS: 172.30.0.10
+      ATTACHMENT_ROOT: /app/storage/attachments
+      BACKUP_ROOT: /app/storage/backups
+    volumes:
+      - prod-attachments:/app/storage/attachments
+      - prod-backups:/app/storage/backups
+    depends_on:
+      db-prod:
+        condition: service_healthy
+    networks:
+      - edge
+      - prod-data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://localhost:8000/api/v1/health")
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  api-test:
+    build:
+      context: ./backend
+    environment:
+      APP_ENVIRONMENT: test
+      APP_ENVIRONMENT_LABEL: Demo/Test
+      DB_HOST: db-test
+      DB_PORT: 5432
+      DB_NAME: cost_review
+      DB_USER: cost_review_test
+      DB_PASSWORD: ${POSTGRES_TEST_PASSWORD:?Set POSTGRES_TEST_PASSWORD in .env}
+      SESSION_COOKIE_NAME: cost_review_test_session
+      CSRF_COOKIE_NAME: cost_review_test_csrf
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:-http://localhost:8080}
+      APP_ALLOWED_HOSTS: ${APP_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      APP_TRUSTED_PROXY_IPS: 172.30.0.10
+      ATTACHMENT_ROOT: /app/storage/attachments
+      BACKUP_ROOT: /app/storage/backups
+    volumes:
+      - test-attachments:/app/storage/attachments
+      - test-backups:/app/storage/backups
+    depends_on:
+      db-test:
+        condition: service_healthy
+    networks:
+      - edge
+      - test-data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://localhost:8000/api/v1/health")
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      api-prod:
+        condition: service_healthy
+      api-test:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    networks:
+      edge:
+        ipv4_address: 172.30.0.10
+    restart: unless-stopped
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  prod-data:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
+  test-data:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.32.0.0/24
+
+volumes:
+  prod-db-data:
+  test-db-data:
+  prod-attachments:
+  test-attachments:
+  prod-backups:
+  test-backups:
