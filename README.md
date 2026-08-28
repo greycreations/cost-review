@@ -5,10 +5,11 @@ and household economics. Product behavior is defined by
 `docs/PRODUCT_SPECIFICATION.md` v1.0 and delivered in the order described by
 `docs/IMPLEMENTATION_BACKLOG.md`.
 
-Sprint 1 implements the Platform Foundation: PostgreSQL, migrations, first-run
+Sprint 1 established the Platform Foundation: PostgreSQL, migrations, first-run
 setup, local authentication, independent locale settings, reverse-proxy safety,
-and a persistent hard boundary between Production and Demo/Test. The economic
-ledger starts only after this platform exit gate.
+and a persistent hard boundary between Production and Demo/Test. The current
+Sprint 2 slice adds accounts and reusable ledger master data without weakening
+that boundary.
 
 ## Architecture
 
@@ -178,13 +179,13 @@ GitHub Actions runs three gates:
 - frontend lint, component tests, and production build;
 - complete Compose startup plus an HTTP isolation scenario.
 
-The isolation scenario creates independent Production/Test users, changes
-Production configuration, resets Demo/Test, and proves Production identity and
-settings are unchanged. It also proves the Test API cannot resolve or connect to
-the Production database network and that the reset route is absent in
-Production.
+The isolation scenario creates independent Production/Test users and accounts,
+proves ordinary Ledger writes cannot cross the boundary, resets Demo/Test, and
+proves Production identity, settings, and accounts are unchanged. It also proves
+the Test API cannot resolve or connect to the Production database network and
+that the reset route is absent in Production.
 
-## Current API foundation
+## Current API
 
 Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 `/api/test` before that path.
@@ -200,6 +201,18 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | POST | `/api/v1/auth/logout` | CSRF-protected logout |
 | GET/PATCH | `/api/v1/settings` | Independent locale/currency/timezone settings |
 | POST | `/api/v1/test/reset` | Test-only strongly confirmed reset |
+| GET/POST/PATCH | `/api/v1/accounts[...]` | Account list/create/read/update plus archive/restore |
+| GET/POST/PATCH | `/api/v1/categories[...]` | Arbitrary-depth category hierarchy plus archive/restore |
+| GET/POST/PATCH | `/api/v1/providers[...]` | Provider records and lifecycle |
+| GET/POST/PATCH/DELETE | `/api/v1/providers/.../aliases`, `/api/v1/provider-aliases/...` | Canonical provider aliases |
+| GET/POST/DELETE | `/api/v1/provider-links`, `/api/v1/category-links` | Non-destructive analytical relationships |
+| GET/POST/PATCH | `/api/v1/tags[...]`, `/api/v1/sharing-parties[...]` | Reusable tags and sharing-party register |
+
+Ledger list endpoints return `{ items, total, limit, offset }`, support bounded
+pagination, and hide archived master records unless `include_archived=true` is
+requested. Master records use explicit archive/restore operations; permanent
+deletion, Recycle Bin, audit, tag merge, and percentage allocations remain in
+their later Ledger slices. See `docs/adr/0002-ledger-master-data-invariants.md`.
 
 ## Source of truth
 

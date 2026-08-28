@@ -29,6 +29,87 @@ export type Session = {
   settings: AppSettings;
 };
 
+export type LifecycleStatus = "active" | "archived";
+
+export type Page<T> = {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type AccountType =
+  | "current"
+  | "savings"
+  | "credit_card"
+  | "investment"
+  | "loan_debt"
+  | "value_based"
+  | "cash"
+  | "other";
+
+export type Account = {
+  account_id: number;
+  name: string;
+  account_type: AccountType;
+  opening_balance: string;
+  opening_balance_date: string;
+  currency: string;
+  interest_rate: string | null;
+  is_locked: boolean;
+  lock_start_date: string | null;
+  lock_end_date: string | null;
+  notes: string | null;
+  status: LifecycleStatus;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Category = {
+  category_id: number;
+  parent_category_id: number | null;
+  name: string;
+  category_kind: "expense" | "income";
+  notes: string | null;
+  status: LifecycleStatus;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Provider = {
+  provider_id: number;
+  name: string;
+  website: string | null;
+  notes: string | null;
+  status: LifecycleStatus;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Tag = {
+  tag_id: number;
+  name: string;
+  color: string | null;
+  status: LifecycleStatus;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SharingParty = {
+  sharing_party_id: number;
+  name: string;
+  is_self: boolean;
+  notes: string | null;
+  status: LifecycleStatus;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -141,6 +222,176 @@ export function resetTestEnvironment(confirmation: string): Promise<{
     "test",
     "/test/reset",
     { method: "POST", body: JSON.stringify({ confirmation }) },
+    true,
+  );
+}
+
+export function getAccounts(
+  environment: Environment,
+  includeArchived = false,
+): Promise<Page<Account>> {
+  return request(environment, `/accounts?include_archived=${includeArchived}`);
+}
+
+export function createAccount(
+  environment: Environment,
+  payload: {
+    name: string;
+    account_type: AccountType;
+    opening_balance: string;
+    opening_balance_date: string;
+    currency: string;
+  },
+): Promise<Account> {
+  return request(
+    environment,
+    "/accounts",
+    { method: "POST", body: JSON.stringify(payload) },
+    true,
+  );
+}
+
+export function setAccountArchived(
+  environment: Environment,
+  accountId: number,
+  archived: boolean,
+): Promise<Account> {
+  return request(
+    environment,
+    `/accounts/${accountId}/${archived ? "archive" : "restore"}`,
+    { method: "POST" },
+    true,
+  );
+}
+
+export function getCategories(
+  environment: Environment,
+  includeArchived = false,
+): Promise<Page<Category>> {
+  return request(environment, `/categories?include_archived=${includeArchived}`);
+}
+
+export function createCategory(
+  environment: Environment,
+  payload: {
+    name: string;
+    category_kind: "expense" | "income";
+    parent_category_id: number | null;
+  },
+): Promise<Category> {
+  return request(
+    environment,
+    "/categories",
+    { method: "POST", body: JSON.stringify(payload) },
+    true,
+  );
+}
+
+export function setCategoryArchived(
+  environment: Environment,
+  categoryId: number,
+  archived: boolean,
+): Promise<Category> {
+  return request(
+    environment,
+    `/categories/${categoryId}/${archived ? "archive" : "restore"}`,
+    { method: "POST" },
+    true,
+  );
+}
+
+export function getProviders(
+  environment: Environment,
+  includeArchived = false,
+): Promise<Page<Provider>> {
+  return request(environment, `/providers?include_archived=${includeArchived}`);
+}
+
+export function createProvider(
+  environment: Environment,
+  payload: { name: string; website?: string },
+): Promise<Provider> {
+  return request(
+    environment,
+    "/providers",
+    { method: "POST", body: JSON.stringify(payload) },
+    true,
+  );
+}
+
+export function setProviderArchived(
+  environment: Environment,
+  providerId: number,
+  archived: boolean,
+): Promise<Provider> {
+  return request(
+    environment,
+    `/providers/${providerId}/${archived ? "archive" : "restore"}`,
+    { method: "POST" },
+    true,
+  );
+}
+
+export function getTags(
+  environment: Environment,
+  includeArchived = false,
+): Promise<Page<Tag>> {
+  return request(environment, `/tags?include_archived=${includeArchived}`);
+}
+
+export function createTag(
+  environment: Environment,
+  payload: { name: string; color?: string },
+): Promise<Tag> {
+  return request(
+    environment,
+    "/tags",
+    { method: "POST", body: JSON.stringify(payload) },
+    true,
+  );
+}
+
+export function setTagArchived(
+  environment: Environment,
+  tagId: number,
+  archived: boolean,
+): Promise<Tag> {
+  return request(
+    environment,
+    `/tags/${tagId}/${archived ? "archive" : "restore"}`,
+    { method: "POST" },
+    true,
+  );
+}
+
+export function getSharingParties(
+  environment: Environment,
+  includeArchived = false,
+): Promise<Page<SharingParty>> {
+  return request(environment, `/sharing-parties?include_archived=${includeArchived}`);
+}
+
+export function createSharingParty(
+  environment: Environment,
+  payload: { name: string; is_self: boolean },
+): Promise<SharingParty> {
+  return request(
+    environment,
+    "/sharing-parties",
+    { method: "POST", body: JSON.stringify(payload) },
+    true,
+  );
+}
+
+export function setSharingPartyArchived(
+  environment: Environment,
+  partyId: number,
+  archived: boolean,
+): Promise<SharingParty> {
+  return request(
+    environment,
+    `/sharing-parties/${partyId}/${archived ? "archive" : "restore"}`,
+    { method: "POST" },
     true,
   );
 }

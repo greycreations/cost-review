@@ -30,6 +30,10 @@ def client(settings: Settings) -> Generator[TestClient]:
 def clean_database(database) -> None:
     with database.engine.begin() as connection:
         connection.execute(
-            text("TRUNCATE TABLE sessions, app_settings, users RESTART IDENTITY CASCADE")
+            text(
+                "TRUNCATE TABLE category_links, provider_links, provider_aliases, accounts, "
+                "categories, providers, tags, sharing_parties, sessions, app_settings, users "
+                "RESTART IDENTITY CASCADE"
+            )
         )
         connection.execute(text("UPDATE environment_metadata SET reset_generation = 0"))

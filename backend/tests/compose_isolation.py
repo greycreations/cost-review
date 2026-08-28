@@ -82,6 +82,44 @@ def main() -> int:
     prod_csrf = csrf_from(prod_jar, "cost_review_production_csrf")
     test_csrf = csrf_from(test_jar, "cost_review_test_csrf")
     call(prod, f"{prod_base}/settings", "PATCH", {"language": "en", "region": "GB"}, prod_csrf)
+    account_payload = {
+        "account_type": "current",
+        "opening_balance": "1000.00",
+        "opening_balance_date": "2026-08-28",
+        "currency": "SEK",
+    }
+    call(
+        prod,
+        f"{prod_base}/accounts",
+        "POST",
+        {**account_payload, "name": "Production isolation account"},
+        prod_csrf,
+    )
+    call(
+        test,
+        f"{test_base}/accounts",
+        "POST",
+        {**account_payload, "name": "Test isolation account"},
+        test_csrf,
+    )
+    _, prod_accounts_before = call(prod, f"{prod_base}/accounts")
+    _, test_accounts_before = call(test, f"{test_base}/accounts")
+    assert any(
+        account["name"] == "Production isolation account"
+        for account in prod_accounts_before["items"]
+    )
+    assert not any(
+        account["name"] == "Test isolation account"
+        for account in prod_accounts_before["items"]
+    )
+    assert any(
+        account["name"] == "Test isolation account"
+        for account in test_accounts_before["items"]
+    )
+    assert not any(
+        account["name"] == "Production isolation account"
+        for account in test_accounts_before["items"]
+    )
     _, prod_before = call(prod, f"{prod_base}/auth/session")
     _, prod_environment_before = call(prod, f"{prod_base}/environment")
 
@@ -93,6 +131,14 @@ def main() -> int:
         test_csrf,
     )
     assert reset["reset_generation"] >= 1
+
+    _, test_accounts_after = call(test, f"{test_base}/accounts")
+    _, prod_accounts_after = call(prod, f"{prod_base}/accounts")
+    assert test_accounts_after["total"] == 0
+    assert any(
+        account["name"] == "Production isolation account"
+        for account in prod_accounts_after["items"]
+    )
 
     _, prod_after = call(prod, f"{prod_base}/auth/session")
     _, prod_environment_after = call(prod, f"{prod_base}/environment")

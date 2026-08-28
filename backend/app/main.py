@@ -14,6 +14,7 @@ from app.api import router, test_router
 from app.config import Settings, get_settings
 from app.database import Database, ensure_environment_identity
 from app.errors import ApiError
+from app.ledger_api import router as ledger_router
 
 
 def create_app(runtime_settings: Settings | None = None) -> FastAPI:
@@ -30,8 +31,8 @@ def create_app(runtime_settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title=settings.app_name,
-        version="0.1.0",
-        description="Cost Review Release 1 Platform Foundation API.",
+        version="0.2.0",
+        description="Cost Review Release 1 platform and ledger API.",
         lifespan=lifespan,
         docs_url=f"{settings.api_prefix}/docs",
         openapi_url=f"{settings.api_prefix}/openapi.json",
@@ -98,6 +99,7 @@ def create_app(runtime_settings: Settings | None = None) -> FastAPI:
         )
 
     app.include_router(router, prefix=settings.api_prefix)
+    app.include_router(ledger_router, prefix=settings.api_prefix)
     if settings.app_environment == "test":
         app.include_router(test_router, prefix=settings.api_prefix)
 
