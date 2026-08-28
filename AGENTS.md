@@ -1,44 +1,81 @@
 # Cost Review contributor guide
 
-This repository contains Cost Review, a private self-hosted application for understanding recurring and planned expenses. Read docs/MVP.md and docs/DESIGN.md before changing product behavior or the interface.
+Cost Review is a private, self-hosted application for trustworthy personal and
+household economics. Read `docs/PRODUCT_SPECIFICATION.md`,
+`docs/IMPLEMENTATION_BACKLOG.md`, `docs/DESIGN.md`, and `docs/MVP.md` before
+changing product behavior, architecture, or the interface.
+
+`docs/PRODUCT_SPECIFICATION.md` v1.0 is the requirements baseline and takes
+precedence when an older document conflicts with it.
 
 ## Product guardrails
 
-- Keep the product focused on cost intelligence, not general budgeting, banking, or bookkeeping.
-- Preserve the user's entered amount and billing interval. Normalized monthly, quarterly, and annual values are derived views.
-- Treat Expense as the financial commitment. A Provider is reusable master data and may be linked to many Expenses.
-- Providers and Categories are first-class, editable entities. Never silently delete linked Expenses.
-- Use decimal-safe arithmetic for money. Do not use binary floating point for canonical calculations.
-- Store dates without assuming a browser timezone. Use UTC for timestamps and ISO 8601 at API boundaries.
-- Keep advanced analytics out of Sprint 1, but avoid schemas or APIs that would make later analytical queries difficult.
+- Preserve original economic events and source data. Analysis is derived and
+  must not destructively rewrite history.
+- Transactions, splits, transfers, refunds, reimbursements, investment events,
+  debt reduction, balance adjustments, Expected events, and opening balances
+  have distinct semantics.
+- Use decimal-safe arithmetic for money. Never use binary floating point for
+  canonical calculations.
+- Preserve original currency, converted amount, and the historical FX rate
+  actually used.
+- Store timestamps in UTC and keep economic dates separate from timestamps.
+- Put domain invariants in backend services and database constraints where
+  appropriate. Keep API routes thin.
+- Automation may suggest. Ambiguous or conflicting actions stay visible and
+  require user confirmation.
+- Production and Demo/Test are separate trust domains. Never represent that
+  boundary solely with a row-level flag.
 
 ## Required architecture
 
 - Frontend: React, TypeScript, and Vite.
 - Backend: Python, FastAPI, SQLAlchemy 2.x, and Alembic.
-- Database: SQLite in development and the standard self-hosted deployment. Keep SQLAlchemy models portable enough for a future PostgreSQL migration.
-- Deployment: Docker Compose with persistent data mounted at /app/data.
-- API prefix: /api/v1.
+- Database: PostgreSQL in development, CI, Demo/Test, and production. SQLite is
+  not a supported runtime or test substitute.
+- Deployment: Docker Compose on Ubuntu, suitable for a trusted reverse proxy or
+  Cloudflare deployment.
+- API: versioned under `/api/v1` inside each data plane. The gateway may add an
+  environment routing prefix without changing the backend API contract.
+- Production and Demo/Test run as separate API instances with separate
+  PostgreSQL services, credentials, networks, session namespaces, and volumes.
+- Database, attachment, and backup storage must be persistent and excluded from
+  source control.
 
 ## Repository conventions
 
-- frontend contains the browser application.
-- backend/app contains the FastAPI application and domain code.
-- backend/alembic/versions contains immutable database migrations. Add a migration for every schema change; never edit a migration that may have been applied outside your branch.
-- Tests should sit close to the boundary they verify: backend/tests for API and domain behavior, frontend/src for component tests.
-- Keep API route functions thin. Put calculations and business rules in dedicated services.
-- Use Pydantic request and response models at API boundaries; do not expose SQLAlchemy models directly.
+- `frontend` contains the browser application and gateway configuration.
+- `backend/app` contains the FastAPI application, domain services, and models.
+- `backend/alembic/versions` contains immutable migrations. Never edit a
+  migration that may have been shared or applied outside the current branch.
+- Use Pydantic request and response models at API boundaries; never expose
+  SQLAlchemy models directly.
+- Keep environment selection explicit in configuration and responses. A
+  backend process must receive credentials for exactly one data plane.
+- Tests must use PostgreSQL and must prove Production/Test isolation for every
+  destructive Demo/Test operation.
 
 ## UI rules
 
-- Follow the Nordic Financial Calm tokens and interaction rules in docs/DESIGN.md.
-- Use semantic design tokens rather than hard-coded colors inside components.
-- Do not use red to mean expensive; reserve destructive colors for destructive actions and errors.
-- Prefer one clear primary metric and strong information hierarchy over grids of KPI cards.
-- Ensure keyboard focus, labels, contrast, reduced-motion behavior, and responsive layouts are present from the start.
+- Follow the Nordic Financial Calm system in `docs/DESIGN.md`.
+- Use semantic design tokens rather than hard-coded component colors.
+- Never use red merely because a cost is high.
+- Production and Demo/Test context must be unmistakable without relying on
+  color alone.
+- Provide Swedish and English foundations, visible labels, keyboard focus,
+  WCAG AA contrast, reduced-motion behavior, and responsive layouts.
+- Empty states must be honest and must not imply that fictional values are live
+  financial data.
 
-## Quality bar
+## Security and quality bar
 
-Before completing a change, run the relevant formatters, linters, tests, production build, migration upgrade, and Docker Compose configuration check. Update README.md whenever setup or operating behavior changes.
-
-Do not commit secrets, local databases, generated caches, build output, or environment-specific configuration.
+- Never commit secrets, personal financial data, generated databases, caches,
+  build output, or environment-specific configuration.
+- Use secure password hashing, opaque server-side sessions, HttpOnly cookies,
+  CSRF protection, explicit trusted hosts/origins/proxies, and environment-
+  scoped cookie names.
+- Before completing a change, run relevant formatting, linting, PostgreSQL
+  integration tests, migration upgrade and drift checks, frontend tests/build,
+  Compose validation, and isolation tests.
+- Update README and architecture decisions whenever setup, deployment, trust
+  boundaries, backup behavior, or operating requirements change.
