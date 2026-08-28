@@ -46,8 +46,8 @@ jobs:
       ATTACHMENT_ROOT: /tmp/cost-review-ci/attachments
       BACKUP_ROOT: /tmp/cost-review-ci/backups
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -63,8 +63,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -83,7 +83,7 @@ jobs:
       APP_ALLOWED_ORIGINS: http://localhost:8080
       APP_ALLOWED_HOSTS: localhost,127.0.0.1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: docker compose config --quiet
       - run: docker compose up --build --detach --wait
       - run: python backend/tests/compose_isolation.py
