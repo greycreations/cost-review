@@ -110,6 +110,63 @@ export type SharingParty = {
   updated_at: string;
 };
 
+export type TransactionKind = "expense" | "income";
+
+export type Transaction = {
+  transaction_id: number;
+  account_id: number;
+  provider_id: number | null;
+  transaction_kind: TransactionKind;
+  transaction_date: string;
+  posting_date: string;
+  description: string;
+  original_amount: string;
+  original_currency: string;
+  converted_amount: string | null;
+  base_currency: string;
+  fx_rate: string | null;
+  fx_rate_status: "not_required" | "manual" | "automatic" | "missing";
+  source_type: "manual" | "import" | "recurring" | "system";
+  source_reference: string | null;
+  notes: string | null;
+  category_id: number | null;
+  tag_ids: number[];
+  is_base_cost: boolean;
+  status: LifecycleStatus;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TransactionInput = {
+  account_id: number;
+  provider_id: number | null;
+  transaction_kind: TransactionKind;
+  transaction_date: string;
+  posting_date: string;
+  description: string;
+  original_amount: string;
+  original_currency: string;
+  converted_amount?: string | null;
+  fx_rate?: string | null;
+  category_id: number | null;
+  tag_ids: number[];
+  is_base_cost: boolean;
+  source_reference?: string | null;
+  notes?: string | null;
+};
+
+export type LedgerSummary = {
+  date_from: string;
+  date_to: string;
+  base_currency: string;
+  income: string;
+  expenses: string;
+  net_cash_flow: string;
+  transaction_count: number;
+  missing_fx_count: number;
+};
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -391,6 +448,78 @@ export function setSharingPartyArchived(
   return request(
     environment,
     `/sharing-parties/${partyId}/${archived ? "archive" : "restore"}`,
+    { method: "POST" },
+    true,
+  );
+}
+
+export function getTransactions(
+  environment: Environment,
+  filters: {
+    dateFrom?: string;
+    dateTo?: string;
+    kind?: TransactionKind | "";
+    accountId?: number | null;
+    categoryId?: number | null;
+    search?: string;
+    includeArchived?: boolean;
+    limit?: number;
+  } = {},
+): Promise<Page<Transaction>> {
+  const query = new URLSearchParams();
+  query.set("limit", String(filters.limit ?? 100));
+  if (filters.dateFrom) query.set("date_from", filters.dateFrom);
+  if (filters.dateTo) query.set("date_to", filters.dateTo);
+  if (filters.kind) query.set("transaction_kind", filters.kind);
+  if (filters.accountId) query.set("account_id", String(filters.accountId));
+  if (filters.categoryId) query.set("category_id", String(filters.categoryId));
+  if (filters.search?.trim()) query.set("search", filters.search.trim());
+  if (filters.includeArchived) query.set("include_archived", "true");
+  return request(environment, `/transactions?${query.toString()}`);
+}
+
+export function getLedgerSummary(
+  environment: Environment,
+  dateFrom: string,
+  dateTo: string,
+): Promise<LedgerSummary> {
+  const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  return request(environment, `/transactions/summary?${query.toString()}`);
+}
+
+export function createTransaction(
+  environment: Environment,
+  payload: TransactionInput,
+): Promise<Transaction> {
+  return request(
+    environment,
+    "/transactions",
+    { method: "POST", body: JSON.stringify(payload) },
+    true,
+  );
+}
+
+export function updateTransaction(
+  environment: Environment,
+  transactionId: number,
+  payload: Partial<TransactionInput>,
+): Promise<Transaction> {
+  return request(
+    environment,
+    `/transactions/${transactionId}`,
+    { method: "PATCH", body: JSON.stringify(payload) },
+    true,
+  );
+}
+
+export function setTransactionArchived(
+  environment: Environment,
+  transactionId: number,
+  archived: boolean,
+): Promise<Transaction> {
+  return request(
+    environment,
+    `/transactions/${transactionId}/${archived ? "archive" : "restore"}`,
     { method: "POST" },
     true,
   );

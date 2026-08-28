@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Response
@@ -7,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
 from app.dependencies import Auth, CsrfAuth, DatabaseSession
+from app.errors import ApiError
 from app.ledger_schemas import (
     AccountCreate,
     AccountRead,
@@ -16,6 +18,8 @@ from app.ledger_schemas import (
     CategoryLinkRead,
     CategoryRead,
     CategoryUpdate,
+    LedgerSummaryRead,
+    ManualTransactionKind,
     Page,
     ProviderAliasCreate,
     ProviderAliasRead,
@@ -31,6 +35,9 @@ from app.ledger_schemas import (
     TagCreate,
     TagRead,
     TagUpdate,
+    TransactionCreate,
+    TransactionRead,
+    TransactionUpdate,
 )
 from app.ledger_services import (
     archive_category,
@@ -65,11 +72,105 @@ from app.models import (
     SharingParty,
     Tag,
 )
+from app.transaction_services import (
+    create_manual_transaction,
+    get_transaction,
+    ledger_summary,
+    list_transactions,
+    transaction_values,
+    update_manual_transaction,
+)
 
 router = APIRouter(tags=["ledger-master-data"])
 
 Limit = Annotated[int, Query(ge=1, le=200)]
 Offset = Annotated[int, Query(ge=0)]
+
+
+@router.get("/transactions", response_model=Page[TransactionRead])
+def get_transactions(
+    _: Auth,
+    db: DatabaseSession,
+    limit: Limit = 50,
+    offset: Offset = 0,
+    include_archived: bool = False,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    transaction_kind: ManualTransactionKind | None = None,
+    account_id: int | None = Query(default=None, gt=0),
+    provider_id: int | None = Query(default=None, gt=0),
+    category_id: int | None = Query(default=None, gt=0),
+    tag_id: int | None = Query(default=None, gt=0),
+    search: str | None = Query(default=None, max_length=240),
+) -> dict[str, object]:
+    _validate_date_range(date_from, date_to)
+    return list_transactions(
+        db,
+        limit=limit,
+        offset=offset,
+        include_archived=include_archived,
+        date_from=date_from,
+        date_to=date_to,
+        transaction_kind=transaction_kind.value if transaction_kind is not None else None,
+        account_id=account_id,
+        provider_id=provider_id,
+        category_id=category_id,
+        tag_id=tag_id,
+        search=search,
+    )
+
+
+@router.post("/transactions", response_model=TransactionRead, status_code=201)
+def post_transaction(
+    payload: TransactionCreate, auth: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    return transaction_values(
+        create_manual_transaction(db, payload, auth.user.settings.base_currency)
+    )
+
+
+@router.get("/transactions/summary", response_model=LedgerSummaryRead)
+def get_transaction_summary(
+    auth: Auth,
+    db: DatabaseSession,
+    date_from: date,
+    date_to: date,
+) -> dict[str, object]:
+    _validate_date_range(date_from, date_to)
+    return ledger_summary(db, date_from, date_to, auth.user.settings.base_currency)
+
+
+@router.get("/transactions/{transaction_id}", response_model=TransactionRead)
+def get_transaction_by_id(
+    transaction_id: int, _: Auth, db: DatabaseSession
+) -> dict[str, object]:
+    return transaction_values(get_transaction(db, transaction_id))
+
+
+@router.patch("/transactions/{transaction_id}", response_model=TransactionRead)
+def patch_transaction(
+    transaction_id: int,
+    payload: TransactionUpdate,
+    _: CsrfAuth,
+    db: DatabaseSession,
+) -> dict[str, object]:
+    return transaction_values(
+        update_manual_transaction(db, get_transaction(db, transaction_id), payload)
+    )
+
+
+@router.post("/transactions/{transaction_id}/archive", response_model=TransactionRead)
+def archive_transaction(
+    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    return transaction_values(archive_model(db, get_transaction(db, transaction_id)))
+
+
+@router.post("/transactions/{transaction_id}/restore", response_model=TransactionRead)
+def restore_transaction(
+    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    return transaction_values(restore_model(db, get_transaction(db, transaction_id)))
 
 
 @router.get("/accounts", response_model=Page[AccountRead])
@@ -392,3 +493,12 @@ def _plain_page(
         db.scalars(select(model).where(*filters).order_by(primary_key).limit(limit).offset(offset))
     )
     return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+def _validate_date_range(date_from: date | None, date_to: date | None) -> None:
+    if date_from is not None and date_to is not None and date_to < date_from:
+        raise ApiError(
+            422,
+            "invalid_date_range",
+            "The end date must be on or after the start date.",
+        )

@@ -106,6 +106,30 @@ class CategoryKind(StrEnum):
     INCOME = "income"
 
 
+class TransactionKind(StrEnum):
+    EXPENSE = "expense"
+    INCOME = "income"
+    TRANSFER = "transfer"
+    REFUND = "refund"
+    REIMBURSEMENT = "reimbursement"
+    ADJUSTMENT = "adjustment"
+    INVESTMENT_TRADE = "investment_trade"
+
+
+class TransactionSource(StrEnum):
+    MANUAL = "manual"
+    IMPORT = "import"
+    RECURRING = "recurring"
+    SYSTEM = "system"
+
+
+class FxRateStatus(StrEnum):
+    NOT_REQUIRED = "not_required"
+    MANUAL = "manual"
+    AUTOMATIC = "automatic"
+    MISSING = "missing"
+
+
 class EnvironmentMetadata(Base):
     __tablename__ = "environment_metadata"
     __table_args__ = (
@@ -393,3 +417,117 @@ class SharingParty(ArchiveMixin, TimestampMixin, Base):
     normalized_name: Mapped[str] = mapped_column(String(240))
     is_self: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class Transaction(ArchiveMixin, TimestampMixin, Base):
+    __tablename__ = "transactions"
+    __table_args__ = (
+        CheckConstraint(
+            "transaction_kind IN ('expense', 'income', 'transfer', 'refund', "
+            "'reimbursement', 'adjustment', 'investment_trade')",
+            name="kind_allowed",
+        ),
+        CheckConstraint("original_amount > 0", name="original_amount_positive"),
+        CheckConstraint("original_currency ~ '^[A-Z]{3}$'", name="original_currency_iso_shape"),
+        CheckConstraint("base_currency ~ '^[A-Z]{3}$'", name="base_currency_iso_shape"),
+        CheckConstraint(
+            "fx_rate_status IN ('not_required', 'manual', 'automatic', 'missing')",
+            name="fx_rate_status_allowed",
+        ),
+        CheckConstraint(
+            "(fx_rate_status = 'missing' AND converted_amount IS NULL AND fx_rate IS NULL) OR "
+            "(fx_rate_status <> 'missing' AND converted_amount > 0 AND fx_rate > 0)",
+            name="conversion_complete_or_missing",
+        ),
+        CheckConstraint(
+            "fx_rate_status <> 'not_required' OR "
+            "(original_currency = base_currency AND fx_rate = 1 "
+            "AND converted_amount = original_amount)",
+            name="same_currency_conversion_exact",
+        ),
+        CheckConstraint(
+            "source_type IN ('manual', 'import', 'recurring', 'system')",
+            name="source_type_allowed",
+        ),
+        CheckConstraint("status IN ('active', 'archived')", name="status_allowed"),
+        Index("ix_transactions_transaction_date", "transaction_date"),
+        Index("ix_transactions_posting_date", "posting_date"),
+        Index("ix_transactions_account_id", "account_id"),
+        Index("ix_transactions_provider_id", "provider_id"),
+        Index("ix_transactions_status", "status"),
+        Index("ix_transactions_normalized_description", "normalized_description"),
+    )
+
+    transaction_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.account_id", ondelete="RESTRICT"))
+    provider_id: Mapped[int | None] = mapped_column(
+        ForeignKey("providers.provider_id", ondelete="RESTRICT"), nullable=True
+    )
+    transaction_kind: Mapped[str] = mapped_column(String(24))
+    transaction_date: Mapped[date] = mapped_column(Date)
+    posting_date: Mapped[date] = mapped_column(Date)
+    description: Mapped[str] = mapped_column(String(240))
+    normalized_description: Mapped[str] = mapped_column(String(480))
+    original_amount: Mapped[Decimal] = mapped_column(Numeric(20, 4))
+    original_currency: Mapped[str] = mapped_column(String(3))
+    converted_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    base_currency: Mapped[str] = mapped_column(String(3))
+    fx_rate: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), nullable=True)
+    fx_rate_status: Mapped[str] = mapped_column(String(16))
+    source_type: Mapped[str] = mapped_column(String(16), default="manual", server_default="manual")
+    source_reference: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    splits: Mapped[list[TransactionSplit]] = relationship(
+        back_populates="transaction", cascade="all, delete-orphan"
+    )
+
+
+class TransactionSplit(TimestampMixin, Base):
+    __tablename__ = "transaction_splits"
+    __table_args__ = (
+        CheckConstraint("original_amount > 0", name="original_amount_positive"),
+        CheckConstraint(
+            "converted_amount IS NULL OR converted_amount > 0",
+            name="converted_amount_positive",
+        ),
+        Index("ix_transaction_splits_transaction_id", "transaction_id"),
+        Index("ix_transaction_splits_category_id", "category_id"),
+    )
+
+    transaction_split_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    transaction_id: Mapped[int] = mapped_column(
+        ForeignKey("transactions.transaction_id", ondelete="CASCADE")
+    )
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.category_id", ondelete="RESTRICT"), nullable=True
+    )
+    original_amount: Mapped[Decimal] = mapped_column(Numeric(20, 4))
+    converted_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    is_base_cost: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    memo: Mapped[str | None] = mapped_column(String(240), nullable=True)
+
+    transaction: Mapped[Transaction] = relationship(back_populates="splits")
+    tags: Mapped[list[Tag]] = relationship(secondary="transaction_split_tags")
+
+
+class TransactionSplitTag(Base):
+    __tablename__ = "transaction_split_tags"
+    __table_args__ = (Index("ix_transaction_split_tags_tag_id", "tag_id"),)
+
+    transaction_split_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "transaction_splits.transaction_split_id",
+            name="fk_split_tags_split_id_splits",
+            ondelete="CASCADE",
+        ),
+        primary_key=True,
+    )
+    tag_id: Mapped[int] = mapped_column(
+        ForeignKey("tags.tag_id", ondelete="RESTRICT"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

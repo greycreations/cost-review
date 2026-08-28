@@ -29,7 +29,10 @@ import {
 const copy = {
   sv: {
     eyebrow: "Sprint 2 · Ledger",
-    title: "Konton och masterdata",
+    accountsTitle: "Konton",
+    masterDataTitle: "Kategorier och register",
+    masterDataLead:
+      "Återanvändbara kategorier, providers, taggar och delningsparter hanteras här – utanför det dagliga transaktionsflödet.",
     lead: "Öppningssaldo är en startpunkt för saldot och bokförs aldrig som inkomst.",
     showArchived: "Visa arkiverade",
     accounts: "Konton",
@@ -69,7 +72,10 @@ const copy = {
   },
   en: {
     eyebrow: "Sprint 2 · Ledger",
-    title: "Accounts and master data",
+    accountsTitle: "Accounts",
+    masterDataTitle: "Categories and registers",
+    masterDataLead:
+      "Reusable categories, providers, tags, and sharing parties are managed here, outside the daily transaction flow.",
     lead: "An opening balance is a balance starting point and is never recorded as income.",
     showArchived: "Show archived",
     accounts: "Accounts",
@@ -140,10 +146,12 @@ export function LedgerWorkspace({
   environment,
   language,
   baseCurrency,
+  view,
 }: {
   environment: Environment;
   language: Language;
   baseCurrency: string;
+  view: "accounts" | "master-data";
 }) {
   const labels = copy[language];
   const [data, setData] = useState<LedgerData>(emptyData);
@@ -195,12 +203,12 @@ export function LedgerWorkspace({
   };
 
   return (
-    <section className="ledger-section" id="accounts">
+    <section className="ledger-section" id={view === "accounts" ? "accounts" : "master-data"}>
       <div className="section-heading ledger-heading">
         <div>
           <p className="eyebrow">{labels.eyebrow}</p>
-          <h2>{labels.title}</h2>
-          <p>{labels.lead}</p>
+          <h1>{view === "accounts" ? labels.accountsTitle : labels.masterDataTitle}</h1>
+          <p>{view === "accounts" ? labels.lead : labels.masterDataLead}</p>
         </div>
         <label className="archive-toggle">
           <input
@@ -218,39 +226,42 @@ export function LedgerWorkspace({
       ) : null}
       {loading ? <p className="quiet-copy">{labels.loading}</p> : null}
 
-      <AccountPanel
-        accounts={data.accounts}
-        baseCurrency={baseCurrency}
-        environment={environment}
-        labels={labels}
-        mutate={mutate}
-      />
-      <div className="master-data-grid" id="master-data">
-        <CategoryPanel
-          categories={data.categories}
+      {view === "accounts" ? (
+        <AccountPanel
+          accounts={data.accounts}
+          baseCurrency={baseCurrency}
           environment={environment}
           labels={labels}
           mutate={mutate}
         />
-        <ProviderPanel
-          providers={data.providers}
-          environment={environment}
-          labels={labels}
-          mutate={mutate}
-        />
-        <TagPanel
-          tags={data.tags}
-          environment={environment}
-          labels={labels}
-          mutate={mutate}
-        />
-        <PartyPanel
-          parties={data.parties}
-          environment={environment}
-          labels={labels}
-          mutate={mutate}
-        />
-      </div>
+      ) : (
+        <div className="master-data-grid">
+          <CategoryPanel
+            categories={data.categories}
+            environment={environment}
+            labels={labels}
+            mutate={mutate}
+          />
+          <ProviderPanel
+            providers={data.providers}
+            environment={environment}
+            labels={labels}
+            mutate={mutate}
+          />
+          <TagPanel
+            tags={data.tags}
+            environment={environment}
+            labels={labels}
+            mutate={mutate}
+          />
+          <PartyPanel
+            parties={data.parties}
+            environment={environment}
+            labels={labels}
+            mutate={mutate}
+          />
+        </div>
+      )}
     </section>
   );
 }
@@ -314,7 +325,7 @@ function AccountPanel({
           <select value={accountType} onChange={(event) => setAccountType(event.target.value as AccountType)}>
             {accountTypes.map((type) => (
               <option key={type} value={type}>
-                {type.replaceAll("_", " ")}
+                {accountTypeLabel(type, languageFrom(labels))}
               </option>
             ))}
           </select>
@@ -356,7 +367,7 @@ function AccountPanel({
           <article className={`resource-row ${account.status}`} key={account.account_id}>
             <div>
               <strong>{account.name}</strong>
-              <span>{account.account_type.replaceAll("_", " ")}</span>
+              <span>{accountTypeLabel(account.account_type, languageFrom(labels))}</span>
             </div>
             <div className="account-amount">
               <strong>{formatMoney(account.opening_balance, account.currency, languageFrom(labels))}</strong>
@@ -768,4 +779,30 @@ function formatMoney(value: string, currency: string, language: Language): strin
 
 function languageFrom(labels: Labels): Language {
   return labels === copy.sv ? "sv" : "en";
+}
+
+function accountTypeLabel(type: AccountType, language: Language): string {
+  const names: Record<Language, Record<AccountType, string>> = {
+    sv: {
+      current: "Transaktionskonto",
+      savings: "Sparkonto",
+      credit_card: "Kreditkort",
+      investment: "Investeringskonto",
+      loan_debt: "Lån eller skuld",
+      value_based: "Värdebaserat konto",
+      cash: "Kontanter",
+      other: "Annat",
+    },
+    en: {
+      current: "Current account",
+      savings: "Savings account",
+      credit_card: "Credit card",
+      investment: "Investment account",
+      loan_debt: "Loan or debt",
+      value_based: "Value-based account",
+      cash: "Cash",
+      other: "Other",
+    },
+  };
+  return names[language][type];
 }

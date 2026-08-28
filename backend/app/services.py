@@ -104,7 +104,8 @@ def reset_test_environment(
     metadata = get_environment_metadata(db)
     db.execute(
         text(
-            "TRUNCATE TABLE category_links, provider_links, provider_aliases, "
+            "TRUNCATE TABLE transaction_split_tags, transaction_splits, transactions, "
+            "category_links, provider_links, provider_aliases, "
             "accounts, categories, providers, tags, sharing_parties RESTART IDENTITY CASCADE"
         )
     )
