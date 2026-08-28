@@ -219,6 +219,28 @@ export type LedgerSummary = {
   missing_fx_count: number;
 };
 
+export type LedgerTrendPoint = {
+  date: string;
+  income: string;
+  expenses: string;
+  net_cash_flow: string;
+};
+
+export type LedgerCategoryBreakdown = {
+  category_id: number | null;
+  category_name: string | null;
+  amount: string;
+  transaction_count: number;
+};
+
+export type LedgerAnalysis = {
+  date_from: string;
+  date_to: string;
+  base_currency: string;
+  daily: LedgerTrendPoint[];
+  expense_categories: LedgerCategoryBreakdown[];
+};
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -537,6 +559,15 @@ export function getLedgerSummary(
 ): Promise<LedgerSummary> {
   const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
   return request(environment, `/transactions/summary?${query.toString()}`);
+}
+
+export function getLedgerAnalysis(
+  environment: Environment,
+  dateFrom: string,
+  dateTo: string,
+): Promise<LedgerAnalysis> {
+  const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  return request(environment, `/transactions/analysis?${query.toString()}`);
 }
 
 export function createTransaction(

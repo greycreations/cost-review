@@ -138,6 +138,32 @@ def test_manual_transaction_crud_filters_and_period_summary(
         "missing_fx_count": 0,
     }
 
+    analysis = client.get(
+        "/api/v1/transactions/analysis?date_from=2026-08-01&date_to=2026-08-31"
+    )
+    assert analysis.status_code == 200
+    assert analysis.json() == {
+        "date_from": "2026-08-01",
+        "date_to": "2026-08-31",
+        "base_currency": "SEK",
+        "daily": [
+            {
+                "date": "2026-08-20",
+                "income": "30000.0000",
+                "expenses": "425.3500",
+                "net_cash_flow": "29574.6500",
+            }
+        ],
+        "expense_categories": [
+            {
+                "category_id": data["expense"]["category_id"],
+                "category_name": "Mat",
+                "amount": "425.3500",
+                "transaction_count": 1,
+            }
+        ],
+    }
+
     updated = client.patch(
         f"/api/v1/transactions/{expense['transaction_id']}",
         headers=headers,
@@ -177,6 +203,13 @@ def test_fx_gaps_are_preserved_and_excluded_from_canonical_totals(
     assert missing.json()["fx_rate"] is None
     assert missing.json()["fx_rate_status"] == "missing"
 
+    unresolved_analysis = client.get(
+        "/api/v1/transactions/analysis?date_from=2026-08-01&date_to=2026-08-31"
+    )
+    assert unresolved_analysis.status_code == 200
+    assert unresolved_analysis.json()["daily"] == []
+    assert unresolved_analysis.json()["expense_categories"] == []
+
     resolved = client.patch(
         f"/api/v1/transactions/{missing.json()['transaction_id']}",
         headers=headers,
@@ -186,6 +219,12 @@ def test_fx_gaps_are_preserved_and_excluded_from_canonical_totals(
     assert resolved.json()["converted_amount"] == "190.7600"
     assert resolved.json()["fx_rate"] == "1.5200000000"
     assert resolved.json()["fx_rate_status"] == "manual"
+
+    resolved_analysis = client.get(
+        "/api/v1/transactions/analysis?date_from=2026-08-01&date_to=2026-08-31"
+    )
+    assert resolved_analysis.status_code == 200
+    assert resolved_analysis.json()["expense_categories"][0]["amount"] == "190.7600"
 
     invalid = client.post(
         "/api/v1/transactions",

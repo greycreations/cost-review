@@ -336,6 +336,96 @@ def ledger_summary(
     }
 
 
+def ledger_analysis(
+    db: DbSession, date_from: date, date_to: date, base_currency: str
+) -> dict[str, Any]:
+    usable_transactions = (
+        Transaction.status == "active",
+        Transaction.transaction_kind.in_(("expense", "income")),
+        Transaction.transaction_date >= date_from,
+        Transaction.transaction_date <= date_to,
+        Transaction.base_currency == base_currency,
+        Transaction.converted_amount.is_not(None),
+    )
+    daily_rows = db.execute(
+        select(
+            Transaction.transaction_date,
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            Transaction.transaction_kind == "income",
+                            Transaction.converted_amount,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("income"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            Transaction.transaction_kind == "expense",
+                            Transaction.converted_amount,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("expenses"),
+        )
+        .where(*usable_transactions)
+        .group_by(Transaction.transaction_date)
+        .order_by(Transaction.transaction_date)
+    ).all()
+
+    category_rows = db.execute(
+        select(
+            TransactionSplit.category_id,
+            Category.name,
+            func.sum(TransactionSplit.converted_amount).label("amount"),
+            func.count(func.distinct(Transaction.transaction_id)).label("transaction_count"),
+        )
+        .join(Transaction, Transaction.transaction_id == TransactionSplit.transaction_id)
+        .outerjoin(Category, Category.category_id == TransactionSplit.category_id)
+        .where(
+            Transaction.status == "active",
+            Transaction.transaction_kind == "expense",
+            Transaction.transaction_date >= date_from,
+            Transaction.transaction_date <= date_to,
+            Transaction.base_currency == base_currency,
+            TransactionSplit.converted_amount.is_not(None),
+        )
+        .group_by(TransactionSplit.category_id, Category.name)
+        .order_by(func.sum(TransactionSplit.converted_amount).desc(), Category.name)
+    ).all()
+
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "base_currency": base_currency,
+        "daily": [
+            {
+                "date": row.transaction_date,
+                "income": Decimal(row.income),
+                "expenses": Decimal(row.expenses),
+                "net_cash_flow": Decimal(row.income) - Decimal(row.expenses),
+            }
+            for row in daily_rows
+        ],
+        "expense_categories": [
+            {
+                "category_id": row.category_id,
+                "category_name": row.name,
+                "amount": Decimal(row.amount),
+                "transaction_count": row.transaction_count,
+            }
+            for row in category_rows
+        ],
+    }
+
+
 def transaction_values(model: Transaction) -> dict[str, Any]:
     split = _single_component(model)
     return {

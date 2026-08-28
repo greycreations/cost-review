@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -23,6 +23,7 @@ const session = (environment: "production" | "test") => ({
 });
 
 let accountItems: object[] = [];
+let analysisData: object;
 
 const account = (
   accountId: number,
@@ -51,6 +52,13 @@ describe("App", () => {
     localStorage.clear();
     window.location.hash = "";
     accountItems = [];
+    analysisData = {
+      date_from: "2026-08-01",
+      date_to: "2026-08-31",
+      base_currency: "SEK",
+      daily: [],
+      expense_categories: [],
+    };
     vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
     vi.stubGlobal(
       "fetch",
@@ -75,6 +83,8 @@ describe("App", () => {
           path.includes("/sharing-parties?")
         ) {
           body = { items: [], total: 0, limit: 50, offset: 0 };
+        } else if (path.includes("/transactions/analysis?")) {
+          body = analysisData;
         } else if (path.includes("/transactions/summary?")) {
           body = {
             date_from: "2026-08-01",
@@ -112,19 +122,62 @@ describe("App", () => {
   it("loads the authenticated Production ledger without financial sample data", async () => {
     render(<App />);
 
-    expect(await screen.findByText("Your finances this month")).toBeInTheDocument();
+    expect(await screen.findByText(/Your finances ·/)).toBeInTheDocument();
     expect(
       await screen.findByText(
-        "The overview is empty because no transactions have been recorded this month.",
+        "The overview is empty because no transactions have been recorded in the selected month.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText("DEMO / TEST")).not.toBeInTheDocument();
   });
 
+  it("defaults the overview to the current month and can move to a previous month", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    const monthInput = screen.getByLabelText("Select month", { selector: "input" });
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    expect(monthInput).toHaveValue(currentMonth);
+    expect(screen.getByRole("heading", { name: "Income and expenses through the month" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Expenses by category" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Previous month" }));
+    const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const previousMonth = `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, "0")}`;
+    expect(monthInput).toHaveValue(previousMonth);
+    await waitFor(() => {
+      expect(vi.mocked(fetch).mock.calls.some(([input]) => {
+        const path = input.toString();
+        return path.includes("/transactions/summary?") && path.includes(`date_from=${previousMonth}-01`);
+      })).toBe(true);
+    });
+    expect(screen.getByRole("button", { name: "This month" })).toBeInTheDocument();
+  });
+
+  it("renders truthful daily and category analysis with accessible data tables", async () => {
+    analysisData = {
+      date_from: "2026-08-01",
+      date_to: "2026-08-31",
+      base_currency: "SEK",
+      daily: [{ date: "2026-08-12", income: "30000.0000", expenses: "650.0000", net_cash_flow: "29350.0000" }],
+      expense_categories: [{ category_id: 1, category_name: "Groceries", amount: "650.0000", transaction_count: 2 }],
+    };
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect((await screen.findAllByText("Groceries")).length).toBeGreaterThan(0);
+    const tableToggles = screen.getAllByText("Show data as a table");
+    await user.click(tableToggles[1]);
+    expect(screen.getByRole("columnheader", { name: "Category" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "2" })).toBeInTheDocument();
+  });
+
   it("keeps daily entry and account setup in separate views", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByText("Your finances this month");
+    await screen.findByText(/Your finances ·/);
 
     await user.click(screen.getByRole("link", { name: "Transactions" }));
     expect(await screen.findByRole("heading", { name: "Transactions" })).toBeInTheDocument();
@@ -140,7 +193,7 @@ describe("App", () => {
     accountItems = [account(1, "Daily account")];
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByText("Your finances this month");
+    await screen.findByText(/Your finances ·/);
 
     await user.click(screen.getByRole("link", { name: "Transactions" }));
     const newButton = await screen.findByRole("button", { name: "+ New transaction" });
@@ -161,7 +214,7 @@ describe("App", () => {
     ];
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByText("Your finances this month");
+    await screen.findByText(/Your finances ·/);
 
     await user.click(screen.getByRole("link", { name: "Transactions" }));
     const transferButton = await screen.findByRole("button", { name: "↔ New transfer" });
@@ -193,7 +246,7 @@ describe("App", () => {
   it("switches to the isolated Demo/Test context with a persistent warning", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByText("Your finances this month");
+    await screen.findByText(/Your finances ·/);
 
     await user.click(screen.getByRole("button", { name: "Demo/Test" }));
 

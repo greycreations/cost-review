@@ -441,6 +441,28 @@ class LedgerSummaryRead(BaseModel):
     missing_fx_count: int
 
 
+class LedgerTrendPointRead(BaseModel):
+    date: date
+    income: Decimal
+    expenses: Decimal
+    net_cash_flow: Decimal
+
+
+class LedgerCategoryBreakdownRead(BaseModel):
+    category_id: int | None
+    category_name: str | None
+    amount: Decimal
+    transaction_count: int
+
+
+class LedgerAnalysisRead(BaseModel):
+    date_from: date
+    date_to: date
+    base_currency: str
+    daily: list[LedgerTrendPointRead]
+    expense_categories: list[LedgerCategoryBreakdownRead]
+
+
 def _validate_lock_dates(start: date | None, end: date | None) -> None:
     if end is not None and start is None:
         raise ValueError("lock_end_date requires lock_start_date")
