@@ -9,8 +9,8 @@ Sprint 1 established the Platform Foundation: PostgreSQL, migrations, first-run
 setup, local authentication, independent locale settings, reverse-proxy safety,
 and a persistent hard boundary between Production and Demo/Test. The current
 Sprint 2 slice adds accounts, reusable ledger master data, manual income and
-expense entry, historical FX persistence, and real period summaries without
-weakening that boundary.
+expense entry, historical FX persistence, real period summaries, and dated
+account balance/value snapshots without weakening that boundary.
 
 ## Architecture
 
@@ -204,6 +204,8 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET/PATCH | `/api/v1/settings` | Independent locale/currency/timezone settings |
 | POST | `/api/v1/test/reset` | Test-only strongly confirmed reset |
 | GET/POST/PATCH | `/api/v1/accounts[...]` | Account list/create/read/update plus archive/restore |
+| GET/POST | `/api/v1/accounts/{id}/snapshots` | Dated account balance or valuation history |
+| PATCH/POST | `/api/v1/account-snapshots/{id}[...]` | Correct, archive, or restore a snapshot |
 | GET/POST/PATCH | `/api/v1/categories[...]` | Arbitrary-depth category hierarchy plus archive/restore |
 | GET/POST/PATCH | `/api/v1/providers[...]` | Provider records and lifecycle |
 | GET/POST/PATCH/DELETE | `/api/v1/providers/.../aliases`, `/api/v1/provider-aliases/...` | Canonical provider aliases |
@@ -228,7 +230,7 @@ from canonical period totals until resolved. An internal transfer links one
 outgoing and one incoming ledger leg, preserves both account-currency amounts
 and historical FX, and is always excluded from ordinary income, expense, and
 net cash-flow totals. Credit-card payments use this transfer workflow. Refunds,
-reimbursements, split editing, and calculated balances remain later slices and
+reimbursements, split editing, and explicit balance adjustments remain later slices and
 are intentionally not represented as ordinary income or expense in the UI.
 
 The Overview defaults to the current calendar month and supports explicit month
@@ -236,6 +238,12 @@ navigation. Its first analysis slice visualizes daily income/expense movement
 and expenses by category, with accessible tables containing the exact server-
 aggregated values. This does not yet complete the Epic 5 comparison, common-
 filter, drill-down, or saved-layout capabilities.
+
+The Accounts view accepts dated reconciled balances and current values without
+changing the opening balance or transaction history. Ordinary accounts compare
+the observation with a posting-date-based calculated Ledger balance. Investment
+and value-based accounts show valuation history without treating market-value
+movement as income or claiming investment-performance attribution.
 
 ## Source of truth
 

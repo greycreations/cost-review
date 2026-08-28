@@ -186,6 +186,25 @@ def main() -> int:
         },
         test_csrf,
     )
+    snapshot_payload = {
+        "valuation_date": "2026-08-28",
+        "reported_balance": "825.00",
+        "notes": "Isolation snapshot",
+    }
+    call(
+        prod,
+        f"{prod_base}/accounts/{prod_account['account_id']}/snapshots",
+        "POST",
+        snapshot_payload,
+        prod_csrf,
+    )
+    call(
+        test,
+        f"{test_base}/accounts/{test_account['account_id']}/snapshots",
+        "POST",
+        snapshot_payload,
+        test_csrf,
+    )
     _, prod_accounts_before = call(prod, f"{prod_base}/accounts")
     _, test_accounts_before = call(test, f"{test_base}/accounts")
     assert any(
@@ -240,6 +259,14 @@ def main() -> int:
         item["description"] == "Production isolation transfer"
         for item in test_transfers_before["items"]
     )
+    _, prod_snapshots_before = call(
+        prod, f"{prod_base}/accounts/{prod_account['account_id']}/snapshots"
+    )
+    _, test_snapshots_before = call(
+        test, f"{test_base}/accounts/{test_account['account_id']}/snapshots"
+    )
+    assert len(prod_snapshots_before) == 1
+    assert len(test_snapshots_before) == 1
     _, prod_before = call(prod, f"{prod_base}/auth/session")
     _, prod_environment_before = call(prod, f"{prod_base}/environment")
 
@@ -258,6 +285,9 @@ def main() -> int:
     _, prod_transactions_after = call(prod, f"{prod_base}/transactions")
     _, test_transfers_after = call(test, f"{test_base}/transfers")
     _, prod_transfers_after = call(prod, f"{prod_base}/transfers")
+    _, prod_snapshots_after = call(
+        prod, f"{prod_base}/accounts/{prod_account['account_id']}/snapshots"
+    )
     assert test_accounts_after["total"] == 0
     assert test_transactions_after["total"] == 0
     assert test_transfers_after["total"] == 0
@@ -273,6 +303,8 @@ def main() -> int:
         item["description"] == "Production isolation transfer"
         for item in prod_transfers_after["items"]
     )
+    assert len(prod_snapshots_after) == 1
+    assert prod_snapshots_after[0]["reported_balance"] == "825.0000"
 
     _, prod_after = call(prod, f"{prod_base}/auth/session")
     _, prod_environment_after = call(prod, f"{prod_base}/environment")

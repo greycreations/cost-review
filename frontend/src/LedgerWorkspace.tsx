@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import {
   createAccount,
+  createAccountSnapshot,
   createCategory,
   createProvider,
   createSharingParty,
   createTag,
   getAccounts,
+  getAccountSnapshots,
   getCategories,
   getProviders,
   getSharingParties,
@@ -17,6 +19,7 @@ import {
   setSharingPartyArchived,
   setTagArchived,
   type Account,
+  type AccountSnapshot,
   type AccountType,
   type Category,
   type Environment,
@@ -43,6 +46,24 @@ const copy = {
     currency: "Valuta",
     addAccount: "Lägg till konto",
     noAccounts: "Inga konton ännu.",
+    currentValue: "Aktuellt värde",
+    reconciledBalance: "Avstämt saldo",
+    registerValue: "Registrera aktuellt värde",
+    registerBalance: "Stäm av saldo",
+    balanceDate: "Datum",
+    amount: "Belopp",
+    noteOptional: "Anteckning (valfritt)",
+    saveValue: "Spara värde",
+    saveBalance: "Spara saldo",
+    openingBalanceLabel: "Öppningssaldo",
+    calculatedBalance: "Beräknat saldo",
+    difference: "Avvikelse",
+    unavailable: "Ej tillgängligt",
+    valueHistory: "Värdehistorik",
+    balanceHistory: "Saldohistorik",
+    noSnapshots: "Inga senare saldon har registrerats ännu.",
+    snapshotHelp:
+      "Varje datum sparas som en historisk observation. Öppningssaldot och transaktionerna ändras inte.",
     categories: "Kategorier",
     categoryName: "Kategorinamn",
     categoryKind: "Typ",
@@ -86,6 +107,24 @@ const copy = {
     currency: "Currency",
     addAccount: "Add account",
     noAccounts: "No accounts yet.",
+    currentValue: "Current value",
+    reconciledBalance: "Reconciled balance",
+    registerValue: "Record current value",
+    registerBalance: "Reconcile balance",
+    balanceDate: "Date",
+    amount: "Amount",
+    noteOptional: "Note (optional)",
+    saveValue: "Save value",
+    saveBalance: "Save balance",
+    openingBalanceLabel: "Opening balance",
+    calculatedBalance: "Calculated balance",
+    difference: "Difference",
+    unavailable: "Unavailable",
+    valueHistory: "Value history",
+    balanceHistory: "Balance history",
+    noSnapshots: "No later balances have been recorded yet.",
+    snapshotHelp:
+      "Each date is preserved as a historical observation. The opening balance and transactions are unchanged.",
     categories: "Categories",
     categoryName: "Category name",
     categoryKind: "Type",
@@ -364,27 +403,230 @@ function AccountPanel({
       {accounts.length === 0 ? <p className="resource-empty">{labels.noAccounts}</p> : null}
       <div className="account-list">
         {accounts.map((account) => (
-          <article className={`resource-row ${account.status}`} key={account.account_id}>
-            <div>
-              <strong>{account.name}</strong>
-              <span>{accountTypeLabel(account.account_type, languageFrom(labels))}</span>
-            </div>
-            <div className="account-amount">
-              <strong>{formatMoney(account.opening_balance, account.currency, languageFrom(labels))}</strong>
-              <span>{account.opening_balance_date}</span>
-            </div>
-            <LifecycleButton
-              archived={account.status === "archived"}
-              labels={labels}
-              onClick={() =>
-                mutate(() =>
-                  setAccountArchived(environment, account.account_id, account.status === "active"),
-                )
-              }
-            />
-          </article>
+          <AccountRow
+            account={account}
+            environment={environment}
+            key={account.account_id}
+            labels={labels}
+            mutate={mutate}
+          />
         ))}
       </div>
+    </div>
+  );
+}
+
+function AccountRow({
+  account,
+  environment,
+  labels,
+  mutate,
+}: {
+  account: Account;
+  environment: Environment;
+  labels: Labels;
+  mutate: Mutate;
+}) {
+  const language = languageFrom(labels);
+  const isValuation = account.account_type === "investment" || account.account_type === "value_based";
+  const [snapshots, setSnapshots] = useState<AccountSnapshot[]>([]);
+  const [expanded, setExpanded] = useState(false);
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [amount, setAmount] = useState("");
+  const [notes, setNotes] = useState("");
+  const [working, setWorking] = useState(false);
+
+  const loadSnapshots = () =>
+    getAccountSnapshots(environment, account.account_id).then(setSnapshots);
+
+  useEffect(() => {
+    let active = true;
+    getAccountSnapshots(environment, account.account_id)
+      .then((items) => {
+        if (active) setSnapshots(items);
+      })
+      .catch(() => {
+        if (active) setSnapshots([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [account.account_id, environment]);
+
+  const latest = snapshots[0];
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    setWorking(true);
+    void mutate(() =>
+      createAccountSnapshot(environment, account.account_id, {
+        valuation_date: date,
+        reported_balance: amount,
+        notes: notes || null,
+      }),
+    )
+      .then(() => loadSnapshots())
+      .then(() => {
+        setAmount("");
+        setNotes("");
+      })
+      .catch(() => undefined)
+      .finally(() => setWorking(false));
+  };
+
+  return (
+    <article className={`account-card ${account.status}`}>
+      <div className="resource-row account-summary">
+        <div>
+          <strong>{account.name}</strong>
+          <span>{accountTypeLabel(account.account_type, language)}</span>
+        </div>
+        <div className="account-amount">
+          <strong>
+            {formatMoney(
+              latest?.reported_balance ?? account.opening_balance,
+              account.currency,
+              language,
+            )}
+          </strong>
+          <span>
+            {latest
+              ? `${isValuation ? labels.currentValue : labels.reconciledBalance} · ${latest.valuation_date}`
+              : `${labels.openingBalanceLabel} · ${account.opening_balance_date}`}
+          </span>
+        </div>
+        {account.status === "active" ? (
+          <button
+            aria-expanded={expanded}
+            className="secondary-button snapshot-toggle"
+            onClick={() => setExpanded((value) => !value)}
+            type="button"
+          >
+            {isValuation ? labels.registerValue : labels.registerBalance}
+          </button>
+        ) : null}
+        <LifecycleButton
+          archived={account.status === "archived"}
+          labels={labels}
+          onClick={() =>
+            mutate(() =>
+              setAccountArchived(environment, account.account_id, account.status === "active"),
+            )
+          }
+        />
+      </div>
+      {expanded ? (
+        <div className="snapshot-workspace">
+          <form className="snapshot-form" onSubmit={submit}>
+            <p>{labels.snapshotHelp}</p>
+            <label>
+              {labels.balanceDate}
+              <input required type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+            </label>
+            <label>
+              {labels.amount} ({account.currency})
+              <input
+                inputMode="decimal"
+                required
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+              />
+            </label>
+            <label>
+              {labels.noteOptional}
+              <input value={notes} onChange={(event) => setNotes(event.target.value)} />
+            </label>
+            <button className="primary-button" disabled={working} type="submit">
+              {isValuation ? labels.saveValue : labels.saveBalance}
+            </button>
+          </form>
+          <SnapshotHistory
+            account={account}
+            isValuation={isValuation}
+            labels={labels}
+            snapshots={snapshots}
+          />
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function SnapshotHistory({
+  account,
+  isValuation,
+  labels,
+  snapshots,
+}: {
+  account: Account;
+  isValuation: boolean;
+  labels: Labels;
+  snapshots: AccountSnapshot[];
+}) {
+  const language = languageFrom(labels);
+  const chronological = [...snapshots].reverse();
+  const values = chronological.map((item) => Number(item.reported_balance));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const points = chronological
+    .map((item, index) => {
+      const x = chronological.length === 1 ? 50 : (index / (chronological.length - 1)) * 100;
+      const y = max === min ? 24 : 44 - ((Number(item.reported_balance) - min) / (max - min)) * 40;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <div className="snapshot-history">
+      <h4>{isValuation ? labels.valueHistory : labels.balanceHistory}</h4>
+      {snapshots.length === 0 ? <p className="resource-empty">{labels.noSnapshots}</p> : null}
+      {snapshots.length > 0 ? (
+        <>
+          {snapshots.length > 1 ? (
+            <svg
+              aria-hidden="true"
+              className="snapshot-chart"
+              preserveAspectRatio="none"
+              viewBox="0 0 100 48"
+            >
+              <polyline fill="none" points={points} vectorEffect="non-scaling-stroke" />
+            </svg>
+          ) : null}
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>{labels.balanceDate}</th>
+                  <th>{isValuation ? labels.currentValue : labels.reconciledBalance}</th>
+                  {!isValuation ? <th>{labels.calculatedBalance}</th> : null}
+                  {!isValuation ? <th>{labels.difference}</th> : null}
+                </tr>
+              </thead>
+              <tbody>
+                {snapshots.map((snapshot) => (
+                  <tr key={snapshot.account_snapshot_id}>
+                    <td>{snapshot.valuation_date}</td>
+                    <td>{formatMoney(snapshot.reported_balance, account.currency, language)}</td>
+                    {!isValuation ? (
+                      <td>
+                        {snapshot.calculated_balance === null
+                          ? labels.unavailable
+                          : formatMoney(snapshot.calculated_balance, account.currency, language)}
+                      </td>
+                    ) : null}
+                    {!isValuation ? (
+                      <td>
+                        {snapshot.difference === null
+                          ? labels.unavailable
+                          : formatMoney(snapshot.difference, account.currency, language)}
+                      </td>
+                    ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

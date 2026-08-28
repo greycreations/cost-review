@@ -28,7 +28,7 @@ let analysisData: object;
 const account = (
   accountId: number,
   name: string,
-  accountType: "current" | "savings" | "credit_card" = "current",
+  accountType: "current" | "savings" | "credit_card" | "investment" = "current",
 ) => ({
   account_id: accountId,
   name,
@@ -62,7 +62,7 @@ describe("App", () => {
     vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
     vi.stubGlobal(
       "fetch",
-      vi.fn((input: RequestInfo | URL) => {
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
         const path = input.toString();
         const environment = path.includes("/test/") ? "test" : "production";
         let body: object;
@@ -76,6 +76,28 @@ describe("App", () => {
           };
         } else if (path.includes("/accounts?")) {
           body = { items: accountItems, total: accountItems.length, limit: 50, offset: 0 };
+        } else if (/\/accounts\/\d+\/snapshots$/.test(path) && init?.method === "POST") {
+          body = {
+            account_snapshot_id: 1,
+            account_id: 1,
+            valuation_date: "2026-08-28",
+            reported_balance: "125000.0000",
+            currency: "SEK",
+            converted_balance: "125000.0000",
+            base_currency: "SEK",
+            fx_rate: "1.0000000000",
+            fx_rate_status: "not_required",
+            calculated_balance: "0.0000",
+            difference: "125000.0000",
+            calculation_status: "complete",
+            notes: null,
+            status: "active",
+            archived_at: null,
+            created_at: "2026-08-28T00:00:00Z",
+            updated_at: "2026-08-28T00:00:00Z",
+          };
+        } else if (/\/accounts\/\d+\/snapshots$/.test(path)) {
+          body = [];
         } else if (
           path.includes("/categories?") ||
           path.includes("/providers?") ||
@@ -241,6 +263,32 @@ describe("App", () => {
       source_amount: "450",
       destination_amount: "450",
     });
+  });
+
+  it("records an investment value without changing the opening balance", async () => {
+    accountItems = [account(1, "Investment account", "investment")];
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/Your finances ·/);
+
+    await user.click(screen.getByRole("link", { name: "Accounts" }));
+    await user.click(await screen.findByRole("button", { name: "Record current value" }));
+    await user.clear(screen.getByLabelText("Date"));
+    await user.type(screen.getByLabelText("Date"), "2026-08-28");
+    await user.type(screen.getByLabelText("Amount (SEK)"), "125000");
+    await user.click(screen.getByRole("button", { name: "Save value" }));
+
+    await waitFor(() => {
+      const snapshotCall = vi.mocked(fetch).mock.calls.find(([input, init]) =>
+        input.toString().endsWith("/accounts/1/snapshots") && init?.method === "POST",
+      );
+      expect(snapshotCall).toBeDefined();
+      expect(JSON.parse(String(snapshotCall?.[1]?.body))).toMatchObject({
+        valuation_date: "2026-08-28",
+        reported_balance: "125000",
+      });
+    });
+    expect(screen.getByText("Opening balance · 2026-08-01")).toBeInTheDocument();
   });
 
   it("switches to the isolated Demo/Test context with a persistent warning", async () => {
