@@ -1,21 +1,27 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
     Integer,
     MetaData,
+    Numeric,
     SmallInteger,
     String,
+    Text,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -46,6 +52,11 @@ class TimestampMixin:
     )
 
 
+class ArchiveMixin:
+    status: Mapped[str] = mapped_column(String(16), default="active", server_default="active")
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class EnvironmentKind(StrEnum):
     PRODUCTION = "production"
     TEST = "test"
@@ -72,6 +83,27 @@ class NumberFormat(StrEnum):
     SPACE_COMMA = "space-comma"
     COMMA_DOT = "comma-dot"
     DOT_COMMA = "dot-comma"
+
+
+class LifecycleStatus(StrEnum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class AccountType(StrEnum):
+    CURRENT = "current"
+    SAVINGS = "savings"
+    CREDIT_CARD = "credit_card"
+    INVESTMENT = "investment"
+    LOAN_DEBT = "loan_debt"
+    VALUE_BASED = "value_based"
+    CASH = "cash"
+    OTHER = "other"
+
+
+class CategoryKind(StrEnum):
+    EXPENSE = "expense"
+    INCOME = "income"
 
 
 class EnvironmentMetadata(Base):
@@ -167,3 +199,197 @@ class Session(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="sessions")
+
+
+class Account(ArchiveMixin, TimestampMixin, Base):
+    __tablename__ = "accounts"
+    __table_args__ = (
+        CheckConstraint(
+            "account_type IN ('current', 'savings', 'credit_card', 'investment', "
+            "'loan_debt', 'value_based', 'cash', 'other')",
+            name="account_type_allowed",
+        ),
+        CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency_iso_shape"),
+        CheckConstraint(
+            "interest_rate IS NULL OR interest_rate BETWEEN -100 AND 1000",
+            name="interest_rate_reasonable",
+        ),
+        CheckConstraint(
+            "lock_end_date IS NULL OR lock_start_date IS NOT NULL",
+            name="lock_end_requires_start",
+        ),
+        CheckConstraint(
+            "lock_end_date IS NULL OR lock_end_date >= lock_start_date",
+            name="lock_dates_ordered",
+        ),
+        CheckConstraint("status IN ('active', 'archived')", name="status_allowed"),
+        Index("ix_accounts_normalized_name", "normalized_name"),
+        Index("ix_accounts_status", "status"),
+    )
+
+    account_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(120))
+    normalized_name: Mapped[str] = mapped_column(String(240))
+    account_type: Mapped[str] = mapped_column(String(24))
+    opening_balance: Mapped[Decimal] = mapped_column(
+        Numeric(20, 4), default=Decimal("0"), server_default="0"
+    )
+    opening_balance_date: Mapped[date] = mapped_column(Date)
+    currency: Mapped[str] = mapped_column(String(3))
+    interest_rate: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    lock_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    lock_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class Category(ArchiveMixin, TimestampMixin, Base):
+    __tablename__ = "categories"
+    __table_args__ = (
+        CheckConstraint("category_kind IN ('expense', 'income')", name="kind_allowed"),
+        CheckConstraint(
+            "parent_category_id IS NULL OR parent_category_id <> category_id",
+            name="parent_not_self",
+        ),
+        CheckConstraint("status IN ('active', 'archived')", name="status_allowed"),
+        Index("ix_categories_parent_category_id", "parent_category_id"),
+        Index("ix_categories_normalized_name", "normalized_name"),
+        Index("ix_categories_status", "status"),
+    )
+
+    category_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    parent_category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.category_id", ondelete="RESTRICT"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(String(120))
+    normalized_name: Mapped[str] = mapped_column(String(240))
+    category_kind: Mapped[str] = mapped_column(String(16))
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    parent: Mapped[Category | None] = relationship(
+        "Category", remote_side="Category.category_id", back_populates="children"
+    )
+    children: Mapped[list[Category]] = relationship(back_populates="parent")
+
+
+class CategoryLink(TimestampMixin, Base):
+    __tablename__ = "category_links"
+    __table_args__ = (
+        CheckConstraint("lower_category_id < higher_category_id", name="canonical_pair"),
+        Index(
+            "uq_category_links_pair",
+            "lower_category_id",
+            "higher_category_id",
+            unique=True,
+        ),
+    )
+
+    category_link_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    lower_category_id: Mapped[int] = mapped_column(
+        ForeignKey("categories.category_id", ondelete="CASCADE")
+    )
+    higher_category_id: Mapped[int] = mapped_column(
+        ForeignKey("categories.category_id", ondelete="CASCADE")
+    )
+    label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+
+class Provider(ArchiveMixin, TimestampMixin, Base):
+    __tablename__ = "providers"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'archived')", name="status_allowed"),
+        Index("ix_providers_normalized_name", "normalized_name"),
+        Index("ix_providers_status", "status"),
+    )
+
+    provider_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(160))
+    normalized_name: Mapped[str] = mapped_column(String(320))
+    website: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    aliases: Mapped[list[ProviderAlias]] = relationship(
+        back_populates="provider", cascade="all, delete-orphan"
+    )
+
+
+class ProviderAlias(TimestampMixin, Base):
+    __tablename__ = "provider_aliases"
+    __table_args__ = (
+        Index("uq_provider_aliases_normalized_alias", "normalized_alias", unique=True),
+        Index("ix_provider_aliases_provider_id", "provider_id"),
+    )
+
+    provider_alias_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    provider_id: Mapped[int] = mapped_column(
+        ForeignKey("providers.provider_id", ondelete="CASCADE")
+    )
+    alias: Mapped[str] = mapped_column(String(200))
+    normalized_alias: Mapped[str] = mapped_column(String(400))
+
+    provider: Mapped[Provider] = relationship(back_populates="aliases")
+
+
+class ProviderLink(TimestampMixin, Base):
+    __tablename__ = "provider_links"
+    __table_args__ = (
+        CheckConstraint("lower_provider_id < higher_provider_id", name="canonical_pair"),
+        Index(
+            "uq_provider_links_pair",
+            "lower_provider_id",
+            "higher_provider_id",
+            unique=True,
+        ),
+    )
+
+    provider_link_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    lower_provider_id: Mapped[int] = mapped_column(
+        ForeignKey("providers.provider_id", ondelete="CASCADE")
+    )
+    higher_provider_id: Mapped[int] = mapped_column(
+        ForeignKey("providers.provider_id", ondelete="CASCADE")
+    )
+    label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+
+class Tag(ArchiveMixin, TimestampMixin, Base):
+    __tablename__ = "tags"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'archived')", name="status_allowed"),
+        Index("uq_tags_normalized_name", "normalized_name", unique=True),
+        Index("ix_tags_status", "status"),
+    )
+
+    tag_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(80))
+    normalized_name: Mapped[str] = mapped_column(String(160))
+    color: Mapped[str | None] = mapped_column(String(7), nullable=True)
+
+
+class SharingParty(ArchiveMixin, TimestampMixin, Base):
+    __tablename__ = "sharing_parties"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'archived')", name="status_allowed"),
+        Index("ix_sharing_parties_normalized_name", "normalized_name"),
+        Index("ix_sharing_parties_status", "status"),
+        Index(
+            "uq_sharing_parties_active_self",
+            "is_self",
+            unique=True,
+            postgresql_where=text("is_self AND status = 'active'"),
+        ),
+    )
+
+    sharing_party_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    name: Mapped[str] = mapped_column(String(120))
+    normalized_name: Mapped[str] = mapped_column(String(240))
+    is_self: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)

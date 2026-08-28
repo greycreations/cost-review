@@ -102,6 +102,12 @@ def reset_test_environment(
         raise ApiError(404, "not_found", "Resource not found.")
 
     metadata = get_environment_metadata(db)
+    db.execute(
+        text(
+            "TRUNCATE TABLE category_links, provider_links, provider_aliases, "
+            "accounts, categories, providers, tags, sharing_parties RESTART IDENTITY CASCADE"
+        )
+    )
     db.execute(delete(Session).where(Session.session_token_hash != current_session_hash))
     app_settings = db.scalar(select(AppSettings))
     if app_settings is not None:

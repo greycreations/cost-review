@@ -15,6 +15,7 @@ import {
   type Language,
   type Session,
 } from "./api";
+import { LedgerWorkspace } from "./LedgerWorkspace";
 
 type LoadState =
   | { kind: "loading" }
@@ -51,12 +52,12 @@ const copy = {
     create: "Skapa och fortsätt",
     signIn: "Logga in",
     overview: "Översikt",
+    accounts: "Konton",
     settings: "Inställningar",
     attention: "Uppmärksamhet",
-    foundationReady: "Plattformsgrunden är aktiv",
+    foundationReady: "Ledger-grunden är aktiv",
     foundationLead:
-      "PostgreSQL, autentisering och den separata datamiljön är anslutna. Ledger byggs i nästa fas.",
-    noFinancialData: "Ingen ekonomisk data har skapats i Sprint 1.",
+      "Konton och återanvändbar masterdata lagras nu i PostgreSQL med samma hårda dataseparation.",
     sessionAs: "Inloggad som",
     signOut: "Logga ut",
     save: "Spara inställningar",
@@ -88,12 +89,12 @@ const copy = {
     create: "Create and continue",
     signIn: "Sign in",
     overview: "Overview",
+    accounts: "Accounts",
     settings: "Settings",
     attention: "Attention",
-    foundationReady: "Platform foundation is active",
+    foundationReady: "Ledger foundation is active",
     foundationLead:
-      "PostgreSQL, authentication, and the separate data plane are connected. The ledger follows next.",
-    noFinancialData: "No economic data was created in Sprint 1.",
+      "Accounts and reusable master data now live in PostgreSQL behind the same hard data boundary.",
     sessionAs: "Signed in as",
     signOut: "Sign out",
     save: "Save settings",
@@ -495,6 +496,7 @@ function ApplicationShell({
           <a className="active" href="#overview" aria-current="page">
             {labels.overview}
           </a>
+          <a href="#accounts">{labels.accounts}</a>
           <a href="#settings">{labels.settings}</a>
           <a href="#attention">{labels.attention}</a>
         </nav>
@@ -508,7 +510,7 @@ function ApplicationShell({
       <main id="overview">
         <section className="hero">
           <div>
-            <p className="eyebrow">Sprint 1 · Platform Foundation</p>
+            <p className="eyebrow">Release 1 · Core MVP</p>
             <h1>{labels.foundationReady}</h1>
             <p className="hero-lead">{labels.foundationLead}</p>
           </div>
@@ -544,16 +546,14 @@ function ApplicationShell({
             </button>
             <FormError message={logoutError} />
           </section>
-          <section className="panel wide empty-ledger">
-            <span className="empty-icon" aria-hidden="true">
-              0
-            </span>
-            <div>
-              <h2>{labels.noFinancialData}</h2>
-              <p>{labels.foundationLead}</p>
-            </div>
-          </section>
         </div>
+
+        <LedgerWorkspace
+          baseCurrency={session.settings.base_currency}
+          environment={environment}
+          key={environment}
+          language={session.settings.language}
+        />
 
         <SettingsPanel
           environment={environment}

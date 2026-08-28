@@ -30,15 +30,26 @@ describe("App", () => {
       vi.fn((input: RequestInfo | URL) => {
         const path = input.toString();
         const environment = path.includes("/test/") ? "test" : "production";
-        const body = path.endsWith("/setup/status")
-          ? {
-              environment,
-              label: environment === "test" ? "Demo/Test" : "Production",
-              data_plane_id: `${environment}-plane`,
-              reset_generation: 0,
-              setup_required: false,
-            }
-          : session(environment);
+        let body: object;
+        if (path.endsWith("/setup/status")) {
+          body = {
+            environment,
+            label: environment === "test" ? "Demo/Test" : "Production",
+            data_plane_id: `${environment}-plane`,
+            reset_generation: 0,
+            setup_required: false,
+          };
+        } else if (
+          path.includes("/accounts?") ||
+          path.includes("/categories?") ||
+          path.includes("/providers?") ||
+          path.includes("/tags?") ||
+          path.includes("/sharing-parties?")
+        ) {
+          body = { items: [], total: 0, limit: 50, offset: 0 };
+        } else {
+          body = session(environment);
+        }
         return Promise.resolve(
           new Response(JSON.stringify(body), {
             status: 200,
@@ -54,18 +65,18 @@ describe("App", () => {
     vi.unstubAllGlobals();
   });
 
-  it("loads the authenticated Production foundation without financial sample data", async () => {
+  it("loads the authenticated Production ledger without financial sample data", async () => {
     render(<App />);
 
-    expect(await screen.findByText("Platform foundation is active")).toBeInTheDocument();
-    expect(screen.getByText("No economic data was created in Sprint 1.")).toBeInTheDocument();
+    expect(await screen.findByText("Ledger foundation is active")).toBeInTheDocument();
+    expect(await screen.findByText("No accounts yet.")).toBeInTheDocument();
     expect(screen.queryByText("DEMO / TEST")).not.toBeInTheDocument();
   });
 
   it("switches to the isolated Demo/Test context with a persistent warning", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByText("Platform foundation is active");
+    await screen.findByText("Ledger foundation is active");
 
     await user.click(screen.getByRole("button", { name: "Demo/Test" }));
 
