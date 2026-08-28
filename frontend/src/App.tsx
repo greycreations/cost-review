@@ -16,6 +16,8 @@ import {
   type Session,
 } from "./api";
 import { LedgerWorkspace } from "./LedgerWorkspace";
+import { OverviewWorkspace } from "./OverviewWorkspace";
+import { TransactionWorkspace } from "./TransactionWorkspace";
 
 type LoadState =
   | { kind: "loading" }
@@ -52,6 +54,7 @@ const copy = {
     create: "Skapa och fortsätt",
     signIn: "Logga in",
     overview: "Översikt",
+    transactions: "Transaktioner",
     accounts: "Konton",
     settings: "Inställningar",
     attention: "Uppmärksamhet",
@@ -89,6 +92,7 @@ const copy = {
     create: "Create and continue",
     signIn: "Sign in",
     overview: "Overview",
+    transactions: "Transactions",
     accounts: "Accounts",
     settings: "Settings",
     attention: "Attention",
@@ -479,6 +483,19 @@ function ApplicationShell({
   onLogout: () => Promise<void>;
 }) {
   const [logoutError, setLogoutError] = useState<string | null>(null);
+  const [view, setView] = useState<AppView>(() => viewFromHash(window.location.hash));
+
+  useEffect(() => {
+    const readHash = () => setView(viewFromHash(window.location.hash));
+    window.addEventListener("hashchange", readHash);
+    return () => window.removeEventListener("hashchange", readHash);
+  }, []);
+
+  const navigate = (nextView: AppView) => {
+    window.location.hash = nextView;
+    setView(nextView);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   return (
     <div className={`app-shell environment-${environment}`}>
@@ -489,16 +506,43 @@ function ApplicationShell({
         </div>
       ) : null}
       <header className="topbar">
-        <a className="brand" href="#overview" aria-label="Cost Review overview">
+        <a
+          className="brand"
+          href="#overview"
+          aria-label="Cost Review overview"
+          onClick={() => setView("overview")}
+        >
           Cost Review
         </a>
         <nav className="primary-nav" aria-label="Primary navigation">
-          <a className="active" href="#overview" aria-current="page">
+          <a
+            className={view === "overview" ? "active" : undefined}
+            href="#overview"
+            aria-current={view === "overview" ? "page" : undefined}
+          >
             {labels.overview}
           </a>
-          <a href="#accounts">{labels.accounts}</a>
-          <a href="#settings">{labels.settings}</a>
-          <a href="#attention">{labels.attention}</a>
+          <a
+            className={view === "transactions" ? "active" : undefined}
+            href="#transactions"
+            aria-current={view === "transactions" ? "page" : undefined}
+          >
+            {labels.transactions}
+          </a>
+          <a
+            className={view === "accounts" ? "active" : undefined}
+            href="#accounts"
+            aria-current={view === "accounts" ? "page" : undefined}
+          >
+            {labels.accounts}
+          </a>
+          <a
+            className={view === "settings" ? "active" : undefined}
+            href="#settings"
+            aria-current={view === "settings" ? "page" : undefined}
+          >
+            {labels.settings}
+          </a>
         </nav>
         <EnvironmentSwitcher
           environment={environment}
@@ -507,62 +551,91 @@ function ApplicationShell({
         />
       </header>
 
-      <main id="overview">
-        <section className="hero">
-          <div>
-            <p className="eyebrow">Release 1 · Core MVP</p>
-            <h1>{labels.foundationReady}</h1>
-            <p className="hero-lead">{labels.foundationLead}</p>
+      <main>
+        {view === "overview" ? (
+          <OverviewWorkspace
+            environment={environment}
+            language={session.settings.language}
+            onNavigateAccounts={() => navigate("accounts")}
+            onNavigateTransactions={() => navigate("transactions")}
+          />
+        ) : null}
+        {view === "transactions" ? (
+          <TransactionWorkspace
+            baseCurrency={session.settings.base_currency}
+            environment={environment}
+            language={session.settings.language}
+            onNavigateAccounts={() => navigate("accounts")}
+          />
+        ) : null}
+        {view === "accounts" ? (
+          <LedgerWorkspace
+            baseCurrency={session.settings.base_currency}
+            environment={environment}
+            key={`${environment}-accounts`}
+            language={session.settings.language}
+            view="accounts"
+          />
+        ) : null}
+        {view === "settings" ? (
+          <div className="settings-view">
+            <div className="workspace-heading compact-heading">
+              <div>
+                <p className="eyebrow">Cost Review</p>
+                <h1>{labels.settings}</h1>
+                <p>{labels.foundationLead}</p>
+              </div>
+              <span className={`environment-badge ${environment}`}>
+                {environment === "test" ? labels.test : labels.production}
+              </span>
+            </div>
+            <SettingsPanel
+              environment={environment}
+              labels={labels}
+              session={session}
+              onSession={onSession}
+            />
+            <LedgerWorkspace
+              baseCurrency={session.settings.base_currency}
+              environment={environment}
+              key={`${environment}-master-data`}
+              language={session.settings.language}
+              view="master-data"
+            />
+            <div className="foundation-grid settings-system-grid">
+              <section className="panel">
+                <p className="panel-label">PostgreSQL</p>
+                <h2>{labels.dataPlane}</h2>
+                <code>{session.data_plane_id}</code>
+                <p className="quiet-copy">
+                  {labels.resetGeneration}: {session.reset_generation}
+                </p>
+              </section>
+              <section className="panel">
+                <p className="panel-label">Session</p>
+                <h2>{labels.sessionAs}</h2>
+                <p className="session-user">{session.username}</p>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => {
+                    setLogoutError(null);
+                    void onLogout().catch((error) =>
+                      setLogoutError(
+                        error instanceof Error ? error.message : "Logout failed.",
+                      ),
+                    );
+                  }}
+                >
+                  {labels.signOut}
+                </button>
+                <FormError message={logoutError} />
+              </section>
+            </div>
+            {environment === "test" ? (
+              <TestResetPanel labels={labels} session={session} onSession={onSession} />
+            ) : null}
           </div>
-          <span className={`environment-badge ${environment}`}>
-            {environment === "test" ? labels.test : labels.production}
-          </span>
-        </section>
-
-        <div className="foundation-grid">
-          <section className="panel">
-            <p className="panel-label">PostgreSQL</p>
-            <h2>{labels.dataPlane}</h2>
-            <code>{session.data_plane_id}</code>
-            <p className="quiet-copy">
-              {labels.resetGeneration}: {session.reset_generation}
-            </p>
-          </section>
-          <section className="panel">
-            <p className="panel-label">Session</p>
-            <h2>{labels.sessionAs}</h2>
-            <p className="session-user">{session.username}</p>
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => {
-                setLogoutError(null);
-                void onLogout().catch((error) =>
-                  setLogoutError(error instanceof Error ? error.message : "Logout failed."),
-                );
-              }}
-            >
-              {labels.signOut}
-            </button>
-            <FormError message={logoutError} />
-          </section>
-        </div>
-
-        <LedgerWorkspace
-          baseCurrency={session.settings.base_currency}
-          environment={environment}
-          key={environment}
-          language={session.settings.language}
-        />
-
-        <SettingsPanel
-          environment={environment}
-          labels={labels}
-          session={session}
-          onSession={onSession}
-        />
-        {environment === "test" ? (
-          <TestResetPanel labels={labels} session={session} onSession={onSession} />
         ) : null}
       </main>
 
@@ -572,6 +645,15 @@ function ApplicationShell({
       </footer>
     </div>
   );
+}
+
+type AppView = "overview" | "transactions" | "accounts" | "settings";
+
+function viewFromHash(hash: string): AppView {
+  const value = hash.replace("#", "");
+  return value === "transactions" || value === "accounts" || value === "settings"
+    ? value
+    : "overview";
 }
 
 function SettingsPanel({

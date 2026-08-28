@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Annotated
 
 from pydantic import (
@@ -13,7 +14,14 @@ from pydantic import (
     model_validator,
 )
 
-from app.models import AccountType, CategoryKind, LifecycleStatus
+from app.models import (
+    AccountType,
+    CategoryKind,
+    FxRateStatus,
+    LifecycleStatus,
+    TransactionKind,
+    TransactionSource,
+)
 
 Name120 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 Name160 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
@@ -22,6 +30,14 @@ Notes = Annotated[str, StringConstraints(strip_whitespace=True, max_length=4000)
 CurrencyCode = Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 HexColor = Annotated[str, StringConstraints(pattern=r"^#[0-9A-Fa-f]{6}$")]
 TagName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
+Description = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=240)
+]
+
+
+class ManualTransactionKind(StrEnum):
+    EXPENSE = "expense"
+    INCOME = "income"
 
 
 class ApiModel(BaseModel):
@@ -229,6 +245,111 @@ class SharingPartyRead(ArchivedApiModel):
     notes: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class TransactionCreate(BaseModel):
+    account_id: int = Field(gt=0)
+    provider_id: int | None = Field(default=None, gt=0)
+    transaction_kind: ManualTransactionKind
+    transaction_date: date
+    posting_date: date
+    description: Description
+    original_amount: Decimal = Field(gt=0, max_digits=20, decimal_places=4)
+    original_currency: CurrencyCode
+    converted_amount: Decimal | None = Field(
+        default=None, gt=0, max_digits=20, decimal_places=4
+    )
+    fx_rate: Decimal | None = Field(default=None, gt=0, max_digits=20, decimal_places=10)
+    category_id: int | None = Field(default=None, gt=0)
+    tag_ids: list[int] = Field(default_factory=list, max_length=50)
+    is_base_cost: bool = False
+    source_reference: str | None = Field(default=None, max_length=240)
+    notes: Notes | None = None
+
+    @field_validator("original_currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        return value.strip().upper()
+
+    @field_validator("tag_ids")
+    @classmethod
+    def unique_tag_ids(cls, value: list[int]) -> list[int]:
+        if any(tag_id <= 0 for tag_id in value):
+            raise ValueError("tag identifiers must be positive")
+        if len(set(value)) != len(value):
+            raise ValueError("tag identifiers must be unique")
+        return value
+
+
+class TransactionUpdate(BaseModel):
+    account_id: int | None = Field(default=None, gt=0)
+    provider_id: int | None = Field(default=None, gt=0)
+    transaction_kind: ManualTransactionKind | None = None
+    transaction_date: date | None = None
+    posting_date: date | None = None
+    description: Description | None = None
+    original_amount: Decimal | None = Field(default=None, gt=0, max_digits=20, decimal_places=4)
+    original_currency: CurrencyCode | None = None
+    converted_amount: Decimal | None = Field(
+        default=None, gt=0, max_digits=20, decimal_places=4
+    )
+    fx_rate: Decimal | None = Field(default=None, gt=0, max_digits=20, decimal_places=10)
+    category_id: int | None = Field(default=None, gt=0)
+    tag_ids: list[int] | None = Field(default=None, max_length=50)
+    is_base_cost: bool | None = None
+    source_reference: str | None = Field(default=None, max_length=240)
+    notes: Notes | None = None
+
+    @field_validator("original_currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value: str | None) -> str | None:
+        return value.strip().upper() if value is not None else None
+
+    @field_validator("tag_ids")
+    @classmethod
+    def unique_tag_ids(cls, value: list[int] | None) -> list[int] | None:
+        if value is None:
+            return None
+        if any(tag_id <= 0 for tag_id in value):
+            raise ValueError("tag identifiers must be positive")
+        if len(set(value)) != len(value):
+            raise ValueError("tag identifiers must be unique")
+        return value
+
+
+class TransactionRead(ArchivedApiModel):
+    transaction_id: int
+    account_id: int
+    provider_id: int | None
+    transaction_kind: TransactionKind
+    transaction_date: date
+    posting_date: date
+    description: str
+    original_amount: Decimal
+    original_currency: str
+    converted_amount: Decimal | None
+    base_currency: str
+    fx_rate: Decimal | None
+    fx_rate_status: FxRateStatus
+    source_type: TransactionSource
+    source_reference: str | None
+    notes: str | None
+    category_id: int | None
+    tag_ids: list[int]
+    is_base_cost: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class LedgerSummaryRead(BaseModel):
+    date_from: date
+    date_to: date
+    base_currency: str
+    income: Decimal
+    expenses: Decimal
+    net_cash_flow: Decimal
+    transaction_count: int
+    missing_fx_count: int
 
 
 def _validate_lock_dates(start: date | None, end: date | None) -> None:

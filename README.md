@@ -8,8 +8,9 @@ and household economics. Product behavior is defined by
 Sprint 1 established the Platform Foundation: PostgreSQL, migrations, first-run
 setup, local authentication, independent locale settings, reverse-proxy safety,
 and a persistent hard boundary between Production and Demo/Test. The current
-Sprint 2 slice adds accounts and reusable ledger master data without weakening
-that boundary.
+Sprint 2 slice adds accounts, reusable ledger master data, manual income and
+expense entry, historical FX persistence, and real period summaries without
+weakening that boundary.
 
 ## Architecture
 
@@ -179,11 +180,12 @@ GitHub Actions runs three gates:
 - frontend lint, component tests, and production build;
 - complete Compose startup plus an HTTP isolation scenario.
 
-The isolation scenario creates independent Production/Test users and accounts,
-proves ordinary Ledger writes cannot cross the boundary, resets Demo/Test, and
-proves Production identity, settings, and accounts are unchanged. It also proves
-the Test API cannot resolve or connect to the Production database network and
-that the reset route is absent in Production.
+The isolation scenario creates independent Production/Test users, accounts,
+and transactions, proves ordinary Ledger writes cannot cross the boundary,
+resets Demo/Test, and proves Production identity, settings, accounts, and
+transactions are unchanged. It also proves the Test API cannot resolve or
+connect to the Production database network and that the reset route is absent
+in Production.
 
 ## Current API
 
@@ -207,12 +209,22 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET/POST/PATCH/DELETE | `/api/v1/providers/.../aliases`, `/api/v1/provider-aliases/...` | Canonical provider aliases |
 | GET/POST/DELETE | `/api/v1/provider-links`, `/api/v1/category-links` | Non-destructive analytical relationships |
 | GET/POST/PATCH | `/api/v1/tags[...]`, `/api/v1/sharing-parties[...]` | Reusable tags and sharing-party register |
+| GET/POST/PATCH | `/api/v1/transactions[...]` | Manual income/expense CRUD, filtering and archive/restore |
+| GET | `/api/v1/transactions/summary` | Canonical income, expense and cash-flow totals for a date range |
 
 Ledger list endpoints return `{ items, total, limit, offset }`, support bounded
 pagination, and hide archived master records unless `include_archived=true` is
 requested. Master records use explicit archive/restore operations; permanent
 deletion, Recycle Bin, audit, tag merge, and percentage allocations remain in
 their later Ledger slices. See `docs/adr/0002-ledger-master-data-invariants.md`.
+
+Transactions store an immutable economic date separately from posting and
+system timestamps. Original amount/currency and the converted base-currency
+amount/rate are persisted together. A foreign-currency entry may be saved when
+the historical rate is unknown, but it is marked as missing FX and excluded
+from canonical period totals until resolved. Transfers, refunds,
+reimbursements, split editing, and calculated balances remain later slices and
+are intentionally not represented as ordinary income or expense in the UI.
 
 ## Source of truth
 

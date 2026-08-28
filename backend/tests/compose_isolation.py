@@ -88,18 +88,47 @@ def main() -> int:
         "opening_balance_date": "2026-08-28",
         "currency": "SEK",
     }
-    call(
+    _, prod_account = call(
         prod,
         f"{prod_base}/accounts",
         "POST",
         {**account_payload, "name": "Production isolation account"},
         prod_csrf,
     )
-    call(
+    _, test_account = call(
         test,
         f"{test_base}/accounts",
         "POST",
         {**account_payload, "name": "Test isolation account"},
+        test_csrf,
+    )
+    transaction_payload = {
+        "transaction_kind": "expense",
+        "transaction_date": "2026-08-28",
+        "posting_date": "2026-08-28",
+        "original_amount": "125.50",
+        "original_currency": "SEK",
+    }
+    call(
+        prod,
+        f"{prod_base}/transactions",
+        "POST",
+        {
+            **transaction_payload,
+            "account_id": prod_account["account_id"],
+            "description": "Production isolation transaction",
+        },
+        prod_csrf,
+    )
+    call(
+        test,
+        f"{test_base}/transactions",
+        "POST",
+        {
+            **transaction_payload,
+            "account_id": test_account["account_id"],
+            "description": "Test isolation transaction",
+        },
         test_csrf,
     )
     _, prod_accounts_before = call(prod, f"{prod_base}/accounts")
@@ -120,6 +149,24 @@ def main() -> int:
         account["name"] == "Production isolation account"
         for account in test_accounts_before["items"]
     )
+    _, prod_transactions_before = call(prod, f"{prod_base}/transactions")
+    _, test_transactions_before = call(test, f"{test_base}/transactions")
+    assert any(
+        item["description"] == "Production isolation transaction"
+        for item in prod_transactions_before["items"]
+    )
+    assert not any(
+        item["description"] == "Test isolation transaction"
+        for item in prod_transactions_before["items"]
+    )
+    assert any(
+        item["description"] == "Test isolation transaction"
+        for item in test_transactions_before["items"]
+    )
+    assert not any(
+        item["description"] == "Production isolation transaction"
+        for item in test_transactions_before["items"]
+    )
     _, prod_before = call(prod, f"{prod_base}/auth/session")
     _, prod_environment_before = call(prod, f"{prod_base}/environment")
 
@@ -134,10 +181,17 @@ def main() -> int:
 
     _, test_accounts_after = call(test, f"{test_base}/accounts")
     _, prod_accounts_after = call(prod, f"{prod_base}/accounts")
+    _, test_transactions_after = call(test, f"{test_base}/transactions")
+    _, prod_transactions_after = call(prod, f"{prod_base}/transactions")
     assert test_accounts_after["total"] == 0
+    assert test_transactions_after["total"] == 0
     assert any(
         account["name"] == "Production isolation account"
         for account in prod_accounts_after["items"]
+    )
+    assert any(
+        item["description"] == "Production isolation transaction"
+        for item in prod_transactions_after["items"]
     )
 
     _, prod_after = call(prod, f"{prod_base}/auth/session")
