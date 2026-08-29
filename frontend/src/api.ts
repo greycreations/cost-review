@@ -66,6 +66,26 @@ export type Account = {
   updated_at: string;
 };
 
+export type AccountSnapshot = {
+  account_snapshot_id: number;
+  account_id: number;
+  valuation_date: string;
+  reported_balance: string;
+  currency: string;
+  converted_balance: string | null;
+  base_currency: string;
+  fx_rate: string | null;
+  fx_rate_status: "not_required" | "manual" | "automatic" | "missing";
+  calculated_balance: string | null;
+  difference: string | null;
+  calculation_status: "complete" | "incomplete";
+  notes: string | null;
+  status: LifecycleStatus;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Category = {
   category_id: number;
   parent_category_id: number | null;
@@ -391,6 +411,26 @@ export function setAccountArchived(
     environment,
     `/accounts/${accountId}/${archived ? "archive" : "restore"}`,
     { method: "POST" },
+    true,
+  );
+}
+
+export function getAccountSnapshots(
+  environment: Environment,
+  accountId: number,
+): Promise<AccountSnapshot[]> {
+  return request(environment, `/accounts/${accountId}/snapshots`);
+}
+
+export function createAccountSnapshot(
+  environment: Environment,
+  accountId: number,
+  payload: { valuation_date: string; reported_balance: string; notes?: string | null },
+): Promise<AccountSnapshot> {
+  return request(
+    environment,
+    `/accounts/${accountId}/snapshots`,
+    { method: "POST", body: JSON.stringify(payload) },
     true,
   );
 }

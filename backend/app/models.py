@@ -275,6 +275,45 @@ class Account(ArchiveMixin, TimestampMixin, Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class AccountSnapshot(ArchiveMixin, TimestampMixin, Base):
+    __tablename__ = "account_snapshots"
+    __table_args__ = (
+        CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency_iso_shape"),
+        CheckConstraint("base_currency ~ '^[A-Z]{3}$'", name="base_currency_iso_shape"),
+        CheckConstraint(
+            "fx_rate_status IN ('not_required', 'manual', 'automatic', 'missing')",
+            name="fx_rate_status_allowed",
+        ),
+        CheckConstraint(
+            "(fx_rate_status = 'missing' AND converted_balance IS NULL AND fx_rate IS NULL) OR "
+            "(fx_rate_status <> 'missing' AND converted_balance IS NOT NULL AND fx_rate > 0)",
+            name="conversion_complete_or_missing",
+        ),
+        CheckConstraint(
+            "fx_rate_status <> 'not_required' OR "
+            "(currency = base_currency AND fx_rate = 1 "
+            "AND converted_balance = reported_balance)",
+            name="same_currency_conversion_exact",
+        ),
+        CheckConstraint("status IN ('active', 'archived')", name="status_allowed"),
+        Index("uq_account_snapshots_account_date", "account_id", "valuation_date", unique=True),
+        Index("ix_account_snapshots_account_status_date", "account_id", "status", "valuation_date"),
+    )
+
+    account_snapshot_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.account_id", ondelete="RESTRICT"))
+    valuation_date: Mapped[date] = mapped_column(Date)
+    reported_balance: Mapped[Decimal] = mapped_column(Numeric(20, 4))
+    currency: Mapped[str] = mapped_column(String(3))
+    converted_balance: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    base_currency: Mapped[str] = mapped_column(String(3))
+    fx_rate: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), nullable=True)
+    fx_rate_status: Mapped[str] = mapped_column(String(16))
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class Category(ArchiveMixin, TimestampMixin, Base):
     __tablename__ = "categories"
     __table_args__ = (

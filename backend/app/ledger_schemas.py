@@ -118,6 +118,40 @@ class AccountRead(ArchivedApiModel):
     updated_at: datetime
 
 
+class AccountSnapshotCreate(BaseModel):
+    valuation_date: date
+    reported_balance: Decimal = Field(max_digits=20, decimal_places=4)
+    converted_balance: Decimal | None = Field(default=None, max_digits=20, decimal_places=4)
+    fx_rate: Decimal | None = Field(default=None, gt=0, max_digits=20, decimal_places=10)
+    notes: Notes | None = None
+
+
+class AccountSnapshotUpdate(BaseModel):
+    valuation_date: date | None = None
+    reported_balance: Decimal | None = Field(default=None, max_digits=20, decimal_places=4)
+    converted_balance: Decimal | None = Field(default=None, max_digits=20, decimal_places=4)
+    fx_rate: Decimal | None = Field(default=None, gt=0, max_digits=20, decimal_places=10)
+    notes: Notes | None = None
+
+
+class AccountSnapshotRead(ArchivedApiModel):
+    account_snapshot_id: int
+    account_id: int
+    valuation_date: date
+    reported_balance: Decimal
+    currency: str
+    converted_balance: Decimal | None
+    base_currency: str
+    fx_rate: Decimal | None
+    fx_rate_status: FxRateStatus
+    calculated_balance: Decimal | None
+    difference: Decimal | None
+    calculation_status: str
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class CategoryCreate(BaseModel):
     name: Name120
     category_kind: CategoryKind

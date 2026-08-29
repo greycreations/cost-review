@@ -7,11 +7,20 @@ from fastapi import APIRouter, Query, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
+from app.account_snapshot_services import (
+    create_account_snapshot,
+    list_account_snapshots,
+    snapshot_values,
+    update_account_snapshot,
+)
 from app.dependencies import Auth, CsrfAuth, DatabaseSession
 from app.errors import ApiError
 from app.ledger_schemas import (
     AccountCreate,
     AccountRead,
+    AccountSnapshotCreate,
+    AccountSnapshotRead,
+    AccountSnapshotUpdate,
     AccountUpdate,
     CategoryCreate,
     CategoryLinkCreate,
@@ -69,6 +78,7 @@ from app.ledger_services import (
 )
 from app.models import (
     Account,
+    AccountSnapshot,
     Category,
     CategoryLink,
     Provider,
@@ -318,6 +328,60 @@ def archive_account(account_id: int, _: CsrfAuth, db: DatabaseSession) -> Accoun
 @router.post("/accounts/{account_id}/restore", response_model=AccountRead)
 def restore_account(account_id: int, _: CsrfAuth, db: DatabaseSession) -> Account:
     return restore_model(db, get_model(db, Account, account_id, "Account"))
+
+
+@router.get("/accounts/{account_id}/snapshots", response_model=list[AccountSnapshotRead])
+def get_account_snapshots(
+    account_id: int,
+    _: Auth,
+    db: DatabaseSession,
+    include_archived: bool = False,
+) -> list[dict[str, object]]:
+    account = get_model(db, Account, account_id, "Account")
+    return list_account_snapshots(db, account, include_archived=include_archived)
+
+
+@router.post(
+    "/accounts/{account_id}/snapshots", response_model=AccountSnapshotRead, status_code=201
+)
+def post_account_snapshot(
+    account_id: int,
+    payload: AccountSnapshotCreate,
+    auth: CsrfAuth,
+    db: DatabaseSession,
+) -> dict[str, object]:
+    account = get_model(db, Account, account_id, "Account")
+    return create_account_snapshot(db, account, payload, auth.user.settings.base_currency)
+
+
+@router.patch("/account-snapshots/{snapshot_id}", response_model=AccountSnapshotRead)
+def patch_account_snapshot(
+    snapshot_id: int,
+    payload: AccountSnapshotUpdate,
+    _: CsrfAuth,
+    db: DatabaseSession,
+) -> dict[str, object]:
+    model = get_model(db, AccountSnapshot, snapshot_id, "Account snapshot")
+    account = get_model(db, Account, model.account_id, "Account")
+    return update_account_snapshot(db, account, model, payload)
+
+
+@router.post("/account-snapshots/{snapshot_id}/archive", response_model=AccountSnapshotRead)
+def archive_account_snapshot(
+    snapshot_id: int, _: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    model = archive_model(db, get_model(db, AccountSnapshot, snapshot_id, "Account snapshot"))
+    account = get_model(db, Account, model.account_id, "Account")
+    return snapshot_values(db, account, model)
+
+
+@router.post("/account-snapshots/{snapshot_id}/restore", response_model=AccountSnapshotRead)
+def restore_account_snapshot(
+    snapshot_id: int, _: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    model = restore_model(db, get_model(db, AccountSnapshot, snapshot_id, "Account snapshot"))
+    account = get_model(db, Account, model.account_id, "Account")
+    return snapshot_values(db, account, model)
 
 
 @router.get("/categories", response_model=Page[CategoryRead])
