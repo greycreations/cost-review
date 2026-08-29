@@ -16,6 +16,7 @@ import {
   type Session,
 } from "./api";
 import { LedgerWorkspace } from "./LedgerWorkspace";
+import { BudgetWorkspace } from "./BudgetWorkspace";
 import { OverviewWorkspace, type OverviewDrilldown } from "./OverviewWorkspace";
 import {
   TransactionWorkspace,
@@ -59,6 +60,7 @@ const copy = {
     overview: "Översikt",
     transactions: "Transaktioner",
     accounts: "Konton",
+    budget: "Budget",
     settings: "Inställningar",
     attention: "Uppmärksamhet",
     foundationReady: "Ledger-grunden är aktiv",
@@ -97,6 +99,7 @@ const copy = {
     overview: "Overview",
     transactions: "Transactions",
     accounts: "Accounts",
+    budget: "Budget",
     settings: "Settings",
     attention: "Attention",
     foundationReady: "Ledger foundation is active",
@@ -542,6 +545,13 @@ function ApplicationShell({
             {labels.accounts}
           </a>
           <a
+            className={view === "budget" ? "active" : undefined}
+            href="#budget"
+            aria-current={view === "budget" ? "page" : undefined}
+          >
+            {labels.budget}
+          </a>
+          <a
             className={view === "settings" ? "active" : undefined}
             href="#settings"
             aria-current={view === "settings" ? "page" : undefined}
@@ -585,6 +595,14 @@ function ApplicationShell({
             key={`${environment}-accounts`}
             language={session.settings.language}
             view="accounts"
+          />
+        ) : null}
+        {view === "budget" ? (
+          <BudgetWorkspace
+            baseCurrency={session.settings.base_currency}
+            environment={environment}
+            key={`${environment}-budget`}
+            language={session.settings.language}
           />
         ) : null}
         {view === "settings" ? (
@@ -657,11 +675,11 @@ function ApplicationShell({
   );
 }
 
-type AppView = "overview" | "transactions" | "accounts" | "settings";
+type AppView = "overview" | "transactions" | "accounts" | "budget" | "settings";
 
 function viewFromHash(hash: string): AppView {
   const value = hash.replace("#", "");
-  return value === "transactions" || value === "accounts" || value === "settings"
+  return value === "transactions" || value === "accounts" || value === "budget" || value === "settings"
     ? value
     : "overview";
 }

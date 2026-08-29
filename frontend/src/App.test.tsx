@@ -100,6 +100,20 @@ describe("App", () => {
           };
         } else if (/\/accounts\/\d+\/snapshots$/.test(path)) {
           body = [];
+        } else if (path.endsWith("/budgets") && init?.method === "POST") {
+          const submitted = JSON.parse(String(init.body));
+          body = {
+            budget_id: 1,
+            ...submitted,
+            status: "active",
+            archived_at: null,
+            created_at: "2026-08-29T00:00:00Z",
+            updated_at: "2026-08-29T00:00:00Z",
+          };
+        } else if (path.includes("/budgets?")) {
+          body = [];
+        } else if (path.includes("/analysis-groups?")) {
+          body = [];
         } else if (
           path.includes("/categories?") ||
           path.includes("/providers?") ||
@@ -224,6 +238,37 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Go to Accounts" }));
     expect(await screen.findByLabelText("Account name")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Transactions" })).not.toBeInTheDocument();
+  });
+
+  it("creates a monthly budget from the dedicated planning workspace", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/Your finances ·/);
+
+    await user.click(screen.getByRole("link", { name: "Budget" }));
+    expect(
+      await screen.findByText("No budgets yet. Create one to start comparing actuals."),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "+ New budget" }));
+    await user.type(screen.getByLabelText("Budget name"), "Groceries");
+    await user.type(screen.getByLabelText("Amount per period"), "3500");
+    await user.click(screen.getByRole("button", { name: "Create budget" }));
+
+    await waitFor(() => {
+      const createCall = vi.mocked(fetch).mock.calls.find(
+        ([input, init]) => input.toString().endsWith("/budgets") && init?.method === "POST",
+      );
+      expect(createCall).toBeDefined();
+      expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({
+        name: "Groceries",
+        amount: "3500",
+        currency: "SEK",
+        period_type: "calendar_month",
+        rollover_mode: "reset",
+        categories: [],
+        tags: [],
+      });
+    });
   });
 
   it("opens a focused transaction form when an account exists", async () => {

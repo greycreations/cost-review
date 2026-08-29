@@ -233,6 +233,33 @@ def main() -> int:
         snapshot_payload,
         test_csrf,
     )
+    budget_payload = {
+        "amount": "500.00",
+        "currency": "SEK",
+        "period_type": "calendar_month",
+        "rollover_mode": "reset",
+        "starts_on": "2026-08-01",
+        "ends_on": None,
+        "anchor_day": 25,
+        "analysis_group_id": None,
+        "notes": None,
+        "categories": [],
+        "tags": [],
+    }
+    call(
+        prod,
+        f"{prod_base}/budgets",
+        "POST",
+        {**budget_payload, "name": "Production isolation budget"},
+        prod_csrf,
+    )
+    call(
+        test,
+        f"{test_base}/budgets",
+        "POST",
+        {**budget_payload, "name": "Test isolation budget"},
+        test_csrf,
+    )
     _, prod_accounts_before = call(prod, f"{prod_base}/accounts")
     _, test_accounts_before = call(test, f"{test_base}/accounts")
     assert any(
@@ -311,6 +338,10 @@ def main() -> int:
     )
     assert len(prod_snapshots_before) == 1
     assert len(test_snapshots_before) == 1
+    _, prod_budgets_before = call(prod, f"{prod_base}/budgets")
+    _, test_budgets_before = call(test, f"{test_base}/budgets")
+    assert [item["name"] for item in prod_budgets_before] == ["Production isolation budget"]
+    assert [item["name"] for item in test_budgets_before] == ["Test isolation budget"]
     _, prod_before = call(prod, f"{prod_base}/auth/session")
     _, prod_environment_before = call(prod, f"{prod_base}/environment")
 
@@ -329,12 +360,15 @@ def main() -> int:
     _, prod_transactions_after = call(prod, f"{prod_base}/transactions")
     _, test_transfers_after = call(test, f"{test_base}/transfers")
     _, prod_transfers_after = call(prod, f"{prod_base}/transfers")
+    _, test_budgets_after = call(test, f"{test_base}/budgets")
+    _, prod_budgets_after = call(prod, f"{prod_base}/budgets")
     _, prod_snapshots_after = call(
         prod, f"{prod_base}/accounts/{prod_account['account_id']}/snapshots"
     )
     assert test_accounts_after["total"] == 0
     assert test_transactions_after["total"] == 0
     assert test_transfers_after["total"] == 0
+    assert test_budgets_after == []
     assert any(
         account["name"] == "Production isolation account"
         for account in prod_accounts_after["items"]
@@ -353,6 +387,7 @@ def main() -> int:
     )
     assert len(prod_snapshots_after) == 1
     assert prod_snapshots_after[0]["reported_balance"] == "825.0000"
+    assert [item["name"] for item in prod_budgets_after] == ["Production isolation budget"]
 
     _, prod_after = call(prod, f"{prod_base}/auth/session")
     _, prod_environment_after = call(prod, f"{prod_base}/environment")

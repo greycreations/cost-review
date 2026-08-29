@@ -130,6 +130,93 @@ export type SharingParty = {
   updated_at: string;
 };
 
+export type SelectionMode = "include" | "exclude";
+export type CategorySelection = {
+  category_id: number;
+  mode: SelectionMode;
+  include_descendants: boolean;
+};
+export type TagSelection = { tag_id: number; mode: SelectionMode };
+
+export type AnalysisGroup = {
+  analysis_group_id: number;
+  name: string;
+  notes: string | null;
+  categories: CategorySelection[];
+  tags: TagSelection[];
+  status: LifecycleStatus;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BudgetPeriodType =
+  | "calendar_month"
+  | "salary_cycle"
+  | "calendar_year"
+  | "custom";
+export type BudgetRolloverMode = "reset" | "rollover";
+
+export type Budget = {
+  budget_id: number;
+  analysis_group_id: number | null;
+  name: string;
+  amount: string;
+  currency: string;
+  period_type: BudgetPeriodType;
+  rollover_mode: BudgetRolloverMode;
+  starts_on: string;
+  ends_on: string | null;
+  anchor_day: number;
+  notes: string | null;
+  categories: CategorySelection[];
+  tags: TagSelection[];
+  status: LifecycleStatus;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BudgetInput = {
+  name: string;
+  amount: string;
+  currency: string;
+  period_type: BudgetPeriodType;
+  rollover_mode: BudgetRolloverMode;
+  starts_on: string;
+  ends_on: string | null;
+  anchor_day: number;
+  analysis_group_id: number | null;
+  notes: string | null;
+  categories: CategorySelection[];
+  tags: TagSelection[];
+};
+
+export type BudgetOutcome = {
+  budget: Budget;
+  date_from: string;
+  date_to: string;
+  base_currency: string;
+  target_amount: string;
+  actual_amount: string;
+  remaining_amount: string;
+  consumed_percent: string;
+  period_count: number;
+  rollover_adjustment: string;
+  matched_transaction_count: number;
+  missing_fx_count: number;
+  overlapping_budget_ids: number[];
+};
+
+export type BudgetTransaction = {
+  transaction_id: number;
+  transaction_date: string;
+  description: string;
+  transaction_kind: TransactionKind;
+  matched_amount: string;
+  base_currency: string;
+};
+
 export type ManualTransactionKind = "expense" | "income";
 export type RecoveryKind = "refund" | "reimbursement";
 export type TransactionKind = ManualTransactionKind | RecoveryKind;
@@ -624,6 +711,70 @@ export function setSharingPartyArchived(
     { method: "POST" },
     true,
   );
+}
+
+export function getAnalysisGroups(
+  environment: Environment,
+  includeArchived = false,
+): Promise<AnalysisGroup[]> {
+  return request(environment, `/analysis-groups?include_archived=${includeArchived}`);
+}
+
+export function createAnalysisGroup(
+  environment: Environment,
+  payload: Omit<AnalysisGroup, "analysis_group_id" | "status" | "archived_at" | "created_at" | "updated_at">,
+): Promise<AnalysisGroup> {
+  return request(environment, "/analysis-groups", { method: "POST", body: JSON.stringify(payload) }, true);
+}
+
+export function getBudgets(
+  environment: Environment,
+  includeArchived = false,
+): Promise<Budget[]> {
+  return request(environment, `/budgets?include_archived=${includeArchived}`);
+}
+
+export function createBudget(
+  environment: Environment,
+  payload: BudgetInput,
+): Promise<Budget> {
+  return request(environment, "/budgets", { method: "POST", body: JSON.stringify(payload) }, true);
+}
+
+export function updateBudget(
+  environment: Environment,
+  budgetId: number,
+  payload: BudgetInput,
+): Promise<Budget> {
+  return request(environment, `/budgets/${budgetId}`, { method: "PATCH", body: JSON.stringify(payload) }, true);
+}
+
+export function setBudgetArchived(
+  environment: Environment,
+  budgetId: number,
+  archived: boolean,
+): Promise<Budget> {
+  return request(environment, `/budgets/${budgetId}/${archived ? "archive" : "restore"}`, { method: "POST" }, true);
+}
+
+export function getBudgetOutcome(
+  environment: Environment,
+  budgetId: number,
+  dateFrom: string,
+  dateTo: string,
+): Promise<BudgetOutcome> {
+  const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  return request(environment, `/budgets/${budgetId}/outcome?${query.toString()}`);
+}
+
+export function getBudgetTransactions(
+  environment: Environment,
+  budgetId: number,
+  dateFrom: string,
+  dateTo: string,
+): Promise<BudgetTransaction[]> {
+  const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  return request(environment, `/budgets/${budgetId}/transactions?${query.toString()}`);
 }
 
 export function getTransactions(

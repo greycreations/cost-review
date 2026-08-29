@@ -138,6 +138,23 @@ class FxRateStatus(StrEnum):
     MISSING = "missing"
 
 
+class BudgetPeriodType(StrEnum):
+    CALENDAR_MONTH = "calendar_month"
+    SALARY_CYCLE = "salary_cycle"
+    CALENDAR_YEAR = "calendar_year"
+    CUSTOM = "custom"
+
+
+class BudgetRolloverMode(StrEnum):
+    RESET = "reset"
+    ROLLOVER = "rollover"
+
+
+class SelectionMode(StrEnum):
+    INCLUDE = "include"
+    EXCLUDE = "exclude"
+
+
 class EnvironmentMetadata(Base):
     __tablename__ = "environment_metadata"
     __table_args__ = (
@@ -464,6 +481,146 @@ class SharingParty(ArchiveMixin, TimestampMixin, Base):
     normalized_name: Mapped[str] = mapped_column(String(240))
     is_self: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AnalysisGroup(ArchiveMixin, TimestampMixin, Base):
+    __tablename__ = "analysis_groups"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'archived')", name="status_allowed"),
+        Index("uq_analysis_groups_normalized_name", "normalized_name", unique=True),
+        Index("ix_analysis_groups_status", "status"),
+    )
+
+    analysis_group_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(120))
+    normalized_name: Mapped[str] = mapped_column(String(240))
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    categories: Mapped[list[AnalysisGroupCategory]] = relationship(
+        back_populates="analysis_group", cascade="all, delete-orphan"
+    )
+    tags: Mapped[list[AnalysisGroupTag]] = relationship(
+        back_populates="analysis_group", cascade="all, delete-orphan"
+    )
+
+
+class AnalysisGroupCategory(Base):
+    __tablename__ = "analysis_group_categories"
+    __table_args__ = (
+        CheckConstraint("selection_mode IN ('include', 'exclude')", name="mode_allowed"),
+    )
+
+    analysis_group_id: Mapped[int] = mapped_column(
+        ForeignKey("analysis_groups.analysis_group_id", ondelete="CASCADE"), primary_key=True
+    )
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("categories.category_id", ondelete="RESTRICT"), primary_key=True
+    )
+    selection_mode: Mapped[str] = mapped_column(String(12), primary_key=True)
+    include_descendants: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+
+    analysis_group: Mapped[AnalysisGroup] = relationship(back_populates="categories")
+
+
+class AnalysisGroupTag(Base):
+    __tablename__ = "analysis_group_tags"
+    __table_args__ = (
+        CheckConstraint("selection_mode IN ('include', 'exclude')", name="mode_allowed"),
+    )
+
+    analysis_group_id: Mapped[int] = mapped_column(
+        ForeignKey("analysis_groups.analysis_group_id", ondelete="CASCADE"), primary_key=True
+    )
+    tag_id: Mapped[int] = mapped_column(
+        ForeignKey("tags.tag_id", ondelete="RESTRICT"), primary_key=True
+    )
+    selection_mode: Mapped[str] = mapped_column(String(12), primary_key=True)
+
+    analysis_group: Mapped[AnalysisGroup] = relationship(back_populates="tags")
+
+
+class Budget(ArchiveMixin, TimestampMixin, Base):
+    __tablename__ = "budgets"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="amount_positive"),
+        CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency_iso_shape"),
+        CheckConstraint(
+            "period_type IN ('calendar_month', 'salary_cycle', 'calendar_year', 'custom')",
+            name="period_type_allowed",
+        ),
+        CheckConstraint("rollover_mode IN ('reset', 'rollover')", name="rollover_allowed"),
+        CheckConstraint("anchor_day BETWEEN 1 AND 28", name="anchor_day_allowed"),
+        CheckConstraint("ends_on IS NULL OR ends_on >= starts_on", name="dates_ordered"),
+        CheckConstraint(
+            "period_type <> 'custom' OR ends_on IS NOT NULL", name="custom_requires_end"
+        ),
+        CheckConstraint(
+            "period_type <> 'custom' OR rollover_mode = 'reset'",
+            name="custom_cannot_rollover",
+        ),
+        CheckConstraint("status IN ('active', 'archived')", name="status_allowed"),
+        Index("uq_budgets_normalized_name", "normalized_name", unique=True),
+        Index("ix_budgets_status", "status"),
+        Index("ix_budgets_dates", "starts_on", "ends_on"),
+    )
+
+    budget_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    analysis_group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("analysis_groups.analysis_group_id", ondelete="RESTRICT"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(String(120))
+    normalized_name: Mapped[str] = mapped_column(String(240))
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 4))
+    currency: Mapped[str] = mapped_column(String(3))
+    period_type: Mapped[str] = mapped_column(String(24))
+    rollover_mode: Mapped[str] = mapped_column(String(12))
+    starts_on: Mapped[date] = mapped_column(Date)
+    ends_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    anchor_day: Mapped[int] = mapped_column(SmallInteger, default=25, server_default="25")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    analysis_group: Mapped[AnalysisGroup | None] = relationship()
+    categories: Mapped[list[BudgetCategory]] = relationship(
+        back_populates="budget", cascade="all, delete-orphan"
+    )
+    tags: Mapped[list[BudgetTag]] = relationship(
+        back_populates="budget", cascade="all, delete-orphan"
+    )
+
+
+class BudgetCategory(Base):
+    __tablename__ = "budget_categories"
+    __table_args__ = (
+        CheckConstraint("selection_mode IN ('include', 'exclude')", name="mode_allowed"),
+    )
+
+    budget_id: Mapped[int] = mapped_column(
+        ForeignKey("budgets.budget_id", ondelete="CASCADE"), primary_key=True
+    )
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("categories.category_id", ondelete="RESTRICT"), primary_key=True
+    )
+    selection_mode: Mapped[str] = mapped_column(String(12), primary_key=True)
+    include_descendants: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+
+    budget: Mapped[Budget] = relationship(back_populates="categories")
+
+
+class BudgetTag(Base):
+    __tablename__ = "budget_tags"
+    __table_args__ = (
+        CheckConstraint("selection_mode IN ('include', 'exclude')", name="mode_allowed"),
+    )
+
+    budget_id: Mapped[int] = mapped_column(
+        ForeignKey("budgets.budget_id", ondelete="CASCADE"), primary_key=True
+    )
+    tag_id: Mapped[int] = mapped_column(
+        ForeignKey("tags.tag_id", ondelete="RESTRICT"), primary_key=True
+    )
+    selection_mode: Mapped[str] = mapped_column(String(12), primary_key=True)
+
+    budget: Mapped[Budget] = relationship(back_populates="tags")
 
 
 class Transaction(ArchiveMixin, TimestampMixin, Base):

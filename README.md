@@ -185,9 +185,9 @@ GitHub Actions runs three gates:
 - complete Compose startup plus an HTTP isolation scenario.
 
 The isolation scenario creates independent Production/Test users, accounts,
-transactions, and linked transfers, proves Ledger writes cannot cross the boundary,
-resets Demo/Test, and proves Production identity, settings, accounts, and
-economic events are unchanged. It also proves the Test API cannot resolve or
+transactions, linked transfers, snapshots, and budgets, proves writes cannot
+cross the boundary, resets Demo/Test, and proves Production identity, settings,
+accounts, budgets, and economic events are unchanged. It also proves the Test API cannot resolve or
 connect to the Production database network and that the reset route is absent
 in Production.
 
@@ -221,6 +221,10 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET | `/api/v1/transactions/summary` | Canonical income, expense and cash-flow totals for a date range |
 | GET | `/api/v1/transactions/analysis` | Filtered daily/category analysis with optional previous-period or previous-year comparison |
 | GET/POST/PATCH | `/api/v1/transfers[...]` | Atomic owned-account transfers, filtering and archive/restore |
+| GET/POST/PATCH | `/api/v1/analysis-groups[...]` | Reusable category/tag selections plus archive/restore |
+| GET/POST/PATCH | `/api/v1/budgets[...]` | Budget lifecycle, period, rollover and filter selection |
+| GET | `/api/v1/budgets/{id}/outcome` | Decimal-safe target, actual, remaining, overlap and consumption for a date range |
+| GET | `/api/v1/budgets/{id}/transactions` | Traceable matching Ledger events and allocated recoveries |
 
 Ledger list endpoints return `{ items, total, limit, offset }`, support bounded
 pagination, and hide archived master records unless `include_archived=true` is
@@ -250,9 +254,18 @@ with accessible tables containing the exact server-aggregated values. Account,
 provider, category, tag, and base-cost filters use the same backend selection
 semantics for totals and charts. Previous-period and previous-year comparisons
 remain visually secondary to current values, and category bars drill down to the
-contributing filtered transactions. Saved views, Analysis Groups, recurring and
-amount/currency filtering in Overview, and named/moveable dashboard layouts
-remain later Epic 5 slices.
+contributing filtered transactions. Analysis Groups can now preserve reusable
+category/tag include/exclude selections for budgets. Saved views, recurring and
+amount/currency filtering in Overview, provider/account Analysis Group filters,
+and named/moveable dashboard layouts remain later Epic 5 slices.
+
+The Budget view creates calendar-month, salary-cycle, calendar-year, or custom
+budgets with reset/rollover behavior and category/tag selection. Outcomes are
+calculated by the API from canonical split components; linked refunds and
+reimbursements reduce the relevant budget proportionally. Overlapping active
+budgets are explicitly marked non-additive and every result can be drilled down
+to its contributing Ledger events. Total/My Share and Actual/Periodized views
+remain gated on the corresponding Ledger sharing and periodization semantics.
 
 The Accounts view accepts dated reconciled balances and current values without
 changing the opening balance or transaction history. Ordinary accounts compare

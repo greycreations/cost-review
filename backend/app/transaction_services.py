@@ -815,12 +815,30 @@ def _allocate_recovery_to_categories(
     tag_id: int | None = None,
     is_base_cost: bool | None = None,
 ) -> dict[int | None, Decimal]:
+    allocations: dict[int | None, Decimal] = {}
+    for split, amount in allocate_recovery_to_splits(original, recovery_amount):
+        if not _split_matches(
+            split,
+            category_id=category_id,
+            tag_id=tag_id,
+            is_base_cost=is_base_cost,
+        ):
+            continue
+        allocations[split.category_id] = allocations.get(
+            split.category_id, Decimal("0")
+        ) + amount
+    return allocations
+
+
+def allocate_recovery_to_splits(
+    original: Transaction, recovery_amount: Decimal
+) -> list[tuple[TransactionSplit, Decimal]]:
     weights = [split.converted_amount for split in original.splits]
     if any(weight is None for weight in weights):
         weights = [split.original_amount for split in original.splits]
     precise_weights = [Decimal(weight) for weight in weights if weight is not None]
     total_weight = sum(precise_weights, Decimal("0"))
-    allocations: dict[int | None, Decimal] = {}
+    allocations: list[tuple[TransactionSplit, Decimal]] = []
     remaining = recovery_amount
     for index, (split, weight) in enumerate(
         zip(original.splits, precise_weights, strict=True)
@@ -833,16 +851,7 @@ def _allocate_recovery_to_categories(
             )
         )
         remaining -= amount
-        if not _split_matches(
-            split,
-            category_id=category_id,
-            tag_id=tag_id,
-            is_base_cost=is_base_cost,
-        ):
-            continue
-        allocations[split.category_id] = allocations.get(
-            split.category_id, Decimal("0")
-        ) + amount
+        allocations.append((split, amount))
     return allocations
 
 
