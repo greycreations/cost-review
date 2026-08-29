@@ -2,17 +2,22 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import {
   getAccounts,
+  getCategories,
   getLedgerAnalysis,
   getLedgerSummary,
   getProviders,
+  getTags,
   getTransactions,
   type Account,
+  type AnalysisComparisonMode,
+  type Category,
   type Environment,
   type Language,
   type LedgerAnalysis,
   type LedgerSummary,
   type LedgerTrendPoint,
   type Provider,
+  type Tag,
   type Transaction,
 } from "./api";
 
@@ -50,6 +55,19 @@ const copy = {
     accounts: "Skapa konto",
     missingFx: "poster saknar historisk valutakurs och ingår inte i totalsummor eller grafer.",
     loading: "Bygger översikten…",
+    comparison: "Jämför med",
+    noComparison: "Ingen jämförelse",
+    previousPeriod: "Föregående period",
+    previousYear: "Samma period föregående år",
+    filters: "Analysfilter",
+    allAccounts: "Alla konton",
+    allCategories: "Alla kategorier",
+    allProviders: "Alla providers",
+    tags: "Alla taggar",
+    baseCost: "Endast baskostnader",
+    clearFilters: "Rensa filter",
+    comparedWith: "jämfört med",
+    drillDown: "Visa bidragande transaktioner",
   },
   en: {
     eyebrow: "Release 1 · Core MVP",
@@ -84,6 +102,19 @@ const copy = {
     accounts: "Create account",
     missingFx: "entries are missing historical FX and are excluded from totals and charts.",
     loading: "Building overview…",
+    comparison: "Compare with",
+    noComparison: "No comparison",
+    previousPeriod: "Previous period",
+    previousYear: "Same period last year",
+    filters: "Analysis filters",
+    allAccounts: "All accounts",
+    allCategories: "All categories",
+    allProviders: "All providers",
+    tags: "All tags",
+    baseCost: "Base costs only",
+    clearFilters: "Clear filters",
+    comparedWith: "compared with",
+    drillDown: "View contributing transactions",
   },
 } as const;
 
@@ -96,6 +127,18 @@ type OverviewData = {
   transactions: Transaction[];
   accounts: Account[];
   providers: Provider[];
+  categories: Category[];
+  tags: Tag[];
+};
+
+export type OverviewDrilldown = {
+  dateFrom: string;
+  dateTo: string;
+  accountId?: number;
+  providerId?: number;
+  categoryId?: number;
+  tagId?: number;
+  isBaseCost?: boolean;
 };
 
 export function OverviewWorkspace({
@@ -107,25 +150,45 @@ export function OverviewWorkspace({
   environment: Environment;
   language: Language;
   onNavigateAccounts: () => void;
-  onNavigateTransactions: () => void;
+  onNavigateTransactions: (drilldown?: OverviewDrilldown) => void;
 }) {
   const labels = copy[language];
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey);
+  const [comparison, setComparison] = useState<AnalysisComparisonMode>("previous_period");
+  const [filters, setFilters] = useState({
+    accountId: "",
+    providerId: "",
+    categoryId: "",
+    tagId: "",
+    baseCostOnly: false,
+  });
   const period = useMemo(() => monthPeriod(selectedMonth), [selectedMonth]);
-  const requestKey = `${environment}:${period.from}:${period.to}`;
+  const ledgerFilters = useMemo(
+    () => ({
+      accountId: numberOrNull(filters.accountId),
+      providerId: numberOrNull(filters.providerId),
+      categoryId: numberOrNull(filters.categoryId),
+      tagId: numberOrNull(filters.tagId),
+      isBaseCost: filters.baseCostOnly ? true : null,
+    }),
+    [filters],
+  );
+  const requestKey = `${environment}:${period.from}:${period.to}:${comparison}:${JSON.stringify(ledgerFilters)}`;
   const [data, setData] = useState<OverviewData | null>(null);
   const [requestError, setRequestError] = useState<{ key: string; message: string } | null>(null);
 
   useEffect(() => {
     let active = true;
     Promise.all([
-      getLedgerSummary(environment, period.from, period.to),
-      getLedgerAnalysis(environment, period.from, period.to),
-      getTransactions(environment, { dateFrom: period.from, dateTo: period.to, limit: 5 }),
+      getLedgerSummary(environment, period.from, period.to, ledgerFilters),
+      getLedgerAnalysis(environment, period.from, period.to, comparison, ledgerFilters),
+      getTransactions(environment, { dateFrom: period.from, dateTo: period.to, ...ledgerFilters, limit: 5 }),
       getAccounts(environment),
       getProviders(environment),
+      getCategories(environment),
+      getTags(environment),
     ])
-      .then(([totals, analyticalData, transactionPage, accountPage, providerPage]) => {
+      .then(([totals, analyticalData, transactionPage, accountPage, providerPage, categoryPage, tagPage]) => {
         if (!active) return;
         setData({
           key: requestKey,
@@ -134,6 +197,8 @@ export function OverviewWorkspace({
           transactions: transactionPage.items,
           accounts: accountPage.items,
           providers: providerPage.items,
+          categories: categoryPage.items,
+          tags: tagPage.items,
         });
         setRequestError(null);
       })
@@ -148,7 +213,7 @@ export function OverviewWorkspace({
     return () => {
       active = false;
     };
-  }, [environment, period.from, period.to, requestKey]);
+  }, [comparison, environment, ledgerFilters, period.from, period.to, requestKey]);
 
   const currentData = data?.key === requestKey ? data : null;
   const summary = currentData?.summary ?? null;
@@ -156,6 +221,8 @@ export function OverviewWorkspace({
   const transactions = currentData?.transactions ?? [];
   const accounts = currentData?.accounts ?? [];
   const providers = currentData?.providers ?? [];
+  const categories = currentData?.categories ?? [];
+  const tags = currentData?.tags ?? [];
   const error = requestError?.key === requestKey ? requestError.message : null;
   const loading = currentData === null && error === null;
 
@@ -178,19 +245,29 @@ export function OverviewWorkspace({
               {labels.currentMonth}
             </button>
           ) : null}
-          <button className="primary-button" onClick={onNavigateTransactions} type="button">
+          <button className="primary-button" onClick={() => onNavigateTransactions()} type="button">
             + {labels.add}
           </button>
         </div>
+      </div>
+
+      <div className="analysis-toolbar" aria-label={labels.filters}>
+        <label>{labels.comparison}<select onChange={(event) => setComparison(event.target.value as AnalysisComparisonMode)} value={comparison}><option value="none">{labels.noComparison}</option><option value="previous_period">{labels.previousPeriod}</option><option value="previous_year">{labels.previousYear}</option></select></label>
+        <label>{labels.allAccounts}<select onChange={(event) => setFilters({ ...filters, accountId: event.target.value })} value={filters.accountId}><option value="">{labels.allAccounts}</option>{accounts.map((account) => <option key={account.account_id} value={account.account_id}>{account.name}</option>)}</select></label>
+        <label>{labels.allCategories}<select onChange={(event) => setFilters({ ...filters, categoryId: event.target.value })} value={filters.categoryId}><option value="">{labels.allCategories}</option>{categories.filter((category) => category.category_kind === "expense").map((category) => <option key={category.category_id} value={category.category_id}>{category.name}</option>)}</select></label>
+        <label>{labels.allProviders}<select onChange={(event) => setFilters({ ...filters, providerId: event.target.value })} value={filters.providerId}><option value="">{labels.allProviders}</option>{providers.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.name}</option>)}</select></label>
+        <label>{labels.tags}<select onChange={(event) => setFilters({ ...filters, tagId: event.target.value })} value={filters.tagId}><option value="">{labels.tags}</option>{tags.map((tag) => <option key={tag.tag_id} value={tag.tag_id}>{tag.name}</option>)}</select></label>
+        <label className="checkbox-field"><input checked={filters.baseCostOnly} onChange={(event) => setFilters({ ...filters, baseCostOnly: event.target.checked })} type="checkbox" />{labels.baseCost}</label>
+        <button className="ghost-button" disabled={!filters.accountId && !filters.providerId && !filters.categoryId && !filters.tagId && !filters.baseCostOnly} onClick={() => setFilters({ accountId: "", providerId: "", categoryId: "", tagId: "", baseCostOnly: false })} type="button">{labels.clearFilters}</button>
       </div>
 
       {error ? <p className="form-error" role="alert">{error}</p> : null}
       {loading ? <p className="quiet-copy" role="status">{labels.loading}</p> : null}
 
       <div className="overview-metrics">
-        <Metric label={labels.income} value={summary && money(summary.income, summary.base_currency, language)} />
-        <Metric label={labels.expenses} value={summary && money(summary.expenses, summary.base_currency, language)} />
-        <Metric label={labels.net} value={summary && money(summary.net_cash_flow, summary.base_currency, language)} />
+        <Metric comparison={analysis?.comparison?.income} label={labels.income} labels={labels} value={summary?.income ?? null} currency={summary?.base_currency} language={language} />
+        <Metric comparison={analysis?.comparison?.expenses} label={labels.expenses} labels={labels} value={summary?.expenses ?? null} currency={summary?.base_currency} language={language} />
+        <Metric comparison={analysis?.comparison?.net_cash_flow} label={labels.net} labels={labels} value={summary?.net_cash_flow ?? null} currency={summary?.base_currency} language={language} />
         <Metric label={labels.entries} value={summary ? String(summary.transaction_count) : null} />
       </div>
 
@@ -202,6 +279,7 @@ export function OverviewWorkspace({
 
       <div className="overview-analysis-grid">
         <CashFlowChart
+          comparison={analysis?.comparison ?? null}
           currency={summary?.base_currency ?? analysis?.base_currency ?? "SEK"}
           daily={analysis?.daily ?? []}
           labels={labels}
@@ -210,16 +288,26 @@ export function OverviewWorkspace({
         />
         <CategoryChart
           categories={analysis?.expense_categories ?? []}
+          comparisonCategories={analysis?.comparison?.expense_categories ?? []}
           currency={summary?.base_currency ?? analysis?.base_currency ?? "SEK"}
           labels={labels}
           language={language}
+          onDrillDown={(categoryId) => onNavigateTransactions({
+            dateFrom: period.from,
+            dateTo: period.to,
+            accountId: ledgerFilters.accountId ?? undefined,
+            providerId: ledgerFilters.providerId ?? undefined,
+            categoryId: categoryId ?? undefined,
+            tagId: ledgerFilters.tagId ?? undefined,
+            isBaseCost: ledgerFilters.isBaseCost ?? undefined,
+          })}
         />
       </div>
 
       <section className="recent-panel">
         <div className="recent-heading">
           <h2>{labels.recent}</h2>
-          <button className="ghost-button" onClick={onNavigateTransactions} type="button">
+          <button className="ghost-button" onClick={() => onNavigateTransactions()} type="button">
             {labels.all} →
           </button>
         </div>
@@ -235,7 +323,7 @@ export function OverviewWorkspace({
                 {labels.accounts}
               </button>
             ) : (
-              <button className="secondary-button" onClick={onNavigateTransactions} type="button">
+              <button className="secondary-button" onClick={() => onNavigateTransactions()} type="button">
                 {labels.add}
               </button>
             )}
@@ -275,23 +363,27 @@ function MonthPicker({ labels, onChange, selectedMonth }: { labels: Labels; onCh
   );
 }
 
-function Metric({ label, value }: { label: string; value: string | null }) {
-  return <div className="metric-card"><span>{label}</span><strong>{value ?? "—"}</strong></div>;
+function Metric({ label, value, comparison, currency, language, labels }: { label: string; value: string | null; comparison?: string; currency?: string; language?: Language; labels?: Labels }) {
+  const delta = comparison !== undefined && value !== null ? percentageChange(Number(value), Number(comparison)) : null;
+  return <div className="metric-card"><span>{label}</span><strong>{value !== null && currency && language ? money(value, currency, language) : value ?? "—"}</strong>{delta !== null && labels ? <small className="metric-comparison">{delta > 0 ? "+" : ""}{delta.toLocaleString(language === "sv" ? "sv-SE" : "en-SE", { maximumFractionDigits: 1 })}% {labels.comparedWith}</small> : null}</div>;
 }
 
-function CashFlowChart({ currency, daily, labels, language, period }: { currency: string; daily: LedgerTrendPoint[]; labels: Labels; language: Language; period: { from: string; to: string } }) {
-  const days = fillMonth(period, daily);
+function CashFlowChart({ comparison, currency, daily, labels, language, period }: { comparison: LedgerAnalysis["comparison"]; currency: string; daily: LedgerTrendPoint[]; labels: Labels; language: Language; period: { from: string; to: string } }) {
+  const days = fillPeriod(period, daily);
+  const comparisonDays = comparison ? fillPeriod({ from: comparison.date_from, to: comparison.date_to }, comparison.daily) : [];
   const hasValues = daily.length > 0;
   const width = 640;
   const height = 214;
   const padding = { top: 20, right: 18, bottom: 32, left: 54 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
-  const maximum = Math.max(1, ...days.flatMap((day) => [day.income, day.expenses]));
+  const maximum = Math.max(1, ...days.flatMap((day) => [day.income, day.expenses]), ...comparisonDays.flatMap((day) => [day.income, day.expenses]));
   const x = (index: number) => padding.left + (index / Math.max(days.length - 1, 1)) * plotWidth;
   const y = (value: number) => padding.top + plotHeight - (value / maximum) * plotHeight;
   const incomePath = linePath(days.map((day) => day.income), x, y);
   const expensePath = linePath(days.map((day) => day.expenses), x, y);
+  const comparisonIncomePath = linePath(comparisonDays.map((day) => day.income), x, y);
+  const comparisonExpensePath = linePath(comparisonDays.map((day) => day.expenses), x, y);
 
   return (
     <section className="analysis-panel" aria-labelledby="cash-flow-title">
@@ -300,6 +392,7 @@ function CashFlowChart({ currency, daily, labels, language, period }: { currency
         <div className="chart-legend" aria-label={`${labels.income}, ${labels.expenses}`}>
           <span><i className="legend-income" />{labels.income}</span>
           <span><i className="legend-expense" />{labels.expenses}</span>
+          {comparison ? <span><i className="legend-comparison" />{labels.comparison}</span> : null}
         </div>
       </div>
       {!hasValues ? <p className="analysis-empty">{labels.noCashFlow}</p> : (
@@ -321,6 +414,7 @@ function CashFlowChart({ currency, daily, labels, language, period }: { currency
               <text className="chart-axis-label" x={width - padding.right} y={height - 8} textAnchor="end">{days.at(-1)?.day}</text>
               <path className="chart-line chart-line-income" d={incomePath} />
               <path className="chart-line chart-line-expense" d={expensePath} />
+              {comparison ? <><path className="chart-line chart-line-comparison-income" d={comparisonIncomePath} /><path className="chart-line chart-line-comparison-expense" d={comparisonExpensePath} /></> : null}
               {days.flatMap((day, index) => [
                 day.income > 0 ? (
                   <circle aria-label={`${dateLabel(day.date, language)}: ${labels.income} ${money(String(day.income), currency, language)}`} className="chart-point chart-point-income" cx={x(index)} cy={y(day.income)} key={`income-${day.date}`} r={3} tabIndex={0}>
@@ -348,9 +442,10 @@ function CashFlowChart({ currency, daily, labels, language, period }: { currency
   );
 }
 
-function CategoryChart({ categories, currency, labels, language }: { categories: LedgerAnalysis["expense_categories"]; currency: string; labels: Labels; language: Language }) {
+function CategoryChart({ categories, comparisonCategories, currency, labels, language, onDrillDown }: { categories: LedgerAnalysis["expense_categories"]; comparisonCategories: LedgerAnalysis["expense_categories"]; currency: string; labels: Labels; language: Language; onDrillDown: (categoryId: number | null) => void }) {
   const chartCategories = categories.slice(0, 8);
-  const maximum = Math.max(1, ...chartCategories.map((category) => Number(category.amount)));
+  const comparisonAmounts = new Map(comparisonCategories.map((category) => [category.category_id, Number(category.amount)]));
+  const maximum = Math.max(1, ...chartCategories.flatMap((category) => [Number(category.amount), comparisonAmounts.get(category.category_id) ?? 0]));
   return (
     <section className="analysis-panel" aria-labelledby="category-chart-title">
       <div className="analysis-panel-heading"><div><h2 id="category-chart-title">{labels.categoryBreakdown}</h2><p>{labels.categoryLead}</p></div></div>
@@ -361,11 +456,12 @@ function CategoryChart({ categories, currency, labels, language }: { categories:
             {chartCategories.map((category) => {
               const name = category.category_name ?? labels.uncategorized;
               const percentage = Math.max(2, (Number(category.amount) / maximum) * 100);
+              const comparisonPercentage = Math.max(0, ((comparisonAmounts.get(category.category_id) ?? 0) / maximum) * 100);
               return (
-                <div className="category-bar-row" key={category.category_id ?? "uncategorized"}>
+                <button aria-label={`${labels.drillDown}: ${name}`} className="category-bar-row" key={category.category_id ?? "uncategorized"} onClick={() => onDrillDown(category.category_id)} type="button">
                   <div className="category-bar-label"><span>{name}</span><strong>{money(category.amount, currency, language)}</strong></div>
-                  <div className="category-bar-track" aria-label={`${name}: ${money(category.amount, currency, language)}`}><span style={{ "--bar-size": `${percentage}%` } as CSSProperties} /></div>
-                </div>
+                  <div className="category-bar-track" aria-label={`${name}: ${money(category.amount, currency, language)}`}><span style={{ "--bar-size": `${percentage}%` } as CSSProperties} />{comparisonPercentage > 0 ? <span className="comparison-bar" style={{ "--bar-size": `${comparisonPercentage}%` } as CSSProperties} /> : null}</div>
+                </button>
               );
             })}
           </div>
@@ -404,13 +500,18 @@ function monthLabel(month: string, language: Language): string {
   return new Intl.DateTimeFormat(language === "sv" ? "sv-SE" : "en-SE", { month: "long", year: "numeric" }).format(new Date(year, monthNumber - 1, 1));
 }
 
-function fillMonth(period: { from: string; to: string }, daily: LedgerTrendPoint[]): Array<{ date: string; day: number; income: number; expenses: number }> {
+function fillPeriod(period: { from: string; to: string }, daily: LedgerTrendPoint[]): Array<{ date: string; day: number; income: number; expenses: number }> {
   const values = new Map(daily.map((point) => [point.date, point]));
-  const end = Number(period.to.slice(-2));
-  return Array.from({ length: end }, (_, index) => {
-    const date = `${period.from.slice(0, 8)}${String(index + 1).padStart(2, "0")}`;
+  const dates: string[] = [];
+  const cursor = new Date(`${period.from}T12:00:00`);
+  const end = new Date(`${period.to}T12:00:00`);
+  while (cursor <= end) {
+    dates.push(localDate(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates.map((date) => {
     const point = values.get(date);
-    return { date, day: index + 1, income: Number(point?.income ?? 0), expenses: Number(point?.expenses ?? 0) };
+    return { date, day: Number(date.slice(-2)), income: Number(point?.income ?? 0), expenses: Number(point?.expenses ?? 0) };
   });
 }
 
@@ -432,4 +533,13 @@ function compactMoney(value: number, currency: string, language: Language): stri
 
 function dateLabel(value: string, language: Language): string {
   return new Intl.DateTimeFormat(language === "sv" ? "sv-SE" : "en-SE", { day: "numeric", month: "short" }).format(new Date(`${value}T12:00:00`));
+}
+
+function numberOrNull(value: string): number | null {
+  return value ? Number(value) : null;
+}
+
+function percentageChange(current: number, comparison: number): number | null {
+  if (comparison === 0) return null;
+  return ((current - comparison) / Math.abs(comparison)) * 100;
 }

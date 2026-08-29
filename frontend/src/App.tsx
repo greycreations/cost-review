@@ -16,8 +16,11 @@ import {
   type Session,
 } from "./api";
 import { LedgerWorkspace } from "./LedgerWorkspace";
-import { OverviewWorkspace } from "./OverviewWorkspace";
-import { TransactionWorkspace } from "./TransactionWorkspace";
+import { OverviewWorkspace, type OverviewDrilldown } from "./OverviewWorkspace";
+import {
+  TransactionWorkspace,
+  type TransactionInitialFilters,
+} from "./TransactionWorkspace";
 
 type LoadState =
   | { kind: "loading" }
@@ -484,6 +487,7 @@ function ApplicationShell({
 }) {
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [view, setView] = useState<AppView>(() => viewFromHash(window.location.hash));
+  const [transactionFilters, setTransactionFilters] = useState<TransactionInitialFilters | null>(null);
 
   useEffect(() => {
     const readHash = () => setView(viewFromHash(window.location.hash));
@@ -525,6 +529,7 @@ function ApplicationShell({
           <a
             className={view === "transactions" ? "active" : undefined}
             href="#transactions"
+            onClick={() => setTransactionFilters(null)}
             aria-current={view === "transactions" ? "page" : undefined}
           >
             {labels.transactions}
@@ -557,7 +562,10 @@ function ApplicationShell({
             environment={environment}
             language={session.settings.language}
             onNavigateAccounts={() => navigate("accounts")}
-            onNavigateTransactions={() => navigate("transactions")}
+            onNavigateTransactions={(drilldown?: OverviewDrilldown) => {
+              setTransactionFilters(drilldown ?? null);
+              navigate("transactions");
+            }}
           />
         ) : null}
         {view === "transactions" ? (
@@ -565,6 +573,8 @@ function ApplicationShell({
             baseCurrency={session.settings.base_currency}
             environment={environment}
             language={session.settings.language}
+            initialFilters={transactionFilters}
+            key={`${environment}:${JSON.stringify(transactionFilters)}`}
             onNavigateAccounts={() => navigate("accounts")}
           />
         ) : null}

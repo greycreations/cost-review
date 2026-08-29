@@ -104,9 +104,9 @@ def test_credit_card_payment_is_atomic_and_excluded_from_income_expense(
     summary = client.get(
         "/api/v1/transactions/summary?date_from=2026-08-01&date_to=2026-08-31"
     ).json()
-    assert summary["income"] == "0"
-    assert summary["expenses"] == "0"
-    assert summary["net_cash_flow"] == "0"
+    assert summary["income"] == "0.0000"
+    assert summary["expenses"] == "0.0000"
+    assert summary["net_cash_flow"] == "0.0000"
     assert summary["transaction_count"] == 0
     analysis = client.get(
         "/api/v1/transactions/analysis?date_from=2026-08-01&date_to=2026-08-31"

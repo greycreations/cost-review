@@ -201,6 +201,14 @@ describe("App", () => {
     await user.click(tableToggles[1]);
     expect(screen.getByRole("columnheader", { name: "Category" })).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "2" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "View contributing transactions: Groceries" }));
+    expect(await screen.findByRole("heading", { name: "Transactions" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(vi.mocked(fetch).mock.calls.some(([input]) => {
+        const path = input.toString();
+        return path.includes("/transactions?") && path.includes("category_id=1");
+      })).toBe(true);
+    });
   });
 
   it("keeps daily entry and account setup in separate views", async () => {
@@ -284,6 +292,37 @@ describe("App", () => {
         account_id: 1,
         original_amount: "250",
         original_currency: "SEK",
+      });
+    });
+  });
+
+  it("creates a balanced split transaction from one account event", async () => {
+    accountItems = [account(1, "Daily account")];
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/Your finances ·/);
+
+    await user.click(screen.getByRole("link", { name: "Transactions" }));
+    await user.click(await screen.findByRole("button", { name: "+ New transaction" }));
+    await user.type(screen.getByLabelText("Description"), "Mixed receipt");
+    await user.type(screen.getByLabelText("Amount"), "1000");
+    await user.click(screen.getByLabelText("Split transaction"));
+    await user.type(screen.getByLabelText("Split 1 · Amount"), "600");
+    await user.type(screen.getByLabelText("Split 2 · Amount"), "400");
+    expect(screen.getByText(/Remaining to allocate:/)).toHaveClass("balanced");
+    await user.click(screen.getByRole("button", { name: "Save transaction" }));
+
+    await waitFor(() => {
+      const createCall = vi.mocked(fetch).mock.calls.find(([input, init]) =>
+        input.toString().endsWith("/transactions") && init?.method === "POST"
+      );
+      expect(createCall).toBeDefined();
+      expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({
+        original_amount: "1000",
+        splits: [
+          { original_amount: "600" },
+          { original_amount: "400" },
+        ],
       });
     });
   });

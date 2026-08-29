@@ -424,6 +424,27 @@ select:hover {
   background: var(--surface);
 }
 
+.analysis-toolbar {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr)) auto auto;
+  align-items: end;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.analysis-toolbar .checkbox-field {
+  min-height: 44px;
+}
+
+.metric-comparison {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 650;
+}
+
 .metric-card,
 .summary-card {
   display: grid;
@@ -757,6 +778,10 @@ select:hover {
   background: var(--analysis-blue);
 }
 
+.chart-legend .legend-comparison {
+  background: var(--analysis-sand);
+}
+
 .chart-scroll {
   overflow-x: auto;
 }
@@ -792,6 +817,17 @@ select:hover {
   stroke: var(--analysis-blue);
 }
 
+.chart-line-comparison-income,
+.chart-line-comparison-expense {
+  stroke: var(--analysis-sand);
+  stroke-dasharray: 5 5;
+  stroke-width: 1.7;
+}
+
+.chart-line-comparison-expense {
+  opacity: 0.62;
+}
+
 .chart-point {
   fill: var(--surface);
   stroke: var(--accent);
@@ -816,6 +852,13 @@ select:hover {
 .category-bar-row {
   display: grid;
   gap: 7px;
+  width: 100%;
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
 }
 
 .category-bar-label {
@@ -839,6 +882,7 @@ select:hover {
 }
 
 .category-bar-track {
+  position: relative;
   height: 9px;
   overflow: hidden;
   border-radius: 999px;
@@ -846,11 +890,19 @@ select:hover {
 }
 
 .category-bar-track > span {
+  position: absolute;
+  inset: 0 auto 0 0;
   display: block;
   width: var(--bar-size);
   height: 100%;
   border-radius: inherit;
   background: var(--accent);
+}
+
+.category-bar-track > .comparison-bar {
+  height: 3px;
+  margin-top: 6px;
+  background: var(--analysis-sand);
 }
 
 .chart-note {
@@ -942,6 +994,88 @@ select:hover {
   color: var(--accent-strong);
   background: var(--surface);
   box-shadow: 0 1px 4px rgb(32 37 34 / 9%);
+}
+
+.split-toggle {
+  width: fit-content;
+  margin: -8px 0 18px;
+}
+
+.split-editor {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--background);
+}
+
+.split-editor-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.split-editor-heading h3,
+.split-editor-heading p {
+  margin: 0;
+}
+
+.split-editor-heading h3 {
+  font-size: 13px;
+}
+
+.split-editor-heading p {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.split-editor-heading > strong {
+  color: var(--warning);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.split-editor-heading > strong.balanced {
+  color: var(--accent-strong);
+}
+
+.split-list {
+  display: grid;
+  gap: 10px;
+}
+
+.split-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.7fr) minmax(150px, 1fr) minmax(170px, 1.2fr) auto auto;
+  align-items: end;
+  gap: 12px;
+  margin: 0;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.split-row legend {
+  padding: 0 5px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.split-tags {
+  align-self: center;
+  font-size: 11px;
+}
+
+.split-tags summary {
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-weight: 700;
 }
 
 .transaction-form-grid {
@@ -1555,6 +1689,14 @@ footer {
 }
 
 @media (max-width: 900px) {
+  .analysis-toolbar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .split-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .account-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1665,6 +1807,14 @@ footer {
 }
 
 @media (max-width: 520px) {
+  .analysis-toolbar,
+  .split-row {
+    grid-template-columns: 1fr;
+  }
+
+  .split-editor-heading {
+    flex-direction: column;
+  }
   .page-frame,
   .app-shell {
     padding-right: 14px;

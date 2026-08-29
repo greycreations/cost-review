@@ -12,7 +12,9 @@ Sprint 2 slice adds accounts, reusable ledger master data, manual income and
 expense entry, historical FX persistence, real period summaries, and dated
 account balance/value snapshots. Refunds and reimbursements are now preserved
 as linked events that reduce net cost without weakening that boundary or being
-misclassified as income.
+misclassified as income. Transactions can be split across categories, tags,
+and base-cost classifications, and the Overview now applies the same filters
+to totals, charts, comparison periods, and transaction drill-down.
 
 ## Architecture
 
@@ -217,7 +219,7 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | POST | `/api/v1/transactions/{id}/refunds`, `/api/v1/transactions/{id}/reimbursements` | Create a linked recovery while preserving the gross expense |
 | POST | `/api/v1/recoveries/{id}/archive`, `/api/v1/recoveries/{id}/restore` | Archive or restore a linked recovery |
 | GET | `/api/v1/transactions/summary` | Canonical income, expense and cash-flow totals for a date range |
-| GET | `/api/v1/transactions/analysis` | Daily income/expense trend and expense-category breakdown for a date range |
+| GET | `/api/v1/transactions/analysis` | Filtered daily/category analysis with optional previous-period or previous-year comparison |
 | GET/POST/PATCH | `/api/v1/transfers[...]` | Atomic owned-account transfers, filtering and archive/restore |
 
 Ledger list endpoints return `{ items, total, limit, offset }`, support bounded
@@ -236,14 +238,21 @@ and historical FX, and is always excluded from ordinary income, expense, and
 net cash-flow totals. Credit-card payments use this transfer workflow. Refunds,
 and reimbursements are separate inflow events linked to their original expense;
 they preserve gross cost, reduce net expense in summaries and analysis, and are
-never counted as ordinary income. Split editing and explicit balance adjustments
-remain later slices.
+never counted as ordinary income. A split transaction remains one economic and
+account event while its decimal-safe component amounts carry category, tag,
+base-cost, and memo classification. PostgreSQL deferred constraints require the
+components to equal the header amount exactly. Share allocation and explicit
+balance adjustments remain later Ledger slices.
 
 The Overview defaults to the current calendar month and supports explicit month
-navigation. Its first analysis slice visualizes daily income/expense movement
-and expenses by category, with accessible tables containing the exact server-
-aggregated values. This does not yet complete the Epic 5 comparison, common-
-filter, drill-down, or saved-layout capabilities.
+navigation. It visualizes daily income/expense movement and expenses by category,
+with accessible tables containing the exact server-aggregated values. Account,
+provider, category, tag, and base-cost filters use the same backend selection
+semantics for totals and charts. Previous-period and previous-year comparisons
+remain visually secondary to current values, and category bars drill down to the
+contributing filtered transactions. Saved views, Analysis Groups, recurring and
+amount/currency filtering in Overview, and named/moveable dashboard layouts
+remain later Epic 5 slices.
 
 The Accounts view accepts dated reconciled balances and current values without
 changing the opening balance or transaction history. Ordinary accounts compare

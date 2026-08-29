@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Response
@@ -27,6 +28,7 @@ from app.ledger_schemas import (
     CategoryLinkRead,
     CategoryRead,
     CategoryUpdate,
+    ComparisonMode,
     LedgerAnalysisRead,
     LedgerSummaryRead,
     LedgerTransactionKind,
@@ -118,6 +120,8 @@ router = APIRouter(tags=["ledger-master-data"])
 
 Limit = Annotated[int, Query(ge=1, le=200)]
 Offset = Annotated[int, Query(ge=0)]
+AmountFilter = Annotated[Decimal | None, Query(ge=0)]
+CurrencyFilter = Annotated[str | None, Query(pattern=r"^[A-Z]{3}$")]
 
 
 @router.get("/transactions", response_model=Page[TransactionRead])
@@ -134,9 +138,14 @@ def get_transactions(
     provider_id: int | None = Query(default=None, gt=0),
     category_id: int | None = Query(default=None, gt=0),
     tag_id: int | None = Query(default=None, gt=0),
+    is_base_cost: bool | None = None,
+    original_currency: CurrencyFilter = None,
+    amount_min: AmountFilter = None,
+    amount_max: AmountFilter = None,
     search: str | None = Query(default=None, max_length=240),
 ) -> dict[str, object]:
     _validate_date_range(date_from, date_to)
+    _validate_amount_range(amount_min, amount_max)
     return list_transactions(
         db,
         limit=limit,
@@ -149,6 +158,10 @@ def get_transactions(
         provider_id=provider_id,
         category_id=category_id,
         tag_id=tag_id,
+        is_base_cost=is_base_cost,
+        original_currency=original_currency,
+        amount_min=amount_min,
+        amount_max=amount_max,
         search=search,
     )
 
@@ -168,9 +181,24 @@ def get_transaction_summary(
     db: DatabaseSession,
     date_from: date,
     date_to: date,
+    account_id: int | None = Query(default=None, gt=0),
+    provider_id: int | None = Query(default=None, gt=0),
+    category_id: int | None = Query(default=None, gt=0),
+    tag_id: int | None = Query(default=None, gt=0),
+    is_base_cost: bool | None = None,
 ) -> dict[str, object]:
     _validate_date_range(date_from, date_to)
-    return ledger_summary(db, date_from, date_to, auth.user.settings.base_currency)
+    return ledger_summary(
+        db,
+        date_from,
+        date_to,
+        auth.user.settings.base_currency,
+        account_id=account_id,
+        provider_id=provider_id,
+        category_id=category_id,
+        tag_id=tag_id,
+        is_base_cost=is_base_cost,
+    )
 
 
 @router.get("/transactions/analysis", response_model=LedgerAnalysisRead)
@@ -179,9 +207,26 @@ def get_transaction_analysis(
     db: DatabaseSession,
     date_from: date,
     date_to: date,
+    comparison: ComparisonMode = ComparisonMode.NONE,
+    account_id: int | None = Query(default=None, gt=0),
+    provider_id: int | None = Query(default=None, gt=0),
+    category_id: int | None = Query(default=None, gt=0),
+    tag_id: int | None = Query(default=None, gt=0),
+    is_base_cost: bool | None = None,
 ) -> dict[str, object]:
     _validate_date_range(date_from, date_to)
-    return ledger_analysis(db, date_from, date_to, auth.user.settings.base_currency)
+    return ledger_analysis(
+        db,
+        date_from,
+        date_to,
+        auth.user.settings.base_currency,
+        comparison.value,
+        account_id=account_id,
+        provider_id=provider_id,
+        category_id=category_id,
+        tag_id=tag_id,
+        is_base_cost=is_base_cost,
+    )
 
 
 @router.get("/transactions/{transaction_id}", response_model=TransactionRead)
@@ -723,4 +768,15 @@ def _validate_date_range(date_from: date | None, date_to: date | None) -> None:
             422,
             "invalid_date_range",
             "The end date must be on or after the start date.",
+        )
+
+
+def _validate_amount_range(
+    amount_min: Decimal | None, amount_max: Decimal | None
+) -> None:
+    if amount_min is not None and amount_max is not None and amount_max < amount_min:
+        raise ApiError(
+            422,
+            "invalid_amount_range",
+            "The maximum amount must be greater than or equal to the minimum amount.",
         )

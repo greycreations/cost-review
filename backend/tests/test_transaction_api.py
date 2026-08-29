@@ -162,6 +162,7 @@ def test_manual_transaction_crud_filters_and_period_summary(
                 "transaction_count": 1,
             }
         ],
+        "comparison": None,
     }
 
     updated = client.patch(
@@ -238,6 +239,166 @@ def test_fx_gaps_are_preserved_and_excluded_from_canonical_totals(
     )
     assert invalid.status_code == 422
     assert invalid.json()["error"]["code"] == "fx_conversion_mismatch"
+
+
+def test_split_transactions_comparison_and_category_filter_share_one_semantics(
+    client: TestClient, settings: Settings
+) -> None:
+    headers = authenticate(client, settings)
+    data = seed_master_data(client, headers)
+    travel = client.post(
+        "/api/v1/categories",
+        headers=headers,
+        json={"name": "Resor", "category_kind": "expense"},
+    ).json()
+
+    previous = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json=transaction_payload(
+            data,
+            transaction_date="2026-08-01",
+            posting_date="2026-08-01",
+            description="Tidigare mat",
+            original_amount="300",
+            category_id=data["expense"]["category_id"],
+            tag_ids=[],
+            is_base_cost=False,
+        ),
+    )
+    assert previous.status_code == 201
+
+    split_response = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json=transaction_payload(
+            data,
+            transaction_date="2026-08-20",
+            description="Delat kvitto",
+            original_amount="1000",
+            category_id=None,
+            tag_ids=[],
+            is_base_cost=False,
+            splits=[
+                {
+                    "original_amount": "600",
+                    "category_id": data["expense"]["category_id"],
+                    "tag_ids": [data["tag"]["tag_id"]],
+                    "is_base_cost": True,
+                    "memo": "Mat",
+                },
+                {
+                    "original_amount": "400",
+                    "category_id": travel["category_id"],
+                    "tag_ids": [],
+                    "is_base_cost": False,
+                    "memo": "Tågbiljett",
+                },
+            ],
+        ),
+    )
+    assert split_response.status_code == 201, split_response.text
+    split_transaction = split_response.json()
+    assert split_transaction["is_split"] is True
+    assert [item["original_amount"] for item in split_transaction["splits"]] == [
+        "600.0000",
+        "400.0000",
+    ]
+    assert [item["converted_amount"] for item in split_transaction["splits"]] == [
+        "600.0000",
+        "400.0000",
+    ]
+
+    rejected_legacy_update = client.patch(
+        f"/api/v1/transactions/{split_transaction['transaction_id']}",
+        headers=headers,
+        json={"category_id": travel["category_id"]},
+    )
+    assert rejected_legacy_update.status_code == 422
+    assert rejected_legacy_update.json()["error"]["code"] == "split_update_required"
+
+    updated_split = client.patch(
+        f"/api/v1/transactions/{split_transaction['transaction_id']}",
+        headers=headers,
+        json={
+            "description": "Delat kvitto, granskat",
+            "splits": [
+                {
+                    "original_amount": "600",
+                    "category_id": data["expense"]["category_id"],
+                    "tag_ids": [data["tag"]["tag_id"]],
+                    "is_base_cost": True,
+                    "memo": "Mat",
+                },
+                {
+                    "original_amount": "400",
+                    "category_id": travel["category_id"],
+                    "tag_ids": [],
+                    "is_base_cost": False,
+                    "memo": "Tågbiljett",
+                },
+            ],
+        },
+    )
+    assert updated_split.status_code == 200, updated_split.text
+    assert updated_split.json()["description"] == "Delat kvitto, granskat"
+
+    refund = client.post(
+        f"/api/v1/transactions/{split_transaction['transaction_id']}/refunds",
+        headers=headers,
+        json={
+            "account_id": data["account"]["account_id"],
+            "transaction_date": "2026-08-21",
+            "posting_date": "2026-08-21",
+            "description": "Delåterbetalning",
+            "original_amount": "100",
+            "original_currency": "SEK",
+        },
+    )
+    assert refund.status_code == 201, refund.text
+
+    analysis = client.get(
+        "/api/v1/transactions/analysis?date_from=2026-08-10&date_to=2026-08-31"
+        "&comparison=previous_period"
+    )
+    assert analysis.status_code == 200, analysis.text
+    result = analysis.json()
+    assert result["expense_categories"] == [
+        {
+            "category_id": data["expense"]["category_id"],
+            "category_name": "Mat",
+            "amount": "540.0000",
+            "transaction_count": 2,
+        },
+        {
+            "category_id": travel["category_id"],
+            "category_name": "Resor",
+            "amount": "360.0000",
+            "transaction_count": 2,
+        },
+    ]
+    assert result["comparison"]["date_from"] == "2026-07-19"
+    assert result["comparison"]["date_to"] == "2026-08-09"
+    assert result["comparison"]["expenses"] == "300.0000"
+
+    filtered_summary = client.get(
+        "/api/v1/transactions/summary?date_from=2026-08-10&date_to=2026-08-31"
+        f"&category_id={data['expense']['category_id']}"
+    )
+    assert filtered_summary.status_code == 200
+    assert filtered_summary.json()["expenses"] == "540.0000"
+    filtered_list = client.get(
+        f"/api/v1/transactions?category_id={data['expense']['category_id']}"
+    ).json()
+    assert {item["transaction_kind"] for item in filtered_list["items"]} == {
+        "expense",
+        "refund",
+    }
+    impossible_cross_split_match = client.get(
+        "/api/v1/transactions"
+        f"?category_id={travel['category_id']}&tag_id={data['tag']['tag_id']}"
+    ).json()
+    assert impossible_cross_split_match["total"] == 0
 
 
 def test_category_semantics_database_balance_and_test_reset(

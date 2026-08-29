@@ -160,11 +160,31 @@ export type Transaction = {
   category_id: number | null;
   tag_ids: number[];
   is_base_cost: boolean;
+  is_split: boolean;
+  splits: TransactionSplit[];
   linked_expense_id: number | null;
   status: LifecycleStatus;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type TransactionSplit = {
+  transaction_split_id: number;
+  original_amount: string;
+  converted_amount: string | null;
+  category_id: number | null;
+  tag_ids: number[];
+  is_base_cost: boolean;
+  memo: string | null;
+};
+
+export type TransactionSplitInput = {
+  original_amount: string;
+  category_id: number | null;
+  tag_ids: number[];
+  is_base_cost: boolean;
+  memo?: string | null;
 };
 
 export type TransactionInput = {
@@ -181,6 +201,7 @@ export type TransactionInput = {
   category_id: number | null;
   tag_ids: number[];
   is_base_cost: boolean;
+  splits?: TransactionSplitInput[] | null;
   source_reference?: string | null;
   notes?: string | null;
 };
@@ -275,6 +296,28 @@ export type LedgerAnalysis = {
   base_currency: string;
   daily: LedgerTrendPoint[];
   expense_categories: LedgerCategoryBreakdown[];
+  comparison: LedgerComparison | null;
+};
+
+export type AnalysisComparisonMode = "none" | "previous_period" | "previous_year";
+
+export type LedgerComparison = {
+  mode: Exclude<AnalysisComparisonMode, "none">;
+  date_from: string;
+  date_to: string;
+  income: string;
+  expenses: string;
+  net_cash_flow: string;
+  daily: LedgerTrendPoint[];
+  expense_categories: LedgerCategoryBreakdown[];
+};
+
+export type LedgerFilters = {
+  accountId?: number | null;
+  providerId?: number | null;
+  categoryId?: number | null;
+  tagId?: number | null;
+  isBaseCost?: boolean | null;
 };
 
 export class ApiError extends Error {
@@ -591,6 +634,12 @@ export function getTransactions(
     kind?: TransactionKind | "";
     accountId?: number | null;
     categoryId?: number | null;
+    providerId?: number | null;
+    tagId?: number | null;
+    isBaseCost?: boolean | null;
+    originalCurrency?: string;
+    amountMin?: string;
+    amountMax?: string;
     search?: string;
     includeArchived?: boolean;
     limit?: number;
@@ -603,6 +652,14 @@ export function getTransactions(
   if (filters.kind) query.set("transaction_kind", filters.kind);
   if (filters.accountId) query.set("account_id", String(filters.accountId));
   if (filters.categoryId) query.set("category_id", String(filters.categoryId));
+  if (filters.providerId) query.set("provider_id", String(filters.providerId));
+  if (filters.tagId) query.set("tag_id", String(filters.tagId));
+  if (filters.isBaseCost !== undefined && filters.isBaseCost !== null) {
+    query.set("is_base_cost", String(filters.isBaseCost));
+  }
+  if (filters.originalCurrency) query.set("original_currency", filters.originalCurrency);
+  if (filters.amountMin) query.set("amount_min", filters.amountMin);
+  if (filters.amountMax) query.set("amount_max", filters.amountMax);
   if (filters.search?.trim()) query.set("search", filters.search.trim());
   if (filters.includeArchived) query.set("include_archived", "true");
   return request(environment, `/transactions?${query.toString()}`);
@@ -612,8 +669,10 @@ export function getLedgerSummary(
   environment: Environment,
   dateFrom: string,
   dateTo: string,
+  filters: LedgerFilters = {},
 ): Promise<LedgerSummary> {
   const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  appendLedgerFilters(query, filters);
   return request(environment, `/transactions/summary?${query.toString()}`);
 }
 
@@ -621,9 +680,26 @@ export function getLedgerAnalysis(
   environment: Environment,
   dateFrom: string,
   dateTo: string,
+  comparison: AnalysisComparisonMode = "none",
+  filters: LedgerFilters = {},
 ): Promise<LedgerAnalysis> {
-  const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  const query = new URLSearchParams({
+    date_from: dateFrom,
+    date_to: dateTo,
+    comparison,
+  });
+  appendLedgerFilters(query, filters);
   return request(environment, `/transactions/analysis?${query.toString()}`);
+}
+
+function appendLedgerFilters(query: URLSearchParams, filters: LedgerFilters): void {
+  if (filters.accountId) query.set("account_id", String(filters.accountId));
+  if (filters.providerId) query.set("provider_id", String(filters.providerId));
+  if (filters.categoryId) query.set("category_id", String(filters.categoryId));
+  if (filters.tagId) query.set("tag_id", String(filters.tagId));
+  if (filters.isBaseCost !== undefined && filters.isBaseCost !== null) {
+    query.set("is_base_cost", String(filters.isBaseCost));
+  }
 }
 
 export function createTransaction(
