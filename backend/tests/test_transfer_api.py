@@ -108,6 +108,11 @@ def test_credit_card_payment_is_atomic_and_excluded_from_income_expense(
     assert summary["expenses"] == "0"
     assert summary["net_cash_flow"] == "0"
     assert summary["transaction_count"] == 0
+    analysis = client.get(
+        "/api/v1/transactions/analysis?date_from=2026-08-01&date_to=2026-08-31"
+    ).json()
+    assert analysis["daily"] == []
+    assert analysis["expense_categories"] == []
 
     by_source = client.get(f"/api/v1/transfers?account_id={current['account_id']}")
     by_destination = client.get(f"/api/v1/transfers?account_id={card['account_id']}")

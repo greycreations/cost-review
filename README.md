@@ -211,6 +211,7 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET/POST/PATCH | `/api/v1/tags[...]`, `/api/v1/sharing-parties[...]` | Reusable tags and sharing-party register |
 | GET/POST/PATCH | `/api/v1/transactions[...]` | Manual income/expense CRUD, filtering and archive/restore |
 | GET | `/api/v1/transactions/summary` | Canonical income, expense and cash-flow totals for a date range |
+| GET | `/api/v1/transactions/analysis` | Daily income/expense trend and expense-category breakdown for a date range |
 | GET/POST/PATCH | `/api/v1/transfers[...]` | Atomic owned-account transfers, filtering and archive/restore |
 
 Ledger list endpoints return `{ items, total, limit, offset }`, support bounded
@@ -229,6 +230,12 @@ and historical FX, and is always excluded from ordinary income, expense, and
 net cash-flow totals. Credit-card payments use this transfer workflow. Refunds,
 reimbursements, split editing, and calculated balances remain later slices and
 are intentionally not represented as ordinary income or expense in the UI.
+
+The Overview defaults to the current calendar month and supports explicit month
+navigation. Its first analysis slice visualizes daily income/expense movement
+and expenses by category, with accessible tables containing the exact server-
+aggregated values. This does not yet complete the Epic 5 comparison, common-
+filter, drill-down, or saved-layout capabilities.
 
 ## Source of truth
 

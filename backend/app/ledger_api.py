@@ -18,6 +18,7 @@ from app.ledger_schemas import (
     CategoryLinkRead,
     CategoryRead,
     CategoryUpdate,
+    LedgerAnalysisRead,
     LedgerSummaryRead,
     ManualTransactionKind,
     Page,
@@ -79,6 +80,7 @@ from app.models import (
 from app.transaction_services import (
     create_manual_transaction,
     get_manual_transaction,
+    ledger_analysis,
     ledger_summary,
     list_transactions,
     transaction_values,
@@ -150,6 +152,17 @@ def get_transaction_summary(
 ) -> dict[str, object]:
     _validate_date_range(date_from, date_to)
     return ledger_summary(db, date_from, date_to, auth.user.settings.base_currency)
+
+
+@router.get("/transactions/analysis", response_model=LedgerAnalysisRead)
+def get_transaction_analysis(
+    auth: Auth,
+    db: DatabaseSession,
+    date_from: date,
+    date_to: date,
+) -> dict[str, object]:
+    _validate_date_range(date_from, date_to)
+    return ledger_analysis(db, date_from, date_to, auth.user.settings.base_currency)
 
 
 @router.get("/transactions/{transaction_id}", response_model=TransactionRead)
