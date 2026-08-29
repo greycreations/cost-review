@@ -1,13 +1,15 @@
 # Cost Review — Release 1 Core MVP delivery baseline
 
-**Status:** aligned with Product Specification v1.0
+**Status:** aligned with Product Specification v1.0, with approved MVP clarifications for recurring-cost forecasting and payroll/income breakdown
 
 **Authoritative requirements:** `docs/PRODUCT_SPECIFICATION.md`
 
 **Delivery order:** `docs/IMPLEMENTATION_BACKLOG.md`
 
 This document is a compact technical delivery guide. It does not override the
-Product Specification.
+Product Specification. The recurring-cost and payroll clarifications below are
+approved MVP requirements and must be consolidated into the Product Specification
+when that baseline is next revised.
 
 ## Release 1 outcome
 
@@ -21,11 +23,13 @@ The Release 1 Core MVP blockers are:
 1. Platform foundation, setup, authentication, persistence, migrations, and a
    hard Production/Test boundary.
 2. Accounts, balances, transactions, splits, income, expenses, transfers,
-   refunds, reimbursements, adjustments, currency, and sharing.
+   refunds, reimbursements, adjustments, currency, sharing, and payroll/income
+   breakdowns that preserve the difference between cash flow and economic cost.
 3. Categories, providers and aliases/links, tags, and sharing parties.
 4. Safe CRUD, audit, Recycle Bin, bulk edit, restore, and dependency-aware
    permanent deletion.
-5. Versioned recurring definitions, Expected events, confirmation, and matching.
+5. Versioned recurring definitions, Expected events, confirmation, matching,
+   recurring-cost classification, and fixed/variable expected amounts.
 6. CSV/XLSX profiles, preview, staging, validation, duplicate handling, rules,
    import batches, and undo.
 7. Common filters, saved views, Analysis Groups, predefined dashboards, and
@@ -111,6 +115,107 @@ been reviewed against Product Specification v1.0.
    semantics.
 4. Sharing, balances, reconciliation, soft deletion, Recycle Bin, audit, frozen
    historical identity, and bulk edit.
+5. Payroll/income breakdown semantics for economic events that occur before the
+   net amount reaches an owned account.
 
 Recurring/Expected events remain a separate later epic and never replace actual
 ledger events.
+
+## Recurring cost classification and forecasting
+
+Recurring status is a first-class analytical dimension and must not be reduced
+to a simple transaction checkbox. Actual transactions may be linked to a
+versioned recurring definition while preserving the actual transaction as the
+historical source of truth.
+
+Cost nature supports at least:
+
+- **Recurring fixed** — predictable amount and cadence, for example a streaming
+  subscription.
+- **Recurring variable** — predictable cadence but variable amount, for example
+  electricity, water/waste, heating, or other utility bills.
+- **One-off** — explicitly classified as a non-recurring economic event.
+- **Unclassified** — no recurring/one-off assumption has yet been made.
+
+Recurring definitions may specify cadence, expected date/window, provider,
+account, category, sharing defaults, and either a fixed amount or a forecasted
+variable amount. Generated occurrences remain Expected until confirmed or
+matched to an actual transaction.
+
+For variable recurring costs, Core MVP must support a simple explainable
+forecast value and retain the data model needed for more capable forecasting.
+Forecasting must never rewrite historical actual amounts. The product should be
+able to evolve through forecast methods such as last amount, rolling average,
+rolling median, and seasonal history. Where sufficient history exists, future
+forecasting may provide an estimated range/confidence rather than false
+precision, especially for seasonal costs such as electricity.
+
+Analysis and saved views must be able to separate recurring fixed, recurring
+variable, one-off, and unclassified costs. This enables views such as normal
+monthly recurring cost, fixed commitments, expected variable costs, and
+one-off spending. Forecast accuracy can later be measured by comparing an
+Expected occurrence with the matched actual transaction.
+
+## Payroll and income breakdown
+
+Cost Review must represent economic costs and allocations that occur before a
+net salary or other income reaches an owned account. A common example is a
+salary-sacrifice/company-car arrangement where a fixed gross-salary deduction
+is made before tax and net salary payment.
+
+The actual net payment to the bank account remains the ledger transaction that
+affects account balance. A payroll/income breakdown is linked to that income
+transaction and may describe components such as:
+
+- gross income;
+- taxable benefits or other additions;
+- pre-tax/gross-salary deductions;
+- tax/withholding;
+- post-tax deductions;
+- net amount paid to the owned account.
+
+Breakdown components are economic metadata/events and must not create a second
+cash withdrawal from the bank account. This prevents double counting while
+allowing a salary deduction, such as a company-car cost, to appear in expense
+and compensation analysis.
+
+Each relevant deduction/component may have a category, tags, sharing data and
+recurring definition. A fixed monthly company-car salary deduction can therefore
+be represented as a recurring fixed economic cost and included together with
+ordinary bank-paid vehicle expenses in total vehicle-cost analysis.
+
+The model must support at least two analytical perspectives:
+
+- **Cash flow** — what actually entered or left owned accounts.
+- **Economic/compensation** — income and costs including payroll components that
+  occur before net settlement.
+
+Cash-flow balances and reconciliation always use actual ledger transactions;
+payroll breakdown components never alter an account balance independently.
+Economic analysis may include eligible breakdown components according to the
+selected perspective and must clearly indicate when values are not direct bank
+transactions.
+
+The payroll model must be generic rather than company-car-specific so that the
+same mechanism can represent pension salary sacrifice, insurance, union fees,
+employee benefits, and other payroll deductions or additions. Historical
+breakdowns must remain stable. Changes to recurring payroll components use
+versioned definitions/effective dates rather than rewriting prior salary
+periods.
+
+### Payroll acceptance criteria
+
+- A user can register a net salary transaction and attach a payroll breakdown.
+- The breakdown can reconcile gross/addition/deduction/tax components to the net
+  paid amount, while allowing jurisdiction-specific components that affect tax
+  basis without pretending to be cash movements.
+- A payroll deduction can be classified and analyzed as an economic cost without
+  reducing the bank-account balance a second time.
+- A payroll component can be recurring fixed or recurring variable and can use
+  versioned effective dates.
+- Expense/category analysis can include payroll-derived economic costs when the
+  Economic/compensation perspective is selected.
+- Cash-flow analysis and account reconciliation exclude non-cash payroll
+  components from account movements.
+- The UI clearly distinguishes actual bank transactions from payroll-derived
+  economic components.
