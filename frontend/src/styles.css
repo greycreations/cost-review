@@ -355,6 +355,12 @@ select:hover {
   line-height: 1.6;
 }
 
+.workspace-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
 .compact-heading {
   margin-bottom: 0;
 }
@@ -463,6 +469,22 @@ select:hover {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface);
+}
+
+.transfer-editor {
+  border-style: solid;
+}
+
+.transfer-editor .editor-title {
+  align-items: flex-start;
+}
+
+.transfer-editor .editor-title p {
+  max-width: 42rem;
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .recent-heading,
@@ -795,6 +817,10 @@ select:hover {
 
 .transaction-value {
   justify-items: end;
+}
+
+.transaction-value.transfer > strong {
+  color: var(--text-primary);
 }
 
 .row-actions {
@@ -1202,6 +1228,10 @@ footer {
     flex-direction: column;
   }
 
+  .workspace-actions {
+    flex-wrap: wrap;
+  }
+
   .summary-strip {
     grid-template-columns: 1fr;
   }
@@ -1302,6 +1332,11 @@ footer {
   .description-field,
   .filter-heading {
     grid-column: auto;
+  }
+
+  .workspace-actions {
+    display: grid;
+    width: 100%;
   }
 
   .overview-transaction {

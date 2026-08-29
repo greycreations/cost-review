@@ -24,6 +24,28 @@ const session = (environment: "production" | "test") => ({
 
 let accountItems: object[] = [];
 
+const account = (
+  accountId: number,
+  name: string,
+  accountType: "current" | "savings" | "credit_card" = "current",
+) => ({
+  account_id: accountId,
+  name,
+  account_type: accountType,
+  opening_balance: "0.0000",
+  opening_balance_date: "2026-08-01",
+  currency: "SEK",
+  interest_rate: null,
+  is_locked: false,
+  lock_start_date: null,
+  lock_end_date: null,
+  notes: null,
+  status: "active",
+  archived_at: null,
+  created_at: "2026-08-01T00:00:00Z",
+  updated_at: "2026-08-01T00:00:00Z",
+});
+
 describe("App", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -65,6 +87,8 @@ describe("App", () => {
             missing_fx_count: 0,
           };
         } else if (path.includes("/transactions?")) {
+          body = { items: [], total: 0, limit: 100, offset: 0 };
+        } else if (path.includes("/transfers?")) {
           body = { items: [], total: 0, limit: 100, offset: 0 };
         } else {
           body = session(environment);
@@ -113,25 +137,7 @@ describe("App", () => {
   });
 
   it("opens a focused transaction form when an account exists", async () => {
-    accountItems = [
-      {
-        account_id: 1,
-        name: "Daily account",
-        account_type: "current",
-        opening_balance: "0.0000",
-        opening_balance_date: "2026-08-01",
-        currency: "SEK",
-        interest_rate: null,
-        is_locked: false,
-        lock_start_date: null,
-        lock_end_date: null,
-        notes: null,
-        status: "active",
-        archived_at: null,
-        created_at: "2026-08-01T00:00:00Z",
-        updated_at: "2026-08-01T00:00:00Z",
-      },
-    ];
+    accountItems = [account(1, "Daily account")];
     const user = userEvent.setup();
     render(<App />);
     await screen.findByText("Your finances this month");
@@ -146,6 +152,42 @@ describe("App", () => {
     expect(screen.getByLabelText("Description")).toBeInTheDocument();
     expect(screen.getByText("More details")).toBeInTheDocument();
     expect(screen.queryByLabelText("Amount in base currency (SEK)")).not.toBeInTheDocument();
+  });
+
+  it("creates a credit-card payment through the dedicated transfer workflow", async () => {
+    accountItems = [
+      account(1, "Daily account"),
+      account(2, "Credit card", "credit_card"),
+    ];
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("Your finances this month");
+
+    await user.click(screen.getByRole("link", { name: "Transactions" }));
+    const transferButton = await screen.findByRole("button", { name: "↔ New transfer" });
+    expect(transferButton).toBeEnabled();
+    await user.click(transferButton);
+
+    expect(screen.getByRole("heading", { name: "New transfer" })).toBeInTheDocument();
+    expect(screen.getByLabelText("From account")).toHaveValue("1");
+    expect(screen.getByLabelText("To account")).toHaveValue("2");
+    await user.selectOptions(screen.getByLabelText("Purpose"), "credit_card_payment");
+    await user.type(screen.getByLabelText("Description"), "August card bill");
+    await user.type(screen.getByLabelText("Amount (SEK)"), "450");
+    expect(screen.getByLabelText("Received amount (SEK)")).toHaveValue("450");
+    await user.click(screen.getByRole("button", { name: "Save transfer" }));
+
+    const transferCall = vi.mocked(fetch).mock.calls.find(([input, init]) =>
+      input.toString().includes("/transfers") && init?.method === "POST"
+    );
+    expect(transferCall).toBeDefined();
+    expect(JSON.parse(String(transferCall?.[1]?.body))).toMatchObject({
+      source_account_id: 1,
+      destination_account_id: 2,
+      purpose: "credit_card_payment",
+      source_amount: "450",
+      destination_amount: "450",
+    });
   });
 
   it("switches to the isolated Demo/Test context with a persistent warning", async () => {

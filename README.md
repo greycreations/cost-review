@@ -181,9 +181,9 @@ GitHub Actions runs three gates:
 - complete Compose startup plus an HTTP isolation scenario.
 
 The isolation scenario creates independent Production/Test users, accounts,
-and transactions, proves ordinary Ledger writes cannot cross the boundary,
+transactions, and linked transfers, proves Ledger writes cannot cross the boundary,
 resets Demo/Test, and proves Production identity, settings, accounts, and
-transactions are unchanged. It also proves the Test API cannot resolve or
+economic events are unchanged. It also proves the Test API cannot resolve or
 connect to the Production database network and that the reset route is absent
 in Production.
 
@@ -211,6 +211,7 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET/POST/PATCH | `/api/v1/tags[...]`, `/api/v1/sharing-parties[...]` | Reusable tags and sharing-party register |
 | GET/POST/PATCH | `/api/v1/transactions[...]` | Manual income/expense CRUD, filtering and archive/restore |
 | GET | `/api/v1/transactions/summary` | Canonical income, expense and cash-flow totals for a date range |
+| GET/POST/PATCH | `/api/v1/transfers[...]` | Atomic owned-account transfers, filtering and archive/restore |
 
 Ledger list endpoints return `{ items, total, limit, offset }`, support bounded
 pagination, and hide archived master records unless `include_archived=true` is
@@ -222,7 +223,10 @@ Transactions store an immutable economic date separately from posting and
 system timestamps. Original amount/currency and the converted base-currency
 amount/rate are persisted together. A foreign-currency entry may be saved when
 the historical rate is unknown, but it is marked as missing FX and excluded
-from canonical period totals until resolved. Transfers, refunds,
+from canonical period totals until resolved. An internal transfer links one
+outgoing and one incoming ledger leg, preserves both account-currency amounts
+and historical FX, and is always excluded from ordinary income, expense, and
+net cash-flow totals. Credit-card payments use this transfer workflow. Refunds,
 reimbursements, split editing, and calculated balances remain later slices and
 are intentionally not represented as ordinary income or expense in the UI.
 

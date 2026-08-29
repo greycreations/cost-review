@@ -21,6 +21,7 @@ from app.models import (
     LifecycleStatus,
     TransactionKind,
     TransactionSource,
+    TransferPurpose,
 )
 
 Name120 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
@@ -337,6 +338,94 @@ class TransactionRead(ArchivedApiModel):
     category_id: int | None
     tag_ids: list[int]
     is_base_cost: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class TransferCreate(BaseModel):
+    source_account_id: int = Field(gt=0)
+    destination_account_id: int = Field(gt=0)
+    purpose: TransferPurpose = TransferPurpose.INTERNAL
+    transaction_date: date
+    source_posting_date: date
+    destination_posting_date: date
+    description: Description
+    source_amount: Decimal = Field(gt=0, max_digits=20, decimal_places=4)
+    destination_amount: Decimal = Field(gt=0, max_digits=20, decimal_places=4)
+    source_converted_amount: Decimal | None = Field(
+        default=None, gt=0, max_digits=20, decimal_places=4
+    )
+    source_fx_rate: Decimal | None = Field(
+        default=None, gt=0, max_digits=20, decimal_places=10
+    )
+    destination_converted_amount: Decimal | None = Field(
+        default=None, gt=0, max_digits=20, decimal_places=4
+    )
+    destination_fx_rate: Decimal | None = Field(
+        default=None, gt=0, max_digits=20, decimal_places=10
+    )
+    source_reference: str | None = Field(default=None, max_length=240)
+    notes: Notes | None = None
+
+    @model_validator(mode="after")
+    def accounts_must_differ(self) -> TransferCreate:
+        if self.source_account_id == self.destination_account_id:
+            raise ValueError("source and destination accounts must differ")
+        return self
+
+
+class TransferUpdate(BaseModel):
+    source_account_id: int | None = Field(default=None, gt=0)
+    destination_account_id: int | None = Field(default=None, gt=0)
+    purpose: TransferPurpose | None = None
+    transaction_date: date | None = None
+    source_posting_date: date | None = None
+    destination_posting_date: date | None = None
+    description: Description | None = None
+    source_amount: Decimal | None = Field(
+        default=None, gt=0, max_digits=20, decimal_places=4
+    )
+    destination_amount: Decimal | None = Field(
+        default=None, gt=0, max_digits=20, decimal_places=4
+    )
+    source_converted_amount: Decimal | None = Field(
+        default=None, gt=0, max_digits=20, decimal_places=4
+    )
+    source_fx_rate: Decimal | None = Field(
+        default=None, gt=0, max_digits=20, decimal_places=10
+    )
+    destination_converted_amount: Decimal | None = Field(
+        default=None, gt=0, max_digits=20, decimal_places=4
+    )
+    destination_fx_rate: Decimal | None = Field(
+        default=None, gt=0, max_digits=20, decimal_places=10
+    )
+    source_reference: str | None = Field(default=None, max_length=240)
+    notes: Notes | None = None
+
+
+class TransferRead(ArchivedApiModel):
+    transfer_link_id: int
+    source_account_id: int
+    destination_account_id: int
+    purpose: TransferPurpose
+    transaction_date: date
+    source_posting_date: date
+    destination_posting_date: date
+    description: str
+    source_amount: Decimal
+    source_currency: str
+    source_converted_amount: Decimal | None
+    source_fx_rate: Decimal | None
+    source_fx_rate_status: FxRateStatus
+    destination_amount: Decimal
+    destination_currency: str
+    destination_converted_amount: Decimal | None
+    destination_fx_rate: Decimal | None
+    destination_fx_rate_status: FxRateStatus
+    base_currency: str
+    source_reference: str | None
+    notes: str | None
     created_at: datetime
     updated_at: datetime
 
