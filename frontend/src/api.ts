@@ -130,7 +130,9 @@ export type SharingParty = {
   updated_at: string;
 };
 
-export type TransactionKind = "expense" | "income";
+export type ManualTransactionKind = "expense" | "income";
+export type RecoveryKind = "refund" | "reimbursement";
+export type TransactionKind = ManualTransactionKind | RecoveryKind;
 export type TransferPurpose =
   | "internal"
   | "savings"
@@ -158,6 +160,7 @@ export type Transaction = {
   category_id: number | null;
   tag_ids: number[];
   is_base_cost: boolean;
+  linked_expense_id: number | null;
   status: LifecycleStatus;
   archived_at: string | null;
   created_at: string;
@@ -167,7 +170,7 @@ export type Transaction = {
 export type TransactionInput = {
   account_id: number;
   provider_id: number | null;
-  transaction_kind: TransactionKind;
+  transaction_kind: ManualTransactionKind;
   transaction_date: string;
   posting_date: string;
   description: string;
@@ -178,6 +181,19 @@ export type TransactionInput = {
   category_id: number | null;
   tag_ids: number[];
   is_base_cost: boolean;
+  source_reference?: string | null;
+  notes?: string | null;
+};
+
+export type RecoveryInput = {
+  account_id: number;
+  provider_id?: number | null;
+  transaction_date: string;
+  posting_date: string;
+  description: string;
+  original_amount: string;
+  original_currency: string;
+  converted_amount?: string | null;
   source_reference?: string | null;
   notes?: string | null;
 };
@@ -643,6 +659,34 @@ export function setTransactionArchived(
   return request(
     environment,
     `/transactions/${transactionId}/${archived ? "archive" : "restore"}`,
+    { method: "POST" },
+    true,
+  );
+}
+
+export function createRecovery(
+  environment: Environment,
+  expenseId: number,
+  kind: RecoveryKind,
+  payload: RecoveryInput,
+): Promise<Transaction> {
+  const resource = kind === "refund" ? "refunds" : "reimbursements";
+  return request(
+    environment,
+    `/transactions/${expenseId}/${resource}`,
+    { method: "POST", body: JSON.stringify(payload) },
+    true,
+  );
+}
+
+export function setRecoveryArchived(
+  environment: Environment,
+  transactionId: number,
+  archived: boolean,
+): Promise<Transaction> {
+  return request(
+    environment,
+    `/recoveries/${transactionId}/${archived ? "archive" : "restore"}`,
     { method: "POST" },
     true,
   );

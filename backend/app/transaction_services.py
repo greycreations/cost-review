@@ -16,6 +16,8 @@ from app.models import (
     Account,
     Category,
     Provider,
+    RefundLink,
+    ReimbursementLink,
     Tag,
     Transaction,
     TransactionKind,
@@ -222,7 +224,9 @@ def list_transactions(
     tag_id: int | None,
     search: str | None,
 ) -> dict[str, Any]:
-    filters = [Transaction.transaction_kind.in_(("expense", "income"))]
+    filters = [
+        Transaction.transaction_kind.in_(("expense", "income", "refund", "reimbursement"))
+    ]
     if not include_archived:
         filters.append(Transaction.status == "active")
     if date_from is not None:
@@ -236,9 +240,38 @@ def list_transactions(
     if provider_id is not None:
         filters.append(Transaction.provider_id == provider_id)
     if category_id is not None:
-        filters.append(Transaction.splits.any(TransactionSplit.category_id == category_id))
+        matching_recoveries = select(RefundLink.refund_transaction_id).join(
+            TransactionSplit,
+            TransactionSplit.transaction_id == RefundLink.original_expense_id,
+        ).where(TransactionSplit.category_id == category_id).union_all(
+            select(ReimbursementLink.reimbursement_transaction_id)
+            .join(
+                TransactionSplit,
+                TransactionSplit.transaction_id == ReimbursementLink.original_expense_id,
+            )
+            .where(TransactionSplit.category_id == category_id)
+        )
+        filters.append(
+            or_(
+                Transaction.splits.any(TransactionSplit.category_id == category_id),
+                Transaction.transaction_id.in_(matching_recoveries),
+            )
+        )
     if tag_id is not None:
-        filters.append(Transaction.splits.any(TransactionSplit.tags.any(Tag.tag_id == tag_id)))
+        refund_ids = select(RefundLink.refund_transaction_id).join(
+            TransactionSplit,
+            TransactionSplit.transaction_id == RefundLink.original_expense_id,
+        ).where(TransactionSplit.tags.any(Tag.tag_id == tag_id))
+        reimbursement_ids = select(ReimbursementLink.reimbursement_transaction_id).join(
+            TransactionSplit,
+            TransactionSplit.transaction_id == ReimbursementLink.original_expense_id,
+        ).where(TransactionSplit.tags.any(Tag.tag_id == tag_id))
+        filters.append(
+            or_(
+                Transaction.splits.any(TransactionSplit.tags.any(Tag.tag_id == tag_id)),
+                Transaction.transaction_id.in_(refund_ids.union_all(reimbursement_ids)),
+            )
+        )
     if search:
         filters.append(
             Transaction.normalized_description.contains(normalize_name(search), autoescape=True)
@@ -253,8 +286,17 @@ def list_transactions(
         .limit(limit)
         .offset(offset)
     )
+    models = list(db.scalars(statement))
+    recovery_links = _linked_expense_ids(
+        db, [model.transaction_id for model in models]
+    )
     return {
-        "items": [transaction_values(model) for model in db.scalars(statement)],
+        "items": [
+            transaction_values(
+                model, linked_expense_id=recovery_links.get(model.transaction_id)
+            )
+            for model in models
+        ],
         "total": db.scalar(count_statement) or 0,
         "limit": limit,
         "offset": offset,
@@ -266,7 +308,7 @@ def ledger_summary(
 ) -> dict[str, Any]:
     in_period = (
         Transaction.status == "active",
-        Transaction.transaction_kind.in_(("expense", "income")),
+        Transaction.transaction_kind.in_(("expense", "income", "refund", "reimbursement")),
         Transaction.transaction_date >= date_from,
         Transaction.transaction_date <= date_to,
     )
@@ -294,10 +336,18 @@ def ledger_summary(
                 func.sum(
                     case(
                         (
-                            (Transaction.transaction_kind == "expense")
+                            Transaction.transaction_kind.in_(
+                                ("expense", "refund", "reimbursement")
+                            )
                             & usable_conversion[0]
                             & usable_conversion[1],
-                            Transaction.converted_amount,
+                            case(
+                                (
+                                    Transaction.transaction_kind == "expense",
+                                    Transaction.converted_amount,
+                                ),
+                                else_=-Transaction.converted_amount,
+                            ),
                         ),
                         else_=0,
                     )
@@ -339,94 +389,93 @@ def ledger_summary(
 def ledger_analysis(
     db: DbSession, date_from: date, date_to: date, base_currency: str
 ) -> dict[str, Any]:
-    usable_transactions = (
-        Transaction.status == "active",
-        Transaction.transaction_kind.in_(("expense", "income")),
-        Transaction.transaction_date >= date_from,
-        Transaction.transaction_date <= date_to,
-        Transaction.base_currency == base_currency,
-        Transaction.converted_amount.is_not(None),
+    transactions = list(
+        db.scalars(
+            select(Transaction)
+            .where(
+                Transaction.status == "active",
+                Transaction.transaction_kind.in_(
+                    ("expense", "income", "refund", "reimbursement")
+                ),
+                Transaction.transaction_date >= date_from,
+                Transaction.transaction_date <= date_to,
+                Transaction.base_currency == base_currency,
+                Transaction.converted_amount.is_not(None),
+            )
+            .options(selectinload(Transaction.splits))
+            .order_by(Transaction.transaction_date)
+        )
     )
-    daily_rows = db.execute(
-        select(
-            Transaction.transaction_date,
-            func.coalesce(
-                func.sum(
-                    case(
-                        (
-                            Transaction.transaction_kind == "income",
-                            Transaction.converted_amount,
-                        ),
-                        else_=0,
-                    )
-                ),
-                0,
-            ).label("income"),
-            func.coalesce(
-                func.sum(
-                    case(
-                        (
-                            Transaction.transaction_kind == "expense",
-                            Transaction.converted_amount,
-                        ),
-                        else_=0,
-                    )
-                ),
-                0,
-            ).label("expenses"),
+    links = _linked_expense_ids(db, [model.transaction_id for model in transactions])
+    original_ids = set(links.values())
+    originals = {
+        model.transaction_id: model
+        for model in db.scalars(
+            select(Transaction)
+            .where(Transaction.transaction_id.in_(original_ids))
+            .options(selectinload(Transaction.splits))
         )
-        .where(*usable_transactions)
-        .group_by(Transaction.transaction_date)
-        .order_by(Transaction.transaction_date)
-    ).all()
-
-    category_rows = db.execute(
-        select(
-            TransactionSplit.category_id,
-            Category.name,
-            func.sum(TransactionSplit.converted_amount).label("amount"),
-            func.count(func.distinct(Transaction.transaction_id)).label("transaction_count"),
+    }
+    category_ids = {
+        split.category_id
+        for model in (*transactions, *originals.values())
+        for split in model.splits
+        if split.category_id is not None
+    }
+    category_names = {
+        category.category_id: category.name
+        for category in db.scalars(select(Category).where(Category.category_id.in_(category_ids)))
+    }
+    daily: dict[date, dict[str, Decimal]] = {}
+    categories: dict[int | None, dict[str, Any]] = {}
+    for model in transactions:
+        assert model.converted_amount is not None
+        day = daily.setdefault(
+            model.transaction_date,
+            {"income": Decimal("0"), "expenses": Decimal("0")},
         )
-        .join(Transaction, Transaction.transaction_id == TransactionSplit.transaction_id)
-        .outerjoin(Category, Category.category_id == TransactionSplit.category_id)
-        .where(
-            Transaction.status == "active",
-            Transaction.transaction_kind == "expense",
-            Transaction.transaction_date >= date_from,
-            Transaction.transaction_date <= date_to,
-            Transaction.base_currency == base_currency,
-            TransactionSplit.converted_amount.is_not(None),
+        if model.transaction_kind == TransactionKind.INCOME:
+            day["income"] += model.converted_amount
+            continue
+        sign = Decimal("1") if model.transaction_kind == TransactionKind.EXPENSE else Decimal("-1")
+        day["expenses"] += sign * model.converted_amount
+        category_source = model
+        if model.transaction_kind in (TransactionKind.REFUND, TransactionKind.REIMBURSEMENT):
+            category_source = originals[links[model.transaction_id]]
+        category_id = category_source.splits[0].category_id
+        bucket = categories.setdefault(
+            category_id,
+            {"amount": Decimal("0"), "transaction_count": 0},
         )
-        .group_by(TransactionSplit.category_id, Category.name)
-        .order_by(func.sum(TransactionSplit.converted_amount).desc(), Category.name)
-    ).all()
+        bucket["amount"] += sign * model.converted_amount
+        bucket["transaction_count"] += 1
 
     return {
         "date_from": date_from,
         "date_to": date_to,
         "base_currency": base_currency,
         "daily": [
-            {
-                "date": row.transaction_date,
-                "income": Decimal(row.income),
-                "expenses": Decimal(row.expenses),
-                "net_cash_flow": Decimal(row.income) - Decimal(row.expenses),
-            }
-            for row in daily_rows
+            {"date": day_date, **values, "net_cash_flow": values["income"] - values["expenses"]}
+            for day_date, values in daily.items()
         ],
         "expense_categories": [
             {
-                "category_id": row.category_id,
-                "category_name": row.name,
-                "amount": Decimal(row.amount),
-                "transaction_count": row.transaction_count,
+                "category_id": category_id,
+                "category_name": category_names.get(category_id),
+                "amount": values["amount"],
+                "transaction_count": values["transaction_count"],
             }
-            for row in category_rows
+            for category_id, values in sorted(
+                categories.items(),
+                key=lambda item: (-item[1]["amount"], category_names.get(item[0], "")),
+            )
         ],
     }
 
 
-def transaction_values(model: Transaction) -> dict[str, Any]:
+def transaction_values(
+    model: Transaction, *, linked_expense_id: int | None = None
+) -> dict[str, Any]:
     split = _single_component(model)
     return {
         "transaction_id": model.transaction_id,
@@ -448,11 +497,37 @@ def transaction_values(model: Transaction) -> dict[str, Any]:
         "category_id": split.category_id,
         "tag_ids": sorted(tag.tag_id for tag in split.tags),
         "is_base_cost": split.is_base_cost,
+        "linked_expense_id": linked_expense_id,
         "status": model.status,
         "archived_at": model.archived_at,
         "created_at": model.created_at,
         "updated_at": model.updated_at,
     }
+
+
+def _linked_expense_ids(db: DbSession, transaction_ids: list[int]) -> dict[int, int]:
+    if not transaction_ids:
+        return {}
+    links = {
+        recovery_id: expense_id
+        for expense_id, recovery_id in db.execute(
+            select(RefundLink.original_expense_id, RefundLink.refund_transaction_id).where(
+                RefundLink.refund_transaction_id.in_(transaction_ids)
+            )
+        )
+    }
+    links.update(
+        {
+            recovery_id: expense_id
+            for expense_id, recovery_id in db.execute(
+                select(
+                    ReimbursementLink.original_expense_id,
+                    ReimbursementLink.reimbursement_transaction_id,
+                ).where(ReimbursementLink.reimbursement_transaction_id.in_(transaction_ids))
+            )
+        }
+    )
+    return links
 
 
 def resolve_conversion(

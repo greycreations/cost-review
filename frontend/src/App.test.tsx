@@ -23,6 +23,7 @@ const session = (environment: "production" | "test") => ({
 });
 
 let accountItems: object[] = [];
+let transactionItems: object[] = [];
 let analysisData: object;
 
 const account = (
@@ -52,6 +53,7 @@ describe("App", () => {
     localStorage.clear();
     window.location.hash = "";
     accountItems = [];
+    transactionItems = [];
     analysisData = {
       date_from: "2026-08-01",
       date_to: "2026-08-31",
@@ -119,7 +121,12 @@ describe("App", () => {
             missing_fx_count: 0,
           };
         } else if (path.includes("/transactions?")) {
-          body = { items: [], total: 0, limit: 100, offset: 0 };
+          body = {
+            items: transactionItems,
+            total: transactionItems.length,
+            limit: 100,
+            offset: 0,
+          };
         } else if (path.includes("/transfers?")) {
           body = { items: [], total: 0, limit: 100, offset: 0 };
         } else {
@@ -227,6 +234,58 @@ describe("App", () => {
     expect(screen.getByLabelText("Description")).toBeInTheDocument();
     expect(screen.getByText("More details")).toBeInTheDocument();
     expect(screen.queryByLabelText("Amount in base currency (SEK)")).not.toBeInTheDocument();
+  });
+
+  it("records a refund through the original expense", async () => {
+    accountItems = [account(1, "Daily account")];
+    transactionItems = [{
+      transaction_id: 41,
+      account_id: 1,
+      provider_id: null,
+      transaction_kind: "expense",
+      transaction_date: "2026-08-10",
+      posting_date: "2026-08-10",
+      description: "Train tickets",
+      original_amount: "1000.0000",
+      original_currency: "SEK",
+      converted_amount: "1000.0000",
+      base_currency: "SEK",
+      fx_rate: "1.0000000000",
+      fx_rate_status: "not_required",
+      source_type: "manual",
+      source_reference: null,
+      notes: null,
+      category_id: null,
+      tag_ids: [],
+      is_base_cost: false,
+      linked_expense_id: null,
+      status: "active",
+      archived_at: null,
+      created_at: "2026-08-10T00:00:00Z",
+      updated_at: "2026-08-10T00:00:00Z",
+    }];
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/Your finances ·/);
+
+    await user.click(screen.getByRole("link", { name: "Transactions" }));
+    await user.click(await screen.findByRole("button", { name: "Refund" }));
+    expect(screen.getByRole("heading", { name: "Record refund" })).toBeInTheDocument();
+    expect(screen.getByText(/Linked expense:/).closest("p")).toHaveTextContent("Train tickets");
+    await user.type(screen.getByLabelText("Amount"), "250");
+    await user.click(screen.getByRole("button", { name: "Record refund" }));
+
+    await waitFor(() => {
+      const recoveryCall = vi.mocked(fetch).mock.calls.find(([input, init]) =>
+        input.toString().includes("/transactions/41/refunds") && init?.method === "POST"
+      );
+      expect(recoveryCall).toBeDefined();
+      expect(JSON.parse(String(recoveryCall?.[1]?.body))).toMatchObject({
+        account_id: 1,
+        original_amount: "250",
+        original_currency: "SEK",
+      });
+    });
   });
 
   it("creates a credit-card payment through the dedicated transfer workflow", async () => {

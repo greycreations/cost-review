@@ -41,6 +41,13 @@ class ManualTransactionKind(StrEnum):
     INCOME = "income"
 
 
+class LedgerTransactionKind(StrEnum):
+    EXPENSE = "expense"
+    INCOME = "income"
+    REFUND = "refund"
+    REIMBURSEMENT = "reimbursement"
+
+
 class ApiModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -372,8 +379,30 @@ class TransactionRead(ArchivedApiModel):
     category_id: int | None
     tag_ids: list[int]
     is_base_cost: bool
+    linked_expense_id: int | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class RecoveryCreate(BaseModel):
+    account_id: int = Field(gt=0)
+    provider_id: int | None = Field(default=None, gt=0)
+    transaction_date: date
+    posting_date: date
+    description: Description
+    original_amount: Decimal = Field(gt=0, max_digits=20, decimal_places=4)
+    original_currency: CurrencyCode
+    converted_amount: Decimal | None = Field(
+        default=None, gt=0, max_digits=20, decimal_places=4
+    )
+    fx_rate: Decimal | None = Field(default=None, gt=0, max_digits=20, decimal_places=10)
+    source_reference: str | None = Field(default=None, max_length=240)
+    notes: Notes | None = None
+
+    @field_validator("original_currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        return value.strip().upper()
 
 
 class TransferCreate(BaseModel):

@@ -623,3 +623,43 @@ class TransferLink(TimestampMixin, Base):
     incoming_transaction: Mapped[Transaction] = relationship(
         foreign_keys=[incoming_transaction_id]
     )
+
+
+class RefundLink(TimestampMixin, Base):
+    __tablename__ = "refund_links"
+    __table_args__ = (
+        Index("ix_refund_links_original_expense", "original_expense_id"),
+        Index("uq_refund_links_refund_transaction", "refund_transaction_id", unique=True),
+    )
+
+    refund_link_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    original_expense_id: Mapped[int] = mapped_column(
+        ForeignKey("transactions.transaction_id", ondelete="RESTRICT")
+    )
+    refund_transaction_id: Mapped[int] = mapped_column(
+        ForeignKey("transactions.transaction_id", ondelete="RESTRICT")
+    )
+
+
+class ReimbursementLink(TimestampMixin, Base):
+    __tablename__ = "reimbursement_links"
+    __table_args__ = (
+        Index("ix_reimbursement_links_original_expense", "original_expense_id"),
+        Index(
+            "uq_reimbursement_links_reimbursement_transaction",
+            "reimbursement_transaction_id",
+            unique=True,
+        ),
+    )
+
+    reimbursement_link_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    original_expense_id: Mapped[int] = mapped_column(
+        ForeignKey("transactions.transaction_id", ondelete="RESTRICT")
+    )
+    reimbursement_transaction_id: Mapped[int] = mapped_column(
+        ForeignKey("transactions.transaction_id", ondelete="RESTRICT")
+    )

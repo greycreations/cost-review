@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   createCategory,
   createProvider,
+  createRecovery,
   createTransfer,
   createTransaction,
   getAccounts,
@@ -13,6 +14,7 @@ import {
   getTransfers,
   getTransactions,
   setTransferArchived,
+  setRecoveryArchived,
   setTransactionArchived,
   updateTransfer,
   updateTransaction,
@@ -21,7 +23,9 @@ import {
   type Environment,
   type Language,
   type LedgerSummary,
+  type ManualTransactionKind,
   type Provider,
+  type RecoveryKind,
   type Tag,
   type Transfer,
   type TransferInput,
@@ -43,6 +47,12 @@ const copy = {
     expense: "Utgift",
     income: "Inkomst",
     transfer: "Överföring",
+    refund: "Återbetalning",
+    reimbursement: "Ersättning",
+    addRefund: "Registrera återbetalning",
+    addReimbursement: "Registrera ersättning",
+    recoveryLead: "Den ursprungliga kostnaden bevaras. Beloppet dras av i nettokostnad och analys.",
+    linkedExpense: "Hör till kostnad",
     transferLead: "Flytta pengar mellan egna konton utan att skapa en falsk inkomst eller utgift.",
     fromAccount: "Från konto",
     toAccount: "Till konto",
@@ -115,6 +125,12 @@ const copy = {
     expense: "Expense",
     income: "Income",
     transfer: "Transfer",
+    refund: "Refund",
+    reimbursement: "Reimbursement",
+    addRefund: "Record refund",
+    addReimbursement: "Record reimbursement",
+    recoveryLead: "The original gross expense is preserved. This amount reduces net cost and analysis.",
+    linkedExpense: "Linked expense",
     transferLead: "Move money between owned accounts without creating false income or expense.",
     fromAccount: "From account",
     toAccount: "To account",
@@ -181,7 +197,7 @@ const copy = {
 type Draft = {
   accountId: string;
   providerId: string;
-  kind: TransactionKind;
+  kind: ManualTransactionKind;
   transactionDate: string;
   postingDate: string;
   description: string;
@@ -212,6 +228,21 @@ type TransferDraft = {
 };
 
 type EntryKind = TransactionKind | "transfer";
+
+type RecoveryDraft = {
+  kind: RecoveryKind;
+  expenseId: number;
+  accountId: string;
+  providerId: string;
+  transactionDate: string;
+  postingDate: string;
+  description: string;
+  amount: string;
+  currency: string;
+  convertedAmount: string;
+  sourceReference: string;
+  notes: string;
+};
 
 type Filters = {
   dateFrom: string;
@@ -253,6 +284,7 @@ export function TransactionWorkspace({
   const [appliedFilters, setAppliedFilters] = useState(filters);
   const [draft, setDraft] = useState(() => emptyDraft(baseCurrency));
   const [transferDraft, setTransferDraft] = useState(() => emptyTransferDraft());
+  const [recoveryDraft, setRecoveryDraft] = useState<RecoveryDraft | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingTransferId, setEditingTransferId] = useState<number | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -298,7 +330,7 @@ export function TransactionWorkspace({
         setTags(tagPage.items);
         setTransactions(appliedFilters.kind === "transfer" ? [] : transactionPage.items);
         setTransfers(
-          appliedFilters.kind === "expense" || appliedFilters.kind === "income"
+          appliedFilters.kind !== "" && appliedFilters.kind !== "transfer"
             ? []
             : transferPage.items,
         );
@@ -334,6 +366,7 @@ export function TransactionWorkspace({
   );
 
   const openNew = () => {
+    setRecoveryDraft(null);
     setTransferFormOpen(false);
     setEditingTransferId(null);
     setEditingId(null);
@@ -346,6 +379,10 @@ export function TransactionWorkspace({
   };
 
   const openEdit = (transaction: Transaction) => {
+    if (transaction.transaction_kind !== "expense" && transaction.transaction_kind !== "income") {
+      return;
+    }
+    setRecoveryDraft(null);
     setTransferFormOpen(false);
     setEditingTransferId(null);
     setEditingId(transaction.transaction_id);
@@ -377,6 +414,7 @@ export function TransactionWorkspace({
   };
 
   const openNewTransfer = () => {
+    setRecoveryDraft(null);
     setFormOpen(false);
     setEditingId(null);
     setEditingTransferId(null);
@@ -390,6 +428,7 @@ export function TransactionWorkspace({
   };
 
   const openEditTransfer = (transfer: Transfer) => {
+    setRecoveryDraft(null);
     setFormOpen(false);
     setEditingId(null);
     setEditingTransferId(transfer.transfer_link_id);
@@ -415,6 +454,61 @@ export function TransactionWorkspace({
   const closeTransferForm = () => {
     setTransferFormOpen(false);
     setEditingTransferId(null);
+  };
+
+  const openRecovery = (expense: Transaction, kind: RecoveryKind) => {
+    setFormOpen(false);
+    setTransferFormOpen(false);
+    setEditingId(null);
+    setEditingTransferId(null);
+    const today = localDate(new Date());
+    setRecoveryDraft({
+      kind,
+      expenseId: expense.transaction_id,
+      accountId: String(expense.account_id),
+      providerId: String(expense.provider_id ?? ""),
+      transactionDate: today < expense.transaction_date ? expense.transaction_date : today,
+      postingDate: today < expense.transaction_date ? expense.transaction_date : today,
+      description: kind === "refund" ? labels.refund : labels.reimbursement,
+      amount: "",
+      currency: expense.original_currency,
+      convertedAmount: "",
+      sourceReference: "",
+      notes: "",
+    });
+    setError(null);
+  };
+
+  const submitRecovery = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!recoveryDraft) return;
+    setWorking(true);
+    setError(null);
+    try {
+      await createRecovery(environment, recoveryDraft.expenseId, recoveryDraft.kind, {
+        account_id: Number(recoveryDraft.accountId),
+        provider_id: numberOrNull(recoveryDraft.providerId),
+        transaction_date: recoveryDraft.transactionDate,
+        posting_date: recoveryDraft.postingDate,
+        description: recoveryDraft.description,
+        original_amount: normalizeDecimalInput(recoveryDraft.amount),
+        original_currency: recoveryDraft.currency.toUpperCase(),
+        converted_amount:
+          recoveryDraft.currency.toUpperCase() !== baseCurrency
+            ? recoveryDraft.convertedAmount
+              ? normalizeDecimalInput(recoveryDraft.convertedAmount)
+              : null
+            : undefined,
+        source_reference: recoveryDraft.sourceReference.trim() || null,
+        notes: recoveryDraft.notes.trim() || null,
+      });
+      setRecoveryDraft(null);
+      setReloadKey((value) => value + 1);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Recovery request failed.");
+    } finally {
+      setWorking(false);
+    }
   };
 
   const submit = async (event: FormEvent) => {
@@ -623,6 +717,24 @@ export function TransactionWorkspace({
         />
       ) : null}
 
+      {recoveryDraft ? (
+        <RecoveryForm
+          accounts={accounts}
+          baseCurrency={baseCurrency}
+          draft={recoveryDraft}
+          expense={transactions.find(
+            (item) => item.transaction_id === recoveryDraft.expenseId,
+          )}
+          labels={labels}
+          language={language}
+          providers={providers}
+          setDraft={setRecoveryDraft}
+          working={working}
+          onCancel={() => setRecoveryDraft(null)}
+          onSubmit={submitRecovery}
+        />
+      ) : null}
+
       {error ? <p className="form-error" role="alert">{error}</p> : null}
 
       <form
@@ -673,6 +785,8 @@ export function TransactionWorkspace({
             <option value="">{labels.allKinds}</option>
             <option value="expense">{labels.expense}</option>
             <option value="income">{labels.income}</option>
+            <option value="refund">{labels.refund}</option>
+            <option value="reimbursement">{labels.reimbursement}</option>
             <option value="transfer">{labels.transfer}</option>
           </select>
         </label>
@@ -726,6 +840,7 @@ export function TransactionWorkspace({
           transfers={transfers}
           transactions={transactions}
           onEdit={openEdit}
+          onRecovery={openRecovery}
           onEditTransfer={openEditTransfer}
           onReload={() => {
             setLoading(true);
@@ -795,6 +910,62 @@ function TransactionForm({
       {draft.currency !== baseCurrency ? <label className="conversion-field">{labels.convertedAmount} ({baseCurrency})<input inputMode="decimal" onChange={(event) => setDraft({ ...draft, convertedAmount: event.target.value })} pattern="[0-9]+([.,][0-9]{1,4})?" value={draft.convertedAmount} /><small>{labels.convertedHelp}</small></label> : null}
       <details className="optional-fields"><summary>{labels.optional}</summary><div className="optional-grid"><label>{labels.reference}<input onChange={(event) => setDraft({ ...draft, sourceReference: event.target.value })} value={draft.sourceReference} /></label><label>{labels.notes}<input onChange={(event) => setDraft({ ...draft, notes: event.target.value })} value={draft.notes} /></label><fieldset><legend>{labels.tags}</legend>{tags.map((tag) => <label className="checkbox-field" key={tag.tag_id}><input checked={draft.tagIds.includes(tag.tag_id)} onChange={(event) => setDraft({ ...draft, tagIds: event.target.checked ? [...draft.tagIds, tag.tag_id] : draft.tagIds.filter((id) => id !== tag.tag_id) })} type="checkbox" />{tag.name}</label>)}</fieldset><label className="checkbox-field"><input checked={draft.isBaseCost} onChange={(event) => setDraft({ ...draft, isBaseCost: event.target.checked })} type="checkbox" />{labels.baseCost}</label></div></details>
       <div className="editor-actions"><button className="secondary-button" onClick={onCancel} type="button">{labels.cancel}</button><button className="primary-button" disabled={working} type="submit">{editing ? labels.update : labels.save}</button></div>
+    </form>
+  );
+}
+
+function RecoveryForm({
+  accounts,
+  baseCurrency,
+  draft,
+  expense,
+  labels,
+  language,
+  providers,
+  setDraft,
+  working,
+  onCancel,
+  onSubmit,
+}: {
+  accounts: Account[];
+  baseCurrency: string;
+  draft: RecoveryDraft;
+  expense: Transaction | undefined;
+  labels: Labels;
+  language: Language;
+  providers: Provider[];
+  setDraft: (draft: RecoveryDraft) => void;
+  working: boolean;
+  onCancel: () => void;
+  onSubmit: (event: FormEvent) => void;
+}) {
+  return (
+    <form className="transaction-editor recovery-editor" onSubmit={onSubmit}>
+      <div className="editor-title">
+        <div>
+          <h2>{draft.kind === "refund" ? labels.addRefund : labels.addReimbursement}</h2>
+          <p>{labels.recoveryLead}</p>
+        </div>
+        <button className="ghost-button" onClick={onCancel} type="button">
+          {labels.cancel}
+        </button>
+      </div>
+      <p className="linked-event-note">
+        <strong>{labels.linkedExpense}:</strong> {expense?.description ?? `#${draft.expenseId}`}
+        {expense ? ` · ${formatMoney(expense.original_amount, expense.original_currency, language)}` : ""}
+      </p>
+      <div className="transaction-form-grid">
+        <label>{labels.date}<input min={expense?.transaction_date} onChange={(event) => setDraft({ ...draft, transactionDate: event.target.value })} required type="date" value={draft.transactionDate} /></label>
+        <label>{labels.postingDate}<input onChange={(event) => setDraft({ ...draft, postingDate: event.target.value })} required type="date" value={draft.postingDate} /></label>
+        <label>{labels.account}<select onChange={(event) => setDraft({ ...draft, accountId: event.target.value })} required value={draft.accountId}><option value="">{labels.chooseAccount}</option>{accounts.map((account) => <option key={account.account_id} value={account.account_id}>{account.name}</option>)}</select></label>
+        <label className="description-field">{labels.description}<input autoFocus onChange={(event) => setDraft({ ...draft, description: event.target.value })} required value={draft.description} /></label>
+        <label>{labels.amount}<input inputMode="decimal" onChange={(event) => setDraft({ ...draft, amount: event.target.value })} pattern="[0-9]+([.,][0-9]{1,4})?" required value={draft.amount} /></label>
+        <label>{labels.currency}<input maxLength={3} minLength={3} onChange={(event) => setDraft({ ...draft, currency: event.target.value.toUpperCase() })} pattern="[A-Z]{3}" required value={draft.currency} /></label>
+        <label>{labels.provider}<select onChange={(event) => setDraft({ ...draft, providerId: event.target.value })} value={draft.providerId}><option value="">{labels.noProvider}</option>{providers.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.name}</option>)}</select></label>
+      </div>
+      {draft.currency !== baseCurrency ? <label className="conversion-field">{labels.convertedAmount} ({baseCurrency})<input inputMode="decimal" onChange={(event) => setDraft({ ...draft, convertedAmount: event.target.value })} pattern="[0-9]+([.,][0-9]{1,4})?" value={draft.convertedAmount} /><small>{labels.convertedHelp}</small></label> : null}
+      <details className="optional-fields"><summary>{labels.optional}</summary><div className="optional-grid"><label>{labels.reference}<input onChange={(event) => setDraft({ ...draft, sourceReference: event.target.value })} value={draft.sourceReference} /></label><label>{labels.notes}<input onChange={(event) => setDraft({ ...draft, notes: event.target.value })} value={draft.notes} /></label></div></details>
+      <div className="editor-actions"><button className="secondary-button" onClick={onCancel} type="button">{labels.cancel}</button><button className="primary-button" disabled={working} type="submit">{draft.kind === "refund" ? labels.addRefund : labels.addReimbursement}</button></div>
     </form>
   );
 }
@@ -1077,7 +1248,7 @@ function InlineCreate({ label, name, labels, onChange, onCreate }: { label: stri
   return <div className="inline-create"><label>{label} · {labels.name}<input onChange={(event) => onChange(event.target.value)} required value={name} /></label><button className="secondary-button" disabled={!name.trim()} onClick={() => void onCreate()} type="button">{labels.add}</button></div>;
 }
 
-function EntryList({ accounts, categories, environment, labels, language, providers, transactions, transfers, onEdit, onEditTransfer, onReload, onError }: { accounts: Account[]; categories: Category[]; environment: Environment; labels: Labels; language: Language; providers: Provider[]; transactions: Transaction[]; transfers: Transfer[]; onEdit: (transaction: Transaction) => void; onEditTransfer: (transfer: Transfer) => void; onReload: () => void; onError: (message: string) => void }) {
+function EntryList({ accounts, categories, environment, labels, language, providers, transactions, transfers, onEdit, onEditTransfer, onRecovery, onReload, onError }: { accounts: Account[]; categories: Category[]; environment: Environment; labels: Labels; language: Language; providers: Provider[]; transactions: Transaction[]; transfers: Transfer[]; onEdit: (transaction: Transaction) => void; onEditTransfer: (transfer: Transfer) => void; onRecovery: (transaction: Transaction, kind: RecoveryKind) => void; onReload: () => void; onError: (message: string) => void }) {
   const accountNames = new Map(accounts.map((item) => [item.account_id, item.name]));
   const categoryNames = new Map(categories.map((item) => [item.category_id, item.name]));
   const providerNames = new Map(providers.map((item) => [item.provider_id, item.name]));
@@ -1100,7 +1271,12 @@ function EntryList({ accounts, categories, environment, labels, language, provid
       {entries.map((entry) => {
         if (entry.type === "transaction") {
           const transaction = entry.transaction;
-          return <article className={`transaction-row ${transaction.status}`} key={`transaction-${transaction.transaction_id}`}><time dateTime={transaction.transaction_date}>{formatDate(transaction.transaction_date, language)}</time><div className="transaction-main"><strong>{transaction.description}</strong><span>{providerNames.get(transaction.provider_id ?? -1) ?? categoryNames.get(transaction.category_id ?? -1) ?? accountNames.get(transaction.account_id)}</span>{transaction.fx_rate_status === "missing" ? <em>{labels.missingFx}</em> : null}</div><div className={`transaction-value ${transaction.transaction_kind}`}><strong>{transaction.transaction_kind === "expense" ? "−" : "+"}{formatMoney(transaction.original_amount, transaction.original_currency, language)}</strong>{transaction.converted_amount && transaction.original_currency !== transaction.base_currency ? <span>{formatMoney(transaction.converted_amount, transaction.base_currency, language)}</span> : null}</div><div className="row-actions"><button className="ghost-button" disabled={transaction.status === "archived"} onClick={() => onEdit(transaction)} type="button">{labels.edit}</button><button className="ghost-button" onClick={() => void setTransactionArchived(environment, transaction.transaction_id, transaction.status === "active").then(onReload).catch((reason) => onError(reason instanceof Error ? reason.message : "Transaction request failed."))} type="button">{transaction.status === "active" ? labels.archive : labels.restore}</button></div></article>;
+          const recovery = transaction.transaction_kind === "refund" || transaction.transaction_kind === "reimbursement";
+          const archiveRequest = recovery ? setRecoveryArchived : setTransactionArchived;
+          const secondary = recovery
+            ? `${transaction.transaction_kind === "refund" ? labels.refund : labels.reimbursement} · ${labels.linkedExpense} #${transaction.linked_expense_id}`
+            : providerNames.get(transaction.provider_id ?? -1) ?? categoryNames.get(transaction.category_id ?? -1) ?? accountNames.get(transaction.account_id);
+          return <article className={`transaction-row ${transaction.status}`} key={`transaction-${transaction.transaction_id}`}><time dateTime={transaction.transaction_date}>{formatDate(transaction.transaction_date, language)}</time><div className="transaction-main"><strong>{transaction.description}</strong><span>{secondary}</span>{transaction.fx_rate_status === "missing" ? <em>{labels.missingFx}</em> : null}</div><div className={`transaction-value ${transaction.transaction_kind}`}><strong>{transaction.transaction_kind === "expense" ? "−" : "+"}{formatMoney(transaction.original_amount, transaction.original_currency, language)}</strong>{transaction.converted_amount && transaction.original_currency !== transaction.base_currency ? <span>{formatMoney(transaction.converted_amount, transaction.base_currency, language)}</span> : null}</div><div className="row-actions">{transaction.transaction_kind === "expense" && transaction.status === "active" ? <><button className="ghost-button" onClick={() => onRecovery(transaction, "refund")} type="button">{labels.refund}</button><button className="ghost-button" onClick={() => onRecovery(transaction, "reimbursement")} type="button">{labels.reimbursement}</button></> : null}<button className="ghost-button" disabled={transaction.status === "archived" || recovery} onClick={() => onEdit(transaction)} type="button">{labels.edit}</button><button className="ghost-button" onClick={() => void archiveRequest(environment, transaction.transaction_id, transaction.status === "active").then(onReload).catch((reason) => onError(reason instanceof Error ? reason.message : "Transaction request failed."))} type="button">{transaction.status === "active" ? labels.archive : labels.restore}</button></div></article>;
         }
         const transfer = entry.transfer;
         const missingFx = transfer.source_fx_rate_status === "missing" || transfer.destination_fx_rate_status === "missing";

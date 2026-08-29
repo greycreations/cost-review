@@ -104,7 +104,8 @@ def reset_test_environment(
     metadata = get_environment_metadata(db)
     db.execute(
         text(
-            "TRUNCATE TABLE account_snapshots, transfer_links, transaction_split_tags, "
+            "TRUNCATE TABLE account_snapshots, refund_links, reimbursement_links, "
+            "transfer_links, transaction_split_tags, "
             "transaction_splits, "
             "transactions, "
             "category_links, provider_links, provider_aliases, "

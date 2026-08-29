@@ -29,7 +29,7 @@ from app.ledger_schemas import (
     CategoryUpdate,
     LedgerAnalysisRead,
     LedgerSummaryRead,
-    ManualTransactionKind,
+    LedgerTransactionKind,
     Page,
     ProviderAliasCreate,
     ProviderAliasRead,
@@ -39,6 +39,7 @@ from app.ledger_schemas import (
     ProviderLinkRead,
     ProviderRead,
     ProviderUpdate,
+    RecoveryCreate,
     SharingPartyCreate,
     SharingPartyRead,
     SharingPartyUpdate,
@@ -86,6 +87,14 @@ from app.models import (
     ProviderLink,
     SharingParty,
     Tag,
+    Transaction,
+    TransactionKind,
+)
+from app.recovery_services import (
+    create_recovery,
+    get_recovery,
+    recovery_values,
+    set_recovery_archived,
 )
 from app.transaction_services import (
     create_manual_transaction,
@@ -120,7 +129,7 @@ def get_transactions(
     include_archived: bool = False,
     date_from: date | None = None,
     date_to: date | None = None,
-    transaction_kind: ManualTransactionKind | None = None,
+    transaction_kind: LedgerTransactionKind | None = None,
     account_id: int | None = Query(default=None, gt=0),
     provider_id: int | None = Query(default=None, gt=0),
     category_id: int | None = Query(default=None, gt=0),
@@ -206,6 +215,54 @@ def restore_transaction(
     transaction_id: int, _: CsrfAuth, db: DatabaseSession
 ) -> dict[str, object]:
     return transaction_values(restore_model(db, get_manual_transaction(db, transaction_id)))
+
+
+@router.post(
+    "/transactions/{expense_id}/refunds", response_model=TransactionRead, status_code=201
+)
+def post_refund(
+    expense_id: int, payload: RecoveryCreate, auth: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    expense = get_model(db, Transaction, expense_id, "Transaction")
+    model = create_recovery(
+        db, expense, payload, TransactionKind.REFUND, auth.user.settings.base_currency
+    )
+    return recovery_values(db, model)
+
+
+@router.post(
+    "/transactions/{expense_id}/reimbursements",
+    response_model=TransactionRead,
+    status_code=201,
+)
+def post_reimbursement(
+    expense_id: int, payload: RecoveryCreate, auth: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    expense = get_model(db, Transaction, expense_id, "Transaction")
+    model = create_recovery(
+        db,
+        expense,
+        payload,
+        TransactionKind.REIMBURSEMENT,
+        auth.user.settings.base_currency,
+    )
+    return recovery_values(db, model)
+
+
+@router.post("/recoveries/{transaction_id}/archive", response_model=TransactionRead)
+def archive_recovery(
+    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    model, _ = get_recovery(db, transaction_id)
+    return recovery_values(db, set_recovery_archived(db, model, archived=True))
+
+
+@router.post("/recoveries/{transaction_id}/restore", response_model=TransactionRead)
+def restore_recovery(
+    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    model, _ = get_recovery(db, transaction_id)
+    return recovery_values(db, set_recovery_archived(db, model, archived=False))
 
 
 @router.get("/transfers", response_model=Page[TransferRead])

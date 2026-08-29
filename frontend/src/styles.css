@@ -593,8 +593,26 @@ select:hover {
 }
 
 .overview-transaction > strong.income,
-.transaction-value.income > strong {
+.overview-transaction > strong.refund,
+.overview-transaction > strong.reimbursement,
+.transaction-value.income > strong,
+.transaction-value.refund > strong,
+.transaction-value.reimbursement > strong {
   color: var(--accent-strong);
+}
+
+.linked-event-note {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.linked-event-note strong {
+  color: var(--text-primary);
 }
 
 .attention-note {

@@ -132,7 +132,7 @@ def main() -> int:
         "original_amount": "125.50",
         "original_currency": "SEK",
     }
-    call(
+    _, prod_expense = call(
         prod,
         f"{prod_base}/transactions",
         "POST",
@@ -143,7 +143,7 @@ def main() -> int:
         },
         prod_csrf,
     )
-    call(
+    _, test_expense = call(
         test,
         f"{test_base}/transactions",
         "POST",
@@ -151,6 +151,34 @@ def main() -> int:
             **transaction_payload,
             "account_id": test_account["account_id"],
             "description": "Test isolation transaction",
+        },
+        test_csrf,
+    )
+    recovery_payload = {
+        "transaction_date": "2026-08-28",
+        "posting_date": "2026-08-28",
+        "original_amount": "25.50",
+        "original_currency": "SEK",
+    }
+    call(
+        prod,
+        f"{prod_base}/transactions/{prod_expense['transaction_id']}/refunds",
+        "POST",
+        {
+            **recovery_payload,
+            "account_id": prod_account["account_id"],
+            "description": "Production isolation refund",
+        },
+        prod_csrf,
+    )
+    call(
+        test,
+        f"{test_base}/transactions/{test_expense['transaction_id']}/reimbursements",
+        "POST",
+        {
+            **recovery_payload,
+            "account_id": test_account["account_id"],
+            "description": "Test isolation reimbursement",
         },
         test_csrf,
     )
@@ -234,11 +262,27 @@ def main() -> int:
         for item in prod_transactions_before["items"]
     )
     assert any(
+        item["description"] == "Production isolation refund"
+        for item in prod_transactions_before["items"]
+    )
+    assert not any(
+        item["description"] == "Test isolation reimbursement"
+        for item in prod_transactions_before["items"]
+    )
+    assert any(
         item["description"] == "Test isolation transaction"
         for item in test_transactions_before["items"]
     )
     assert not any(
         item["description"] == "Production isolation transaction"
+        for item in test_transactions_before["items"]
+    )
+    assert any(
+        item["description"] == "Test isolation reimbursement"
+        for item in test_transactions_before["items"]
+    )
+    assert not any(
+        item["description"] == "Production isolation refund"
         for item in test_transactions_before["items"]
     )
     _, prod_transfers_before = call(prod, f"{prod_base}/transfers")
@@ -297,6 +341,10 @@ def main() -> int:
     )
     assert any(
         item["description"] == "Production isolation transaction"
+        for item in prod_transactions_after["items"]
+    )
+    assert any(
+        item["description"] == "Production isolation refund"
         for item in prod_transactions_after["items"]
     )
     assert any(

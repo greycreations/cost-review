@@ -10,7 +10,9 @@ setup, local authentication, independent locale settings, reverse-proxy safety,
 and a persistent hard boundary between Production and Demo/Test. The current
 Sprint 2 slice adds accounts, reusable ledger master data, manual income and
 expense entry, historical FX persistence, real period summaries, and dated
-account balance/value snapshots without weakening that boundary.
+account balance/value snapshots. Refunds and reimbursements are now preserved
+as linked events that reduce net cost without weakening that boundary or being
+misclassified as income.
 
 ## Architecture
 
@@ -212,6 +214,8 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET/POST/DELETE | `/api/v1/provider-links`, `/api/v1/category-links` | Non-destructive analytical relationships |
 | GET/POST/PATCH | `/api/v1/tags[...]`, `/api/v1/sharing-parties[...]` | Reusable tags and sharing-party register |
 | GET/POST/PATCH | `/api/v1/transactions[...]` | Manual income/expense CRUD, filtering and archive/restore |
+| POST | `/api/v1/transactions/{id}/refunds`, `/api/v1/transactions/{id}/reimbursements` | Create a linked recovery while preserving the gross expense |
+| POST | `/api/v1/recoveries/{id}/archive`, `/api/v1/recoveries/{id}/restore` | Archive or restore a linked recovery |
 | GET | `/api/v1/transactions/summary` | Canonical income, expense and cash-flow totals for a date range |
 | GET | `/api/v1/transactions/analysis` | Daily income/expense trend and expense-category breakdown for a date range |
 | GET/POST/PATCH | `/api/v1/transfers[...]` | Atomic owned-account transfers, filtering and archive/restore |
@@ -230,8 +234,10 @@ from canonical period totals until resolved. An internal transfer links one
 outgoing and one incoming ledger leg, preserves both account-currency amounts
 and historical FX, and is always excluded from ordinary income, expense, and
 net cash-flow totals. Credit-card payments use this transfer workflow. Refunds,
-reimbursements, split editing, and explicit balance adjustments remain later slices and
-are intentionally not represented as ordinary income or expense in the UI.
+and reimbursements are separate inflow events linked to their original expense;
+they preserve gross cost, reduce net expense in summaries and analysis, and are
+never counted as ordinary income. Split editing and explicit balance adjustments
+remain later slices.
 
 The Overview defaults to the current calendar month and supports explicit month
 navigation. Its first analysis slice visualizes daily income/expense movement
