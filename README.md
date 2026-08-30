@@ -225,6 +225,7 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET/POST/PATCH | `/api/v1/budgets[...]` | Budget lifecycle, period, rollover and filter selection |
 | GET | `/api/v1/budgets/{id}/outcome` | Decimal-safe target, actual, remaining, overlap and consumption for a date range |
 | GET | `/api/v1/budgets/{id}/transactions` | Traceable matching Ledger events and allocated recoveries |
+| GET | `/api/v1/budgets/{id}/trend` | Server-derived recent outcomes using the budget's own periods |
 
 Ledger list endpoints return `{ items, total, limit, offset }`, support bounded
 pagination, and hide archived master records unless `include_archived=true` is
@@ -255,16 +256,17 @@ provider, category, tag, and base-cost filters use the same backend selection
 semantics for totals and charts. Previous-period and previous-year comparisons
 remain visually secondary to current values, and category bars drill down to the
 contributing filtered transactions. Analysis Groups can now preserve reusable
-category/tag include/exclude selections for budgets. Saved views, recurring and
-amount/currency filtering in Overview, provider/account Analysis Group filters,
-and named/moveable dashboard layouts remain later Epic 5 slices.
+category, tag, account, and provider include/exclude selections for budgets.
+Saved views, recurring and amount/currency filtering in Overview, linked-master
+rollups, and named/moveable dashboard layouts remain later Epic 5 slices.
 
 The Budget view creates calendar-month, salary-cycle, calendar-year, or custom
-budgets with reset/rollover behavior and category/tag selection. Outcomes are
+budgets with reset/rollover behavior and category/tag/account/provider selection. Outcomes are
 calculated by the API from canonical split components; linked refunds and
 reimbursements reduce the relevant budget proportionally. Overlapping active
 budgets are explicitly marked non-additive and every result can be drilled down
-to its contributing Ledger events. Total/My Share and Actual/Periodized views
+to its contributing Ledger events. A six-period trend uses each budget's own
+period definition rather than inventing monthly periodization. Total/My Share and Actual/Periodized views
 remain gated on the corresponding Ledger sharing and periodization semantics.
 
 The Accounts view accepts dated reconciled balances and current values without

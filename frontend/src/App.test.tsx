@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -24,6 +24,8 @@ const session = (environment: "production" | "test") => ({
 
 let accountItems: object[] = [];
 let transactionItems: object[] = [];
+let budgetItems: Record<string, unknown>[] = [];
+let providerItems: object[] = [];
 let analysisData: object;
 
 const account = (
@@ -54,6 +56,8 @@ describe("App", () => {
     window.location.hash = "";
     accountItems = [];
     transactionItems = [];
+    budgetItems = [];
+    providerItems = [];
     analysisData = {
       date_from: "2026-08-01",
       date_to: "2026-08-31",
@@ -110,13 +114,39 @@ describe("App", () => {
             created_at: "2026-08-29T00:00:00Z",
             updated_at: "2026-08-29T00:00:00Z",
           };
+        } else if (/\/budgets\/\d+\/outcome\?/.test(path)) {
+          body = {
+            budget: budgetItems[0],
+            date_from: "2026-08-01",
+            date_to: "2026-08-31",
+            base_currency: "SEK",
+            target_amount: "3500.0000",
+            actual_amount: "2800.0000",
+            remaining_amount: "700.0000",
+            consumed_percent: "80.00",
+            period_count: 1,
+            rollover_adjustment: "0.0000",
+            matched_transaction_count: 4,
+            missing_fx_count: 0,
+            overlapping_budget_ids: [],
+          };
+        } else if (/\/budgets\/\d+\/trend\?/.test(path)) {
+          body = {
+            budget_id: 1,
+            base_currency: "SEK",
+            points: [
+              { period_start: "2026-07-01", period_end: "2026-07-31", target_amount: "3500.0000", actual_amount: "3200.0000", remaining_amount: "300.0000", consumed_percent: "91.43", missing_fx_count: 0 },
+              { period_start: "2026-08-01", period_end: "2026-08-31", target_amount: "3500.0000", actual_amount: "2800.0000", remaining_amount: "700.0000", consumed_percent: "80.00", missing_fx_count: 0 },
+            ],
+          };
         } else if (path.includes("/budgets?")) {
-          body = [];
+          body = budgetItems;
         } else if (path.includes("/analysis-groups?")) {
           body = [];
+        } else if (path.includes("/providers?")) {
+          body = { items: providerItems, total: providerItems.length, limit: 50, offset: 0 };
         } else if (
           path.includes("/categories?") ||
-          path.includes("/providers?") ||
           path.includes("/tags?") ||
           path.includes("/sharing-parties?")
         ) {
@@ -241,6 +271,17 @@ describe("App", () => {
   });
 
   it("creates a monthly budget from the dedicated planning workspace", async () => {
+    accountItems = [account(1, "Daily account")];
+    providerItems = [{
+      provider_id: 7,
+      name: "Grocery store",
+      website: null,
+      notes: null,
+      status: "active",
+      archived_at: null,
+      created_at: "2026-08-01T00:00:00Z",
+      updated_at: "2026-08-01T00:00:00Z",
+    }];
     const user = userEvent.setup();
     render(<App />);
     await screen.findByText(/Your finances ·/);
@@ -252,6 +293,8 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "+ New budget" }));
     await user.type(screen.getByLabelText("Budget name"), "Groceries");
     await user.type(screen.getByLabelText("Amount per period"), "3500");
+    await user.selectOptions(screen.getByLabelText("Accounts: Daily account"), "include");
+    await user.selectOptions(screen.getByLabelText("Providers: Grocery store"), "include");
     await user.click(screen.getByRole("button", { name: "Create budget" }));
 
     await waitFor(() => {
@@ -267,8 +310,45 @@ describe("App", () => {
         rollover_mode: "reset",
         categories: [],
         tags: [],
+        accounts: [{ account_id: 1, mode: "include" }],
+        providers: [{ provider_id: 7, mode: "include" }],
       });
     });
+  });
+
+  it("renders server-derived budget trends with exact accessible values", async () => {
+    budgetItems = [{
+      budget_id: 1,
+      analysis_group_id: null,
+      name: "Groceries",
+      amount: "3500.0000",
+      currency: "SEK",
+      period_type: "calendar_month",
+      rollover_mode: "reset",
+      starts_on: "2026-07-01",
+      ends_on: null,
+      anchor_day: 25,
+      notes: null,
+      categories: [],
+      tags: [],
+      accounts: [],
+      providers: [],
+      status: "active",
+      archived_at: null,
+      created_at: "2026-07-01T00:00:00Z",
+      updated_at: "2026-07-01T00:00:00Z",
+    }];
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/Your finances ·/);
+
+    await user.click(screen.getByRole("link", { name: "Budget" }));
+    expect(await screen.findByRole("heading", { name: "Groceries" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Actuals by budget period" })).toBeInTheDocument();
+    const trendTable = screen.getByRole("table", { name: "Actuals by budget period" });
+    expect(within(trendTable).getAllByRole("cell", { name: /3.*500,00/ })).toHaveLength(2);
+    expect(within(trendTable).getByRole("cell", { name: /3.*200,00/ })).toBeInTheDocument();
+    expect(within(trendTable).getByRole("cell", { name: /2.*800,00/ })).toBeInTheDocument();
   });
 
   it("opens a focused transaction form when an account exists", async () => {

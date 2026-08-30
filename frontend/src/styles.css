@@ -1703,6 +1703,16 @@ footer {
 .budget-progress { height: 12px; overflow: hidden; border-radius: 999px; background: var(--surface-muted); }
 .budget-progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent-primary); }
 .budget-progress-label { margin: -10px 0 0; text-align: right; }
+.budget-trend { margin-top: 4px; padding-top: 18px; border-top: 1px solid var(--border-subtle); }
+.budget-trend h3 { margin: 0; font-size: .98rem; }
+.budget-trend p { margin: 4px 0 14px; color: var(--text-secondary); font-size: .82rem; }
+.budget-trend-chart { display: grid; grid-template-columns: repeat(6, minmax(44px, 1fr)); gap: 10px; height: 150px; align-items: end; }
+.budget-trend-period { display: grid; grid-template-rows: 116px auto; gap: 7px; min-width: 0; text-align: center; }
+.budget-trend-columns { display: flex; align-items: end; justify-content: center; gap: 4px; height: 116px; border-bottom: 1px solid var(--border-subtle); }
+.budget-trend-columns span { display: block; width: min(18px, 38%); min-height: 2px; border-radius: 4px 4px 0 0; }
+.budget-trend-target { background: var(--text-secondary); opacity: .45; }
+.budget-trend-actual { background: var(--accent-primary); }
+.budget-trend-period time { overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); font-size: .72rem; white-space: nowrap; }
 .budget-underlay { display: grid; border-top: 1px solid var(--border-subtle); }
 .budget-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px; }
 .budget-row time { color: var(--text-secondary); }

@@ -137,6 +137,8 @@ export type CategorySelection = {
   include_descendants: boolean;
 };
 export type TagSelection = { tag_id: number; mode: SelectionMode };
+export type AccountSelection = { account_id: number; mode: SelectionMode };
+export type ProviderSelection = { provider_id: number; mode: SelectionMode };
 
 export type AnalysisGroup = {
   analysis_group_id: number;
@@ -144,6 +146,8 @@ export type AnalysisGroup = {
   notes: string | null;
   categories: CategorySelection[];
   tags: TagSelection[];
+  accounts: AccountSelection[];
+  providers: ProviderSelection[];
   status: LifecycleStatus;
   archived_at: string | null;
   created_at: string;
@@ -171,6 +175,8 @@ export type Budget = {
   notes: string | null;
   categories: CategorySelection[];
   tags: TagSelection[];
+  accounts: AccountSelection[];
+  providers: ProviderSelection[];
   status: LifecycleStatus;
   archived_at: string | null;
   created_at: string;
@@ -190,6 +196,8 @@ export type BudgetInput = {
   notes: string | null;
   categories: CategorySelection[];
   tags: TagSelection[];
+  accounts: AccountSelection[];
+  providers: ProviderSelection[];
 };
 
 export type BudgetOutcome = {
@@ -215,6 +223,22 @@ export type BudgetTransaction = {
   transaction_kind: TransactionKind;
   matched_amount: string;
   base_currency: string;
+};
+
+export type BudgetTrendPoint = {
+  period_start: string;
+  period_end: string;
+  target_amount: string;
+  actual_amount: string;
+  remaining_amount: string;
+  consumed_percent: string;
+  missing_fx_count: number;
+};
+
+export type BudgetTrend = {
+  budget_id: number;
+  base_currency: string;
+  points: BudgetTrendPoint[];
 };
 
 export type ManualTransactionKind = "expense" | "income";
@@ -775,6 +799,16 @@ export function getBudgetTransactions(
 ): Promise<BudgetTransaction[]> {
   const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
   return request(environment, `/budgets/${budgetId}/transactions?${query.toString()}`);
+}
+
+export function getBudgetTrend(
+  environment: Environment,
+  budgetId: number,
+  through: string,
+  periods = 6,
+): Promise<BudgetTrend> {
+  const query = new URLSearchParams({ through, periods: String(periods) });
+  return request(environment, `/budgets/${budgetId}/trend?${query.toString()}`);
 }
 
 export function getTransactions(

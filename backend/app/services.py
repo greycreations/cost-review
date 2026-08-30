@@ -104,8 +104,10 @@ def reset_test_environment(
     metadata = get_environment_metadata(db)
     db.execute(
         text(
-            "TRUNCATE TABLE budget_tags, budget_categories, budgets, "
-            "analysis_group_tags, analysis_group_categories, analysis_groups, "
+            "TRUNCATE TABLE budget_providers, budget_accounts, budget_tags, "
+            "budget_categories, budgets, analysis_group_providers, "
+            "analysis_group_accounts, analysis_group_tags, analysis_group_categories, "
+            "analysis_groups, "
             "account_snapshots, refund_links, reimbursement_links, "
             "transfer_links, transaction_split_tags, "
             "transaction_splits, "

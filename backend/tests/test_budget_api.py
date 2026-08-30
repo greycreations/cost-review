@@ -50,13 +50,20 @@ def seed_budget_data(client: TestClient, headers: dict[str, str]) -> dict[str, d
         json={"name": "Resor", "category_kind": "expense"},
     ).json()
     household = client.post("/api/v1/tags", headers=headers, json={"name": "Hushåll"}).json()
-    return {"account": account, "food": food, "travel": travel, "tag": household}
+    provider = client.post("/api/v1/providers", headers=headers, json={"name": "Matbutiken"}).json()
+    return {
+        "account": account,
+        "food": food,
+        "travel": travel,
+        "tag": household,
+        "provider": provider,
+    }
 
 
 def expense_payload(data: dict[str, dict], transaction_date: str, amount: str) -> dict:
     return {
         "account_id": data["account"]["account_id"],
-        "provider_id": None,
+        "provider_id": data["provider"]["provider_id"],
         "transaction_kind": "expense",
         "transaction_date": transaction_date,
         "posting_date": transaction_date,
@@ -89,6 +96,8 @@ def budget_payload(data: dict[str, dict], **overrides) -> dict:
             }
         ],
         "tags": [{"tag_id": data["tag"]["tag_id"], "mode": "include"}],
+        "accounts": [],
+        "providers": [],
     }
     payload.update(overrides)
     return payload
@@ -150,6 +159,40 @@ def test_budget_outcome_is_split_aware_and_recovery_aware(
     )
     assert missing_fx.status_code == 201, missing_fx.text
     assert missing_fx.json()["converted_amount"] is None
+    other_provider = client.post(
+        "/api/v1/providers", headers=headers, json={"name": "Resebutiken"}
+    ).json()
+    wrong_provider = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            **expense_payload(data, "2026-08-23", "200"),
+            "description": "Rätt konto men annan provider",
+            "provider_id": other_provider["provider_id"],
+        },
+    )
+    assert wrong_provider.status_code == 201, wrong_provider.text
+    other_account = client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={
+            "name": "Annat konto",
+            "account_type": "current",
+            "opening_balance": "0",
+            "opening_balance_date": "2026-08-01",
+            "currency": "SEK",
+        },
+    ).json()
+    wrong_account = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            **expense_payload(data, "2026-08-24", "300"),
+            "description": "Rätt provider men annat konto",
+            "account_id": other_account["account_id"],
+        },
+    )
+    assert wrong_account.status_code == 201, wrong_account.text
 
     group = client.post(
         "/api/v1/analysis-groups",
@@ -165,6 +208,8 @@ def test_budget_outcome_is_split_aware_and_recovery_aware(
                 }
             ],
             "tags": [{"tag_id": data["tag"]["tag_id"], "mode": "include"}],
+            "accounts": [{"account_id": data["account"]["account_id"], "mode": "include"}],
+            "providers": [{"provider_id": data["provider"]["provider_id"], "mode": "include"}],
         },
     )
     assert group.status_code == 201, group.text
@@ -273,6 +318,29 @@ def test_budget_rollover_starts_at_effective_date_and_inactive_ranges_are_empty(
     assert august.status_code == 200, august.text
     assert august.json()["rollover_adjustment"] == "200.0000"
     assert august.json()["target_amount"] == "1200.0000"
+
+    trend = client.get(f"/api/v1/budgets/{budget_id}/trend?through=2026-08-31&periods=2")
+    assert trend.status_code == 200, trend.text
+    assert trend.json()["points"] == [
+        {
+            "period_start": "2026-07-01",
+            "period_end": "2026-07-31",
+            "target_amount": "1000.0000",
+            "actual_amount": "800.0000",
+            "remaining_amount": "200.0000",
+            "consumed_percent": "80.00",
+            "missing_fx_count": 0,
+        },
+        {
+            "period_start": "2026-08-01",
+            "period_end": "2026-08-31",
+            "target_amount": "1200.0000",
+            "actual_amount": "0.0000",
+            "remaining_amount": "1200.0000",
+            "consumed_percent": "0.00",
+            "missing_fx_count": 0,
+        },
+    ]
 
     inactive = client.get(
         f"/api/v1/budgets/{budget_id}/outcome?date_from=2026-06-01&date_to=2026-06-30"

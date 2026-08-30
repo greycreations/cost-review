@@ -502,6 +502,12 @@ class AnalysisGroup(ArchiveMixin, TimestampMixin, Base):
     tags: Mapped[list[AnalysisGroupTag]] = relationship(
         back_populates="analysis_group", cascade="all, delete-orphan"
     )
+    accounts: Mapped[list[AnalysisGroupAccount]] = relationship(
+        back_populates="analysis_group", cascade="all, delete-orphan"
+    )
+    providers: Mapped[list[AnalysisGroupProvider]] = relationship(
+        back_populates="analysis_group", cascade="all, delete-orphan"
+    )
 
 
 class AnalysisGroupCategory(Base):
@@ -537,6 +543,40 @@ class AnalysisGroupTag(Base):
     selection_mode: Mapped[str] = mapped_column(String(12), primary_key=True)
 
     analysis_group: Mapped[AnalysisGroup] = relationship(back_populates="tags")
+
+
+class AnalysisGroupAccount(Base):
+    __tablename__ = "analysis_group_accounts"
+    __table_args__ = (
+        CheckConstraint("selection_mode IN ('include', 'exclude')", name="mode_allowed"),
+    )
+
+    analysis_group_id: Mapped[int] = mapped_column(
+        ForeignKey("analysis_groups.analysis_group_id", ondelete="CASCADE"), primary_key=True
+    )
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.account_id", ondelete="RESTRICT"), primary_key=True
+    )
+    selection_mode: Mapped[str] = mapped_column(String(12), primary_key=True)
+
+    analysis_group: Mapped[AnalysisGroup] = relationship(back_populates="accounts")
+
+
+class AnalysisGroupProvider(Base):
+    __tablename__ = "analysis_group_providers"
+    __table_args__ = (
+        CheckConstraint("selection_mode IN ('include', 'exclude')", name="mode_allowed"),
+    )
+
+    analysis_group_id: Mapped[int] = mapped_column(
+        ForeignKey("analysis_groups.analysis_group_id", ondelete="CASCADE"), primary_key=True
+    )
+    provider_id: Mapped[int] = mapped_column(
+        ForeignKey("providers.provider_id", ondelete="RESTRICT"), primary_key=True
+    )
+    selection_mode: Mapped[str] = mapped_column(String(12), primary_key=True)
+
+    analysis_group: Mapped[AnalysisGroup] = relationship(back_populates="providers")
 
 
 class Budget(ArchiveMixin, TimestampMixin, Base):
@@ -586,6 +626,12 @@ class Budget(ArchiveMixin, TimestampMixin, Base):
     tags: Mapped[list[BudgetTag]] = relationship(
         back_populates="budget", cascade="all, delete-orphan"
     )
+    accounts: Mapped[list[BudgetAccount]] = relationship(
+        back_populates="budget", cascade="all, delete-orphan"
+    )
+    providers: Mapped[list[BudgetProvider]] = relationship(
+        back_populates="budget", cascade="all, delete-orphan"
+    )
 
 
 class BudgetCategory(Base):
@@ -621,6 +667,40 @@ class BudgetTag(Base):
     selection_mode: Mapped[str] = mapped_column(String(12), primary_key=True)
 
     budget: Mapped[Budget] = relationship(back_populates="tags")
+
+
+class BudgetAccount(Base):
+    __tablename__ = "budget_accounts"
+    __table_args__ = (
+        CheckConstraint("selection_mode IN ('include', 'exclude')", name="mode_allowed"),
+    )
+
+    budget_id: Mapped[int] = mapped_column(
+        ForeignKey("budgets.budget_id", ondelete="CASCADE"), primary_key=True
+    )
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.account_id", ondelete="RESTRICT"), primary_key=True
+    )
+    selection_mode: Mapped[str] = mapped_column(String(12), primary_key=True)
+
+    budget: Mapped[Budget] = relationship(back_populates="accounts")
+
+
+class BudgetProvider(Base):
+    __tablename__ = "budget_providers"
+    __table_args__ = (
+        CheckConstraint("selection_mode IN ('include', 'exclude')", name="mode_allowed"),
+    )
+
+    budget_id: Mapped[int] = mapped_column(
+        ForeignKey("budgets.budget_id", ondelete="CASCADE"), primary_key=True
+    )
+    provider_id: Mapped[int] = mapped_column(
+        ForeignKey("providers.provider_id", ondelete="RESTRICT"), primary_key=True
+    )
+    selection_mode: Mapped[str] = mapped_column(String(12), primary_key=True)
+
+    budget: Mapped[Budget] = relationship(back_populates="providers")
 
 
 class Transaction(ArchiveMixin, TimestampMixin, Base):

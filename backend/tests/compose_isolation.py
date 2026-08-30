@@ -125,6 +125,20 @@ def main() -> int:
         },
         test_csrf,
     )
+    _, prod_provider = call(
+        prod,
+        f"{prod_base}/providers",
+        "POST",
+        {"name": "Production isolation provider"},
+        prod_csrf,
+    )
+    _, test_provider = call(
+        test,
+        f"{test_base}/providers",
+        "POST",
+        {"name": "Test isolation provider"},
+        test_csrf,
+    )
     transaction_payload = {
         "transaction_kind": "expense",
         "transaction_date": "2026-08-28",
@@ -139,6 +153,7 @@ def main() -> int:
         {
             **transaction_payload,
             "account_id": prod_account["account_id"],
+            "provider_id": prod_provider["provider_id"],
             "description": "Production isolation transaction",
         },
         prod_csrf,
@@ -150,6 +165,7 @@ def main() -> int:
         {
             **transaction_payload,
             "account_id": test_account["account_id"],
+            "provider_id": test_provider["provider_id"],
             "description": "Test isolation transaction",
         },
         test_csrf,
@@ -250,14 +266,28 @@ def main() -> int:
         prod,
         f"{prod_base}/budgets",
         "POST",
-        {**budget_payload, "name": "Production isolation budget"},
+        {
+            **budget_payload,
+            "name": "Production isolation budget",
+            "accounts": [{"account_id": prod_account["account_id"], "mode": "include"}],
+            "providers": [
+                {"provider_id": prod_provider["provider_id"], "mode": "include"}
+            ],
+        },
         prod_csrf,
     )
     call(
         test,
         f"{test_base}/budgets",
         "POST",
-        {**budget_payload, "name": "Test isolation budget"},
+        {
+            **budget_payload,
+            "name": "Test isolation budget",
+            "accounts": [{"account_id": test_account["account_id"], "mode": "include"}],
+            "providers": [
+                {"provider_id": test_provider["provider_id"], "mode": "include"}
+            ],
+        },
         test_csrf,
     )
     _, prod_accounts_before = call(prod, f"{prod_base}/accounts")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from app.budget_schemas import (
     AnalysisGroupCreate,
@@ -12,12 +12,14 @@ from app.budget_schemas import (
     BudgetOutcomeRead,
     BudgetRead,
     BudgetTransactionRead,
+    BudgetTrendRead,
     BudgetUpdate,
 )
 from app.budget_services import (
     analysis_group_values,
     budget_outcome,
     budget_transactions,
+    budget_trend,
     budget_values,
     create_analysis_group,
     create_budget,
@@ -144,5 +146,22 @@ def get_budget_transactions(
         get_budget(db, budget_id),
         date_from,
         date_to,
+        auth.user.settings.base_currency,
+    )
+
+
+@router.get("/budgets/{budget_id}/trend", response_model=BudgetTrendRead)
+def get_budget_trend(
+    budget_id: int,
+    through: date,
+    auth: Auth,
+    db: DatabaseSession,
+    periods: int = Query(default=6, ge=1, le=24),
+) -> dict[str, object]:
+    return budget_trend(
+        db,
+        get_budget(db, budget_id),
+        through,
+        periods,
         auth.user.settings.base_currency,
     )

@@ -14,13 +14,19 @@ from app.budget_schemas import AnalysisGroupCreate, AnalysisGroupUpdate, BudgetC
 from app.errors import ApiError
 from app.ledger_services import normalize_name
 from app.models import (
+    Account,
     AnalysisGroup,
+    AnalysisGroupAccount,
     AnalysisGroupCategory,
+    AnalysisGroupProvider,
     AnalysisGroupTag,
     Budget,
+    BudgetAccount,
     BudgetCategory,
+    BudgetProvider,
     BudgetTag,
     Category,
+    Provider,
     Tag,
     Transaction,
     TransactionSplit,
@@ -38,6 +44,10 @@ class CompiledSelection:
     exclude_categories: frozenset[int]
     include_tags: frozenset[int]
     exclude_tags: frozenset[int]
+    include_accounts: frozenset[int]
+    exclude_accounts: frozenset[int]
+    include_providers: frozenset[int]
+    exclude_providers: frozenset[int]
 
 
 def list_analysis_groups(db: DbSession, include_archived: bool = False) -> list[dict[str, Any]]:
@@ -115,7 +125,9 @@ def get_budget(db: DbSession, budget_id: int) -> Budget:
 
 def create_budget(db: DbSession, payload: BudgetCreate, base_currency: str) -> Budget:
     _validate_budget_payload(db, payload, base_currency)
-    values = payload.model_dump(mode="python", exclude={"categories", "tags"})
+    values = payload.model_dump(
+        mode="python", exclude={"categories", "tags", "accounts", "providers"}
+    )
     model = Budget(**values, normalized_name=normalize_name(payload.name))
     _apply_budget_selection(db, model, payload)
     db.add(model)
@@ -127,7 +139,9 @@ def update_budget(
     db: DbSession, model: Budget, payload: BudgetUpdate, base_currency: str
 ) -> Budget:
     _validate_budget_payload(db, payload, base_currency)
-    values = payload.model_dump(mode="python", exclude={"categories", "tags"})
+    values = payload.model_dump(
+        mode="python", exclude={"categories", "tags", "accounts", "providers"}
+    )
     for field_name, value in values.items():
         setattr(model, field_name, value)
     model.normalized_name = normalize_name(payload.name)
@@ -228,6 +242,34 @@ def budget_transactions(
     return _budget_matches(db, selection, *active_range, base_currency)
 
 
+def budget_trend(
+    db: DbSession,
+    model: Budget,
+    through: date,
+    period_count: int,
+    base_currency: str,
+) -> dict[str, Any]:
+    points: list[dict[str, Any]] = []
+    for period_start, period_end in _recent_budget_periods(model, through, period_count):
+        outcome = budget_outcome(db, model, period_start, period_end, base_currency)
+        points.append(
+            {
+                "period_start": period_start,
+                "period_end": period_end,
+                "target_amount": outcome["target_amount"],
+                "actual_amount": outcome["actual_amount"],
+                "remaining_amount": outcome["remaining_amount"],
+                "consumed_percent": outcome["consumed_percent"],
+                "missing_fx_count": outcome["missing_fx_count"],
+            }
+        )
+    return {
+        "budget_id": model.budget_id,
+        "base_currency": base_currency,
+        "points": points,
+    }
+
+
 def analysis_group_values(model: AnalysisGroup) -> dict[str, Any]:
     return {
         "analysis_group_id": model.analysis_group_id,
@@ -242,6 +284,13 @@ def analysis_group_values(model: AnalysisGroup) -> dict[str, Any]:
             for item in model.categories
         ],
         "tags": [{"tag_id": item.tag_id, "mode": item.selection_mode} for item in model.tags],
+        "accounts": [
+            {"account_id": item.account_id, "mode": item.selection_mode} for item in model.accounts
+        ],
+        "providers": [
+            {"provider_id": item.provider_id, "mode": item.selection_mode}
+            for item in model.providers
+        ],
         "status": model.status,
         "archived_at": model.archived_at,
         "created_at": model.created_at,
@@ -271,6 +320,13 @@ def budget_values(model: Budget) -> dict[str, Any]:
             for item in model.categories
         ],
         "tags": [{"tag_id": item.tag_id, "mode": item.selection_mode} for item in model.tags],
+        "accounts": [
+            {"account_id": item.account_id, "mode": item.selection_mode} for item in model.accounts
+        ],
+        "providers": [
+            {"provider_id": item.provider_id, "mode": item.selection_mode}
+            for item in model.providers
+        ],
         "status": model.status,
         "archived_at": model.archived_at,
         "created_at": model.created_at,
@@ -281,9 +337,13 @@ def budget_values(model: Budget) -> dict[str, Any]:
 def compile_budget_selection(db: DbSession, model: Budget) -> CompiledSelection:
     category_rows = list(model.categories)
     tag_rows = list(model.tags)
+    account_rows = list(model.accounts)
+    provider_rows = list(model.providers)
     if model.analysis_group is not None:
         category_rows.extend(model.analysis_group.categories)
         tag_rows.extend(model.analysis_group.tags)
+        account_rows.extend(model.analysis_group.accounts)
+        provider_rows.extend(model.analysis_group.providers)
     include_categories: set[int] = set()
     exclude_categories: set[int] = set()
     for item in category_rows:
@@ -299,6 +359,18 @@ def compile_budget_selection(db: DbSession, model: Budget) -> CompiledSelection:
         ),
         exclude_tags=frozenset(
             item.tag_id for item in tag_rows if item.selection_mode == "exclude"
+        ),
+        include_accounts=frozenset(
+            item.account_id for item in account_rows if item.selection_mode == "include"
+        ),
+        exclude_accounts=frozenset(
+            item.account_id for item in account_rows if item.selection_mode == "exclude"
+        ),
+        include_providers=frozenset(
+            item.provider_id for item in provider_rows if item.selection_mode == "include"
+        ),
+        exclude_providers=frozenset(
+            item.provider_id for item in provider_rows if item.selection_mode == "exclude"
         ),
     )
 
@@ -339,6 +411,7 @@ def _budget_matches(
     for transaction in transactions:
         assert transaction.converted_amount is not None
         if transaction.transaction_kind == "expense":
+            source = transaction
             components = [
                 (split, split.converted_amount)
                 for split in transaction.splits
@@ -346,10 +419,11 @@ def _budget_matches(
             ]
             sign = Decimal("1")
         else:
-            components = allocate_recovery_to_splits(
-                originals[links[transaction.transaction_id]], transaction.converted_amount
-            )
+            source = originals[links[transaction.transaction_id]]
+            components = allocate_recovery_to_splits(source, transaction.converted_amount)
             sign = Decimal("-1")
+        if not _header_matches(source, selection):
+            continue
         matched = sum(
             (amount for split, amount in components if _selection_matches(split, selection)),
             Decimal("0"),
@@ -376,6 +450,18 @@ def _selection_matches(split: TransactionSplit, selection: CompiledSelection) ->
         and split.category_id not in selection.exclude_categories
         and (not selection.include_tags or bool(tag_ids & selection.include_tags))
         and not bool(tag_ids & selection.exclude_tags)
+    )
+
+
+def _header_matches(transaction: Transaction, selection: CompiledSelection) -> bool:
+    return (
+        (not selection.include_accounts or transaction.account_id in selection.include_accounts)
+        and transaction.account_id not in selection.exclude_accounts
+        and (
+            not selection.include_providers
+            or transaction.provider_id in selection.include_providers
+        )
+        and transaction.provider_id not in selection.exclude_providers
     )
 
 
@@ -417,8 +503,10 @@ def _missing_fx_match_count(
             if transaction.transaction_kind == "expense"
             else originals.get(links.get(transaction.transaction_id, 0))
         )
-        if source is not None and any(
-            _selection_matches(split, selection) for split in source.splits
+        if (
+            source is not None
+            and _header_matches(source, selection)
+            and any(_selection_matches(split, selection) for split in source.splits)
         ):
             count += 1
     return count
@@ -466,6 +554,35 @@ def _next_period_start(model: Budget, value: date) -> date:
     year, month = _shift_month(value.year, value.month, 1)
     day = 1 if model.period_type == "calendar_month" else model.anchor_day
     return date(year, month, day)
+
+
+def _previous_period_start(model: Budget, value: date) -> date:
+    if model.period_type == "calendar_year":
+        return date(value.year - 1, 1, 1)
+    year, month = _shift_month(value.year, value.month, -1)
+    day = 1 if model.period_type == "calendar_month" else model.anchor_day
+    return date(year, month, day)
+
+
+def _recent_budget_periods(
+    model: Budget, through: date, period_count: int
+) -> list[tuple[date, date]]:
+    effective_through = min(through, model.ends_on) if model.ends_on is not None else through
+    if effective_through < model.starts_on:
+        return []
+    if model.period_type == "custom":
+        return [(model.starts_on, model.ends_on or model.starts_on)]
+    cursor = _period_start(model, effective_through)
+    periods: list[tuple[date, date]] = []
+    while len(periods) < period_count:
+        period_end = _next_period_start(model, cursor) - timedelta(days=1)
+        if period_end < model.starts_on:
+            break
+        if model.ends_on is None or cursor <= model.ends_on:
+            periods.append((cursor, period_end))
+        cursor = _previous_period_start(model, cursor)
+    periods.reverse()
+    return periods
 
 
 def _rollover_entering(
@@ -524,7 +641,17 @@ def _selections_may_overlap(first: CompiledSelection, second: CompiledSelection)
         or not second.include_tags
         or bool(first.include_tags & second.include_tags)
     )
-    return categories_overlap and tags_overlap
+    accounts_overlap = (
+        not first.include_accounts
+        or not second.include_accounts
+        or bool(first.include_accounts & second.include_accounts)
+    )
+    providers_overlap = (
+        not first.include_providers
+        or not second.include_providers
+        or bool(first.include_providers & second.include_providers)
+    )
+    return categories_overlap and tags_overlap and accounts_overlap and providers_overlap
 
 
 def _category_descendants(db: DbSession, category_id: int) -> set[int]:
@@ -545,7 +672,9 @@ def _category_descendants(db: DbSession, category_id: int) -> set[int]:
 def _apply_group_selection(
     db: DbSession, model: AnalysisGroup, payload: AnalysisGroupCreate
 ) -> None:
-    _validate_selection_records(db, payload.categories, payload.tags)
+    _validate_selection_records(
+        db, payload.categories, payload.tags, payload.accounts, payload.providers
+    )
     model.categories = [
         AnalysisGroupCategory(
             category_id=item.category_id,
@@ -558,10 +687,20 @@ def _apply_group_selection(
         AnalysisGroupTag(tag_id=item.tag_id, selection_mode=item.mode.value)
         for item in payload.tags
     ]
+    model.accounts = [
+        AnalysisGroupAccount(account_id=item.account_id, selection_mode=item.mode.value)
+        for item in payload.accounts
+    ]
+    model.providers = [
+        AnalysisGroupProvider(provider_id=item.provider_id, selection_mode=item.mode.value)
+        for item in payload.providers
+    ]
 
 
 def _apply_budget_selection(db: DbSession, model: Budget, payload: BudgetCreate) -> None:
-    _validate_selection_records(db, payload.categories, payload.tags)
+    _validate_selection_records(
+        db, payload.categories, payload.tags, payload.accounts, payload.providers
+    )
     model.categories = [
         BudgetCategory(
             category_id=item.category_id,
@@ -573,9 +712,17 @@ def _apply_budget_selection(db: DbSession, model: Budget, payload: BudgetCreate)
     model.tags = [
         BudgetTag(tag_id=item.tag_id, selection_mode=item.mode.value) for item in payload.tags
     ]
+    model.accounts = [
+        BudgetAccount(account_id=item.account_id, selection_mode=item.mode.value)
+        for item in payload.accounts
+    ]
+    model.providers = [
+        BudgetProvider(provider_id=item.provider_id, selection_mode=item.mode.value)
+        for item in payload.providers
+    ]
 
 
-def _validate_selection_records(db: DbSession, categories, tags) -> None:
+def _validate_selection_records(db: DbSession, categories, tags, accounts, providers) -> None:
     for selection in categories:
         category = db.get(Category, selection.category_id)
         if category is None or category.status != "active" or category.category_kind != "expense":
@@ -586,6 +733,14 @@ def _validate_selection_records(db: DbSession, categories, tags) -> None:
         tag = db.get(Tag, selection.tag_id)
         if tag is None or tag.status != "active":
             raise ApiError(422, "budget_tag_invalid", "Budgets require active tags.")
+    for selection in accounts:
+        account = db.get(Account, selection.account_id)
+        if account is None or account.status != "active":
+            raise ApiError(422, "budget_account_invalid", "Budgets require active accounts.")
+    for selection in providers:
+        provider = db.get(Provider, selection.provider_id)
+        if provider is None or provider.status != "active":
+            raise ApiError(422, "budget_provider_invalid", "Budgets require active providers.")
 
 
 def _validate_budget_payload(db: DbSession, payload: BudgetCreate, base_currency: str) -> None:
@@ -600,7 +755,12 @@ def _validate_budget_payload(db: DbSession, payload: BudgetCreate, base_currency
 def _group_statement():
     return (
         select(AnalysisGroup)
-        .options(selectinload(AnalysisGroup.categories), selectinload(AnalysisGroup.tags))
+        .options(
+            selectinload(AnalysisGroup.categories),
+            selectinload(AnalysisGroup.tags),
+            selectinload(AnalysisGroup.accounts),
+            selectinload(AnalysisGroup.providers),
+        )
         .order_by(AnalysisGroup.status, AnalysisGroup.normalized_name)
     )
 
@@ -611,8 +771,12 @@ def _budget_statement():
         .options(
             selectinload(Budget.categories),
             selectinload(Budget.tags),
+            selectinload(Budget.accounts),
+            selectinload(Budget.providers),
             selectinload(Budget.analysis_group).selectinload(AnalysisGroup.categories),
             selectinload(Budget.analysis_group).selectinload(AnalysisGroup.tags),
+            selectinload(Budget.analysis_group).selectinload(AnalysisGroup.accounts),
+            selectinload(Budget.analysis_group).selectinload(AnalysisGroup.providers),
         )
         .order_by(Budget.status, Budget.normalized_name)
     )
