@@ -235,17 +235,31 @@ describe("App", () => {
       date_to: "2026-08-31",
       base_currency: "SEK",
       daily: [{ date: "2026-08-12", income: "30000.0000", expenses: "650.0000", net_cash_flow: "29350.0000" }],
-      expense_categories: [{ category_id: 1, category_name: "Groceries", amount: "650.0000", transaction_count: 2 }],
+      expense_categories: [
+        { category_id: 1, category_name: "Groceries", amount: "650.0000", transaction_count: 2 },
+        { category_id: 2, category_name: "Transport", amount: "350.0000", transaction_count: 1 },
+      ],
     };
     const user = userEvent.setup();
     render(<App />);
 
     expect((await screen.findAllByText("Groceries")).length).toBeGreaterThan(0);
-    const tableToggles = screen.getAllByText("Show data as a table");
-    await user.click(tableToggles[1]);
-    expect(screen.getByRole("columnheader", { name: "Category" })).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "2" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "View contributing transactions: Groceries" }));
+    expect(screen.getByRole("heading", { name: "Where does the money go?" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Cumulative expenses" })).toBeInTheDocument();
+
+    const distributionTable = screen.getByRole("table", { hidden: true, name: "Where does the money go?" });
+    const distributionPanel = screen.getByRole("heading", { name: "Where does the money go?" }).closest("section");
+    expect(distributionPanel).not.toBeNull();
+    await user.click(within(distributionPanel as HTMLElement).getByText("Show data as a table"));
+    expect(within(distributionTable).getByRole("cell", { name: /65\s*%/ })).toBeInTheDocument();
+
+    const categoryPanel = screen.getByRole("heading", { name: "Expenses by category" }).closest("section");
+    expect(categoryPanel).not.toBeNull();
+    await user.click(within(categoryPanel as HTMLElement).getByText("Show data as a table"));
+    const categoryTable = screen.getByRole("table", { name: "Expenses by category" });
+    expect(within(categoryTable).getByRole("columnheader", { name: "Category" })).toBeInTheDocument();
+    expect(within(categoryTable).getByRole("cell", { name: "2" })).toBeInTheDocument();
+    await user.click(within(categoryPanel as HTMLElement).getByRole("button", { name: "View contributing transactions: Groceries" }));
     expect(await screen.findByRole("heading", { name: "Transactions" })).toBeInTheDocument();
     await waitFor(() => {
       expect(vi.mocked(fetch).mock.calls.some(([input]) => {

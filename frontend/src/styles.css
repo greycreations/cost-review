@@ -14,6 +14,12 @@
   --accent-soft: #e8f0ed;
   --analysis-blue: #587a92;
   --analysis-sand: #c49a67;
+  --chart-1: #477568;
+  --chart-2: #587a92;
+  --chart-3: #c49a67;
+  --chart-4: #7d7396;
+  --chart-5: #78908a;
+  --chart-6: #a6aca8;
   --border: #dfe5e1;
   --warning: #c5823b;
   --warning-soft: #fbf3e7;
@@ -828,6 +834,11 @@ select:hover {
   opacity: 0.62;
 }
 
+.chart-area-expense {
+  fill: var(--accent-soft);
+  opacity: 0.72;
+}
+
 .chart-point {
   fill: var(--surface);
   stroke: var(--accent);
@@ -910,6 +921,115 @@ select:hover {
   color: var(--text-secondary);
   font-size: 10px;
 }
+
+.distribution-layout {
+  display: grid;
+  grid-template-columns: minmax(148px, 0.85fr) minmax(170px, 1.15fr);
+  align-items: center;
+  gap: 22px;
+  margin-top: 18px;
+}
+
+.donut-chart {
+  display: block;
+  width: 100%;
+  max-width: 210px;
+  margin: 0 auto;
+  overflow: visible;
+}
+
+.donut-track,
+.donut-segment {
+  fill: none;
+  stroke-width: 20;
+}
+
+.donut-track {
+  stroke: var(--surface-muted);
+}
+
+.donut-segment {
+  transform: rotate(-90deg);
+  transform-origin: 64px 64px;
+  transition: opacity 150ms ease;
+}
+
+.donut-total-label {
+  fill: var(--text-secondary);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.donut-total-value {
+  fill: var(--text-primary);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.distribution-legend {
+  display: grid;
+  gap: 5px;
+}
+
+.distribution-legend-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 40px;
+  padding: 5px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+button.distribution-legend-row {
+  cursor: pointer;
+}
+
+button.distribution-legend-row:hover,
+button.distribution-legend-row:focus-visible {
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.distribution-legend-row > i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.distribution-legend-row > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.distribution-legend-row strong,
+.distribution-legend-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.distribution-legend-row strong {
+  font-size: 11px;
+}
+
+.distribution-legend-row small {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-fill-0 { stroke: var(--chart-1); background: var(--chart-1); }
+.chart-fill-1 { stroke: var(--chart-2); background: var(--chart-2); }
+.chart-fill-2 { stroke: var(--chart-3); background: var(--chart-3); }
+.chart-fill-3 { stroke: var(--chart-4); background: var(--chart-4); }
+.chart-fill-4 { stroke: var(--chart-5); background: var(--chart-5); }
+.chart-fill-5 { stroke: var(--chart-6); background: var(--chart-6); }
 
 .chart-data-table {
   margin-top: 18px;
@@ -1942,6 +2062,10 @@ footer {
 
   .analysis-panel-heading {
     flex-direction: column;
+  }
+
+  .distribution-layout {
+    grid-template-columns: 1fr;
   }
 
   .overview-transaction {

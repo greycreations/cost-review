@@ -38,6 +38,13 @@ const copy = {
     cashFlowLead: "Beloppen visas per transaktionsdatum i basvalutan.",
     categoryBreakdown: "Utgifter per kategori",
     categoryLead: "De största kategorierna för den valda månaden.",
+    expenseDistribution: "Vart går pengarna?",
+    expenseDistributionLead: "Andel av månadens kategoriserade nettoutgifter.",
+    spendingPace: "Ackumulerade utgifter",
+    spendingPaceLead: "Visar hur utgifterna byggs upp under perioden jämfört med vald jämförelse.",
+    currentPeriod: "Vald period",
+    other: "Övrigt",
+    share: "Andel",
     uncategorized: "Okategoriserat",
     noCashFlow: "Det finns ännu inga växlade inkomst- eller utgiftsposter att visa.",
     noCategories: "Kategorifördelningen visas när månaden innehåller kategoriserade utgifter.",
@@ -85,6 +92,13 @@ const copy = {
     cashFlowLead: "Amounts are shown by transaction date in the base currency.",
     categoryBreakdown: "Expenses by category",
     categoryLead: "The largest categories for the selected month.",
+    expenseDistribution: "Where does the money go?",
+    expenseDistributionLead: "Share of the month's categorised net expenses.",
+    spendingPace: "Cumulative expenses",
+    spendingPaceLead: "Shows how expenses build through the period against the selected comparison.",
+    currentPeriod: "Selected period",
+    other: "Other",
+    share: "Share",
     uncategorized: "Uncategorised",
     noCashFlow: "There are no converted income or expense entries to show yet.",
     noCategories: "The category breakdown appears when the month has categorised expenses.",
@@ -286,6 +300,29 @@ export function OverviewWorkspace({
           language={language}
           period={period}
         />
+        <ExpenseDistributionChart
+          categories={analysis?.expense_categories ?? []}
+          currency={summary?.base_currency ?? analysis?.base_currency ?? "SEK"}
+          labels={labels}
+          language={language}
+          onDrillDown={(categoryId) => onNavigateTransactions({
+            dateFrom: period.from,
+            dateTo: period.to,
+            accountId: ledgerFilters.accountId ?? undefined,
+            providerId: ledgerFilters.providerId ?? undefined,
+            categoryId,
+            tagId: ledgerFilters.tagId ?? undefined,
+            isBaseCost: ledgerFilters.isBaseCost ?? undefined,
+          })}
+        />
+        <SpendingPaceChart
+          comparison={analysis?.comparison ?? null}
+          currency={summary?.base_currency ?? analysis?.base_currency ?? "SEK"}
+          daily={analysis?.daily ?? []}
+          labels={labels}
+          language={language}
+          period={period}
+        />
         <CategoryChart
           categories={analysis?.expense_categories ?? []}
           comparisonCategories={analysis?.comparison?.expense_categories ?? []}
@@ -431,9 +468,114 @@ function CashFlowChart({ comparison, currency, daily, labels, language, period }
           </div>
           <details className="chart-data-table">
             <summary>{labels.showTable}</summary>
-            <div className="table-scroll"><table>
+            <div className="table-scroll"><table aria-label={labels.cashFlow}>
               <thead><tr><th>{labels.date}</th><th>{labels.income}</th><th>{labels.expenses}</th><th>{labels.net}</th></tr></thead>
               <tbody>{daily.map((day) => <tr key={day.date}><td>{dateLabel(day.date, language)}</td><td>{money(day.income, currency, language)}</td><td>{money(day.expenses, currency, language)}</td><td>{money(day.net_cash_flow, currency, language)}</td></tr>)}</tbody>
+            </table></div>
+          </details>
+        </>
+      )}
+    </section>
+  );
+}
+
+function ExpenseDistributionChart({ categories, currency, labels, language, onDrillDown }: { categories: LedgerAnalysis["expense_categories"]; currency: string; labels: Labels; language: Language; onDrillDown: (categoryId: number) => void }) {
+  const positiveCategories = categories.filter((category) => Number(category.amount) > 0);
+  const total = positiveCategories.reduce((sum, category) => sum + Number(category.amount), 0);
+  const leading = positiveCategories.slice(0, 5);
+  const remaining = positiveCategories.slice(5);
+  const slices = [
+    ...leading.map((category) => ({
+      categoryId: category.category_id,
+      name: category.category_name ?? labels.uncategorized,
+      amount: Number(category.amount),
+    })),
+    ...(remaining.length > 0 ? [{
+      categoryId: null,
+      name: labels.other,
+      amount: remaining.reduce((sum, category) => sum + Number(category.amount), 0),
+    }] : []),
+  ];
+  let offset = 0;
+
+  return (
+    <section className="analysis-panel distribution-panel" aria-labelledby="expense-distribution-title">
+      <div className="analysis-panel-heading"><div><h2 id="expense-distribution-title">{labels.expenseDistribution}</h2><p>{labels.expenseDistributionLead}</p></div></div>
+      {total <= 0 ? <p className="analysis-empty">{labels.noCategories}</p> : (
+        <>
+          <div className="distribution-layout">
+            <svg className="donut-chart" role="img" viewBox="0 0 128 128" aria-labelledby="expense-distribution-title expense-distribution-description">
+              <desc id="expense-distribution-description">{labels.expenseDistributionLead}</desc>
+              <circle className="donut-track" cx="64" cy="64" r="48" pathLength="100" />
+              {slices.map((slice, index) => {
+                const percentage = (slice.amount / total) * 100;
+                const start = offset;
+                offset += percentage;
+                return <circle className={`donut-segment chart-fill-${index}`} cx="64" cy="64" key={`${slice.categoryId ?? "other"}-${slice.name}`} pathLength="100" r="48" strokeDasharray={`${percentage} ${100 - percentage}`} strokeDashoffset={-start}>
+                  <title>{slice.name}: {money(String(slice.amount), currency, language)} ({formatPercent(percentage, language)})</title>
+                </circle>;
+              })}
+              <text className="donut-total-label" textAnchor="middle" x="64" y="59">{labels.expenses}</text>
+              <text className="donut-total-value" textAnchor="middle" x="64" y="75">{compactMoney(total, currency, language)}</text>
+            </svg>
+            <div className="distribution-legend">
+              {slices.map((slice, index) => {
+                const content = <><i className={`chart-fill-${index}`} /><span><strong>{slice.name}</strong><small>{formatPercent((slice.amount / total) * 100, language)} · {money(String(slice.amount), currency, language)}</small></span></>;
+                return slice.categoryId === null ? <div className="distribution-legend-row" key={`${slice.name}-${index}`}>{content}</div> : <button aria-label={`${labels.drillDown}: ${slice.name}`} className="distribution-legend-row" key={slice.categoryId} onClick={() => onDrillDown(slice.categoryId as number)} type="button">{content}</button>;
+              })}
+            </div>
+          </div>
+          <details className="chart-data-table">
+            <summary>{labels.showTable}</summary>
+            <div className="table-scroll"><table aria-label={labels.expenseDistribution}>
+              <thead><tr><th>{labels.category}</th><th>{labels.amount}</th><th>{labels.share}</th></tr></thead>
+              <tbody>{positiveCategories.map((category) => <tr key={category.category_id ?? "uncategorized"}><td>{category.category_name ?? labels.uncategorized}</td><td>{money(category.amount, currency, language)}</td><td>{formatPercent((Number(category.amount) / total) * 100, language)}</td></tr>)}</tbody>
+            </table></div>
+          </details>
+        </>
+      )}
+    </section>
+  );
+}
+
+function SpendingPaceChart({ comparison, currency, daily, labels, language, period }: { comparison: LedgerAnalysis["comparison"]; currency: string; daily: LedgerTrendPoint[]; labels: Labels; language: Language; period: { from: string; to: string } }) {
+  const days = cumulativeExpenses(fillPeriod(period, daily));
+  const comparisonDays = comparison ? cumulativeExpenses(fillPeriod({ from: comparison.date_from, to: comparison.date_to }, comparison.daily)) : [];
+  const maximum = Math.max(1, days.at(-1)?.value ?? 0, comparisonDays.at(-1)?.value ?? 0);
+  const width = 640;
+  const height = 214;
+  const padding = { top: 20, right: 18, bottom: 32, left: 54 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const x = (index: number, length: number) => padding.left + (index / Math.max(length - 1, 1)) * plotWidth;
+  const y = (value: number) => padding.top + plotHeight - (value / maximum) * plotHeight;
+  const path = (values: Array<{ value: number }>) => linePath(values.map((point) => point.value), (index) => x(index, values.length), y);
+  const hasValues = (days.at(-1)?.value ?? 0) > 0;
+
+  return (
+    <section className="analysis-panel" aria-labelledby="spending-pace-title">
+      <div className="analysis-panel-heading">
+        <div><h2 id="spending-pace-title">{labels.spendingPace}</h2><p>{labels.spendingPaceLead}</p></div>
+        <div className="chart-legend"><span><i className="legend-expense" />{labels.currentPeriod}</span>{comparison ? <span><i className="legend-comparison" />{labels.comparison}</span> : null}</div>
+      </div>
+      {!hasValues ? <p className="analysis-empty">{labels.noCashFlow}</p> : (
+        <>
+          <div className="chart-scroll">
+            <svg className="cash-flow-chart" role="img" viewBox={`0 0 ${width} ${height}`} aria-labelledby="spending-pace-title spending-pace-description">
+              <desc id="spending-pace-description">{labels.spendingPaceLead}</desc>
+              {[0, 0.5, 1].map((ratio) => <g key={ratio}><line className="chart-grid-line" x1={padding.left} x2={width - padding.right} y1={y(maximum * ratio)} y2={y(maximum * ratio)} /><text className="chart-axis-label" x={padding.left - 8} y={y(maximum * ratio) + 4} textAnchor="end">{compactMoney(maximum * ratio, currency, language)}</text></g>)}
+              <text className="chart-axis-label" x={padding.left} y={height - 8}>1</text>
+              <text className="chart-axis-label" x={width - padding.right} y={height - 8} textAnchor="end">{days.length}</text>
+              <path className="chart-area-expense" d={`${path(days)} L${x(days.length - 1, days.length)} ${y(0)} L${x(0, days.length)} ${y(0)} Z`} />
+              <path className="chart-line chart-line-expense" d={path(days)} />
+              {comparison ? <path className="chart-line chart-line-comparison-income" d={path(comparisonDays)} /> : null}
+            </svg>
+          </div>
+          <details className="chart-data-table">
+            <summary>{labels.showTable}</summary>
+            <div className="table-scroll"><table aria-label={labels.spendingPace}>
+              <thead><tr><th>{labels.date}</th><th>{labels.expenses}</th></tr></thead>
+              <tbody>{days.map((day) => <tr key={day.date}><td>{dateLabel(day.date, language)}</td><td>{money(String(day.value), currency, language)}</td></tr>)}</tbody>
             </table></div>
           </details>
         </>
@@ -468,7 +610,7 @@ function CategoryChart({ categories, comparisonCategories, currency, labels, lan
           {categories.length > chartCategories.length ? <p className="chart-note">{labels.topCategories}</p> : null}
           <details className="chart-data-table">
             <summary>{labels.showTable}</summary>
-            <div className="table-scroll"><table>
+            <div className="table-scroll"><table aria-label={labels.categoryBreakdown}>
               <thead><tr><th>{labels.category}</th><th>{labels.amount}</th><th>{labels.count}</th></tr></thead>
               <tbody>{categories.map((category) => <tr key={category.category_id ?? "uncategorized"}><td>{category.category_name ?? labels.uncategorized}</td><td>{money(category.amount, currency, language)}</td><td>{category.transaction_count}</td></tr>)}</tbody>
             </table></div>
@@ -515,6 +657,14 @@ function fillPeriod(period: { from: string; to: string }, daily: LedgerTrendPoin
   });
 }
 
+function cumulativeExpenses(days: Array<{ date: string; expenses: number }>): Array<{ date: string; value: number }> {
+  let total = 0;
+  return days.map((day) => {
+    total += day.expenses;
+    return { date: day.date, value: total };
+  });
+}
+
 function linePath(values: number[], x: (index: number) => number, y: (value: number) => number): string {
   return values.map((value, index) => `${index === 0 ? "M" : "L"}${x(index)} ${y(value)}`).join(" ");
 }
@@ -529,6 +679,10 @@ function money(value: string, currency: string, language: Language): string {
 
 function compactMoney(value: number, currency: string, language: Language): string {
   return new Intl.NumberFormat(language === "sv" ? "sv-SE" : "en-SE", { notation: "compact", maximumFractionDigits: 1, style: "currency", currency }).format(value);
+}
+
+function formatPercent(value: number, language: Language): string {
+  return new Intl.NumberFormat(language === "sv" ? "sv-SE" : "en-SE", { maximumFractionDigits: 1, style: "percent" }).format(value / 100);
 }
 
 function dateLabel(value: string, language: Language): string {
