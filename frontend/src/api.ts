@@ -86,6 +86,42 @@ export type AccountSnapshot = {
   updated_at: string;
 };
 
+export type Backup = {
+  filename: string;
+  environment: Environment;
+  kind: "manual" | "automatic" | "pre_restore";
+  created_at: string;
+  size_bytes: number;
+};
+
+export type BackupValidation = {
+  filename: string;
+  environment: Environment;
+  data_plane_id: string;
+  created_at: string;
+  schema_revision: string;
+  file_count: number;
+  valid: boolean;
+};
+
+export type RecycleBinItem = {
+  entity_type: string;
+  entity_id: number;
+  label: string;
+  archived_at: string;
+  restore_path: string;
+};
+
+export type AuditEvent = {
+  audit_event_id: number;
+  entity_type: string;
+  entity_id: number | null;
+  action: string;
+  change_source: string;
+  changes: Record<string, unknown>;
+  created_at: string;
+};
+
 export type Category = {
   category_id: number;
   parent_category_id: number | null;
@@ -130,7 +166,120 @@ export type SharingParty = {
   updated_at: string;
 };
 
-export type TransactionKind = "expense" | "income";
+export type SelectionMode = "include" | "exclude";
+export type CategorySelection = {
+  category_id: number;
+  mode: SelectionMode;
+  include_descendants: boolean;
+};
+export type TagSelection = { tag_id: number; mode: SelectionMode };
+export type AccountSelection = { account_id: number; mode: SelectionMode };
+export type ProviderSelection = { provider_id: number; mode: SelectionMode };
+
+export type AnalysisGroup = {
+  analysis_group_id: number;
+  name: string;
+  notes: string | null;
+  categories: CategorySelection[];
+  tags: TagSelection[];
+  accounts: AccountSelection[];
+  providers: ProviderSelection[];
+  status: LifecycleStatus;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BudgetPeriodType =
+  | "calendar_month"
+  | "salary_cycle"
+  | "calendar_year"
+  | "custom";
+export type BudgetRolloverMode = "reset" | "rollover";
+
+export type Budget = {
+  budget_id: number;
+  analysis_group_id: number | null;
+  name: string;
+  amount: string;
+  currency: string;
+  period_type: BudgetPeriodType;
+  rollover_mode: BudgetRolloverMode;
+  starts_on: string;
+  ends_on: string | null;
+  anchor_day: number;
+  notes: string | null;
+  categories: CategorySelection[];
+  tags: TagSelection[];
+  accounts: AccountSelection[];
+  providers: ProviderSelection[];
+  status: LifecycleStatus;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BudgetInput = {
+  name: string;
+  amount: string;
+  currency: string;
+  period_type: BudgetPeriodType;
+  rollover_mode: BudgetRolloverMode;
+  starts_on: string;
+  ends_on: string | null;
+  anchor_day: number;
+  analysis_group_id: number | null;
+  notes: string | null;
+  categories: CategorySelection[];
+  tags: TagSelection[];
+  accounts: AccountSelection[];
+  providers: ProviderSelection[];
+};
+
+export type BudgetOutcome = {
+  budget: Budget;
+  date_from: string;
+  date_to: string;
+  base_currency: string;
+  target_amount: string;
+  actual_amount: string;
+  remaining_amount: string;
+  consumed_percent: string;
+  period_count: number;
+  rollover_adjustment: string;
+  matched_transaction_count: number;
+  missing_fx_count: number;
+  overlapping_budget_ids: number[];
+};
+
+export type BudgetTransaction = {
+  transaction_id: number;
+  transaction_date: string;
+  description: string;
+  transaction_kind: TransactionKind;
+  matched_amount: string;
+  base_currency: string;
+};
+
+export type BudgetTrendPoint = {
+  period_start: string;
+  period_end: string;
+  target_amount: string;
+  actual_amount: string;
+  remaining_amount: string;
+  consumed_percent: string;
+  missing_fx_count: number;
+};
+
+export type BudgetTrend = {
+  budget_id: number;
+  base_currency: string;
+  points: BudgetTrendPoint[];
+};
+
+export type ManualTransactionKind = "expense" | "income";
+export type RecoveryKind = "refund" | "reimbursement";
+export type TransactionKind = ManualTransactionKind | RecoveryKind | "adjustment";
 export type TransferPurpose =
   | "internal"
   | "savings"
@@ -143,6 +292,7 @@ export type Transaction = {
   account_id: number;
   provider_id: number | null;
   transaction_kind: TransactionKind;
+  adjustment_direction: "increase" | "decrease" | null;
   transaction_date: string;
   posting_date: string;
   description: string;
@@ -158,16 +308,37 @@ export type Transaction = {
   category_id: number | null;
   tag_ids: number[];
   is_base_cost: boolean;
+  is_split: boolean;
+  splits: TransactionSplit[];
+  linked_expense_id: number | null;
   status: LifecycleStatus;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
 };
 
+export type TransactionSplit = {
+  transaction_split_id: number;
+  original_amount: string;
+  converted_amount: string | null;
+  category_id: number | null;
+  tag_ids: number[];
+  is_base_cost: boolean;
+  memo: string | null;
+};
+
+export type TransactionSplitInput = {
+  original_amount: string;
+  category_id: number | null;
+  tag_ids: number[];
+  is_base_cost: boolean;
+  memo?: string | null;
+};
+
 export type TransactionInput = {
   account_id: number;
   provider_id: number | null;
-  transaction_kind: TransactionKind;
+  transaction_kind: ManualTransactionKind;
   transaction_date: string;
   posting_date: string;
   description: string;
@@ -178,6 +349,20 @@ export type TransactionInput = {
   category_id: number | null;
   tag_ids: number[];
   is_base_cost: boolean;
+  splits?: TransactionSplitInput[] | null;
+  source_reference?: string | null;
+  notes?: string | null;
+};
+
+export type RecoveryInput = {
+  account_id: number;
+  provider_id?: number | null;
+  transaction_date: string;
+  posting_date: string;
+  description: string;
+  original_amount: string;
+  original_currency: string;
+  converted_amount?: string | null;
   source_reference?: string | null;
   notes?: string | null;
 };
@@ -259,6 +444,28 @@ export type LedgerAnalysis = {
   base_currency: string;
   daily: LedgerTrendPoint[];
   expense_categories: LedgerCategoryBreakdown[];
+  comparison: LedgerComparison | null;
+};
+
+export type AnalysisComparisonMode = "none" | "previous_period" | "previous_year";
+
+export type LedgerComparison = {
+  mode: Exclude<AnalysisComparisonMode, "none">;
+  date_from: string;
+  date_to: string;
+  income: string;
+  expenses: string;
+  net_cash_flow: string;
+  daily: LedgerTrendPoint[];
+  expense_categories: LedgerCategoryBreakdown[];
+};
+
+export type LedgerFilters = {
+  accountId?: number | null;
+  providerId?: number | null;
+  categoryId?: number | null;
+  tagId?: number | null;
+  isBaseCost?: boolean | null;
 };
 
 export class ApiError extends Error {
@@ -435,6 +642,51 @@ export function createAccountSnapshot(
   );
 }
 
+export function createBalanceAdjustment(
+  environment: Environment,
+  snapshotId: number,
+  confirmation: string,
+): Promise<Transaction> {
+  return request(
+    environment,
+    `/account-snapshots/${snapshotId}/adjustment`,
+    { method: "POST", body: JSON.stringify({ confirmation }) },
+    true,
+  );
+}
+
+export function getBackups(environment: Environment): Promise<Backup[]> {
+  return request(environment, "/backups");
+}
+
+export function createBackup(environment: Environment): Promise<Backup> {
+  return request(environment, "/backups", { method: "POST" }, true);
+}
+
+export function validateBackup(
+  environment: Environment,
+  filename: string,
+): Promise<BackupValidation> {
+  return request(
+    environment,
+    `/backups/${encodeURIComponent(filename)}/validate`,
+    { method: "POST" },
+    true,
+  );
+}
+
+export function backupDownloadUrl(environment: Environment, filename: string): string {
+  return `${apiBase(environment)}/backups/${encodeURIComponent(filename)}/download`;
+}
+
+export function getRecycleBin(environment: Environment): Promise<RecycleBinItem[]> {
+  return request(environment, "/recycle-bin");
+}
+
+export function getAuditEvents(environment: Environment): Promise<Page<AuditEvent>> {
+  return request(environment, "/audit-events?limit=10&offset=0");
+}
+
 export function getCategories(
   environment: Environment,
   includeArchived = false,
@@ -567,6 +819,80 @@ export function setSharingPartyArchived(
   );
 }
 
+export function getAnalysisGroups(
+  environment: Environment,
+  includeArchived = false,
+): Promise<AnalysisGroup[]> {
+  return request(environment, `/analysis-groups?include_archived=${includeArchived}`);
+}
+
+export function createAnalysisGroup(
+  environment: Environment,
+  payload: Omit<AnalysisGroup, "analysis_group_id" | "status" | "archived_at" | "created_at" | "updated_at">,
+): Promise<AnalysisGroup> {
+  return request(environment, "/analysis-groups", { method: "POST", body: JSON.stringify(payload) }, true);
+}
+
+export function getBudgets(
+  environment: Environment,
+  includeArchived = false,
+): Promise<Budget[]> {
+  return request(environment, `/budgets?include_archived=${includeArchived}`);
+}
+
+export function createBudget(
+  environment: Environment,
+  payload: BudgetInput,
+): Promise<Budget> {
+  return request(environment, "/budgets", { method: "POST", body: JSON.stringify(payload) }, true);
+}
+
+export function updateBudget(
+  environment: Environment,
+  budgetId: number,
+  payload: BudgetInput,
+): Promise<Budget> {
+  return request(environment, `/budgets/${budgetId}`, { method: "PATCH", body: JSON.stringify(payload) }, true);
+}
+
+export function setBudgetArchived(
+  environment: Environment,
+  budgetId: number,
+  archived: boolean,
+): Promise<Budget> {
+  return request(environment, `/budgets/${budgetId}/${archived ? "archive" : "restore"}`, { method: "POST" }, true);
+}
+
+export function getBudgetOutcome(
+  environment: Environment,
+  budgetId: number,
+  dateFrom: string,
+  dateTo: string,
+): Promise<BudgetOutcome> {
+  const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  return request(environment, `/budgets/${budgetId}/outcome?${query.toString()}`);
+}
+
+export function getBudgetTransactions(
+  environment: Environment,
+  budgetId: number,
+  dateFrom: string,
+  dateTo: string,
+): Promise<BudgetTransaction[]> {
+  const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  return request(environment, `/budgets/${budgetId}/transactions?${query.toString()}`);
+}
+
+export function getBudgetTrend(
+  environment: Environment,
+  budgetId: number,
+  through: string,
+  periods = 6,
+): Promise<BudgetTrend> {
+  const query = new URLSearchParams({ through, periods: String(periods) });
+  return request(environment, `/budgets/${budgetId}/trend?${query.toString()}`);
+}
+
 export function getTransactions(
   environment: Environment,
   filters: {
@@ -575,6 +901,12 @@ export function getTransactions(
     kind?: TransactionKind | "";
     accountId?: number | null;
     categoryId?: number | null;
+    providerId?: number | null;
+    tagId?: number | null;
+    isBaseCost?: boolean | null;
+    originalCurrency?: string;
+    amountMin?: string;
+    amountMax?: string;
     search?: string;
     includeArchived?: boolean;
     limit?: number;
@@ -587,6 +919,14 @@ export function getTransactions(
   if (filters.kind) query.set("transaction_kind", filters.kind);
   if (filters.accountId) query.set("account_id", String(filters.accountId));
   if (filters.categoryId) query.set("category_id", String(filters.categoryId));
+  if (filters.providerId) query.set("provider_id", String(filters.providerId));
+  if (filters.tagId) query.set("tag_id", String(filters.tagId));
+  if (filters.isBaseCost !== undefined && filters.isBaseCost !== null) {
+    query.set("is_base_cost", String(filters.isBaseCost));
+  }
+  if (filters.originalCurrency) query.set("original_currency", filters.originalCurrency);
+  if (filters.amountMin) query.set("amount_min", filters.amountMin);
+  if (filters.amountMax) query.set("amount_max", filters.amountMax);
   if (filters.search?.trim()) query.set("search", filters.search.trim());
   if (filters.includeArchived) query.set("include_archived", "true");
   return request(environment, `/transactions?${query.toString()}`);
@@ -596,8 +936,10 @@ export function getLedgerSummary(
   environment: Environment,
   dateFrom: string,
   dateTo: string,
+  filters: LedgerFilters = {},
 ): Promise<LedgerSummary> {
   const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  appendLedgerFilters(query, filters);
   return request(environment, `/transactions/summary?${query.toString()}`);
 }
 
@@ -605,9 +947,26 @@ export function getLedgerAnalysis(
   environment: Environment,
   dateFrom: string,
   dateTo: string,
+  comparison: AnalysisComparisonMode = "none",
+  filters: LedgerFilters = {},
 ): Promise<LedgerAnalysis> {
-  const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  const query = new URLSearchParams({
+    date_from: dateFrom,
+    date_to: dateTo,
+    comparison,
+  });
+  appendLedgerFilters(query, filters);
   return request(environment, `/transactions/analysis?${query.toString()}`);
+}
+
+function appendLedgerFilters(query: URLSearchParams, filters: LedgerFilters): void {
+  if (filters.accountId) query.set("account_id", String(filters.accountId));
+  if (filters.providerId) query.set("provider_id", String(filters.providerId));
+  if (filters.categoryId) query.set("category_id", String(filters.categoryId));
+  if (filters.tagId) query.set("tag_id", String(filters.tagId));
+  if (filters.isBaseCost !== undefined && filters.isBaseCost !== null) {
+    query.set("is_base_cost", String(filters.isBaseCost));
+  }
 }
 
 export function createTransaction(
@@ -643,6 +1002,34 @@ export function setTransactionArchived(
   return request(
     environment,
     `/transactions/${transactionId}/${archived ? "archive" : "restore"}`,
+    { method: "POST" },
+    true,
+  );
+}
+
+export function createRecovery(
+  environment: Environment,
+  expenseId: number,
+  kind: RecoveryKind,
+  payload: RecoveryInput,
+): Promise<Transaction> {
+  const resource = kind === "refund" ? "refunds" : "reimbursements";
+  return request(
+    environment,
+    `/transactions/${expenseId}/${resource}`,
+    { method: "POST", body: JSON.stringify(payload) },
+    true,
+  );
+}
+
+export function setRecoveryArchived(
+  environment: Environment,
+  transactionId: number,
+  archived: boolean,
+): Promise<Transaction> {
+  return request(
+    environment,
+    `/recoveries/${transactionId}/${archived ? "archive" : "restore"}`,
     { method: "POST" },
     true,
   );

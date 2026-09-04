@@ -16,6 +16,7 @@ from pydantic import (
 
 from app.models import (
     AccountType,
+    AdjustmentDirection,
     CategoryKind,
     FxRateStatus,
     LifecycleStatus,
@@ -39,6 +40,20 @@ Description = Annotated[
 class ManualTransactionKind(StrEnum):
     EXPENSE = "expense"
     INCOME = "income"
+
+
+class LedgerTransactionKind(StrEnum):
+    EXPENSE = "expense"
+    INCOME = "income"
+    REFUND = "refund"
+    REIMBURSEMENT = "reimbursement"
+    ADJUSTMENT = "adjustment"
+
+
+class ComparisonMode(StrEnum):
+    NONE = "none"
+    PREVIOUS_PERIOD = "previous_period"
+    PREVIOUS_YEAR = "previous_year"
 
 
 class ApiModel(BaseModel):
@@ -282,6 +297,33 @@ class SharingPartyRead(ArchivedApiModel):
     updated_at: datetime
 
 
+class TransactionSplitInput(BaseModel):
+    original_amount: Decimal = Field(gt=0, max_digits=20, decimal_places=4)
+    category_id: int | None = Field(default=None, gt=0)
+    tag_ids: list[int] = Field(default_factory=list, max_length=50)
+    is_base_cost: bool = False
+    memo: str | None = Field(default=None, max_length=240)
+
+    @field_validator("tag_ids")
+    @classmethod
+    def unique_tag_ids(cls, value: list[int]) -> list[int]:
+        if any(tag_id <= 0 for tag_id in value):
+            raise ValueError("tag identifiers must be positive")
+        if len(set(value)) != len(value):
+            raise ValueError("tag identifiers must be unique")
+        return value
+
+
+class TransactionSplitRead(ApiModel):
+    transaction_split_id: int
+    original_amount: Decimal
+    converted_amount: Decimal | None
+    category_id: int | None
+    tag_ids: list[int]
+    is_base_cost: bool
+    memo: str | None
+
+
 class TransactionCreate(BaseModel):
     account_id: int = Field(gt=0)
     provider_id: int | None = Field(default=None, gt=0)
@@ -298,6 +340,9 @@ class TransactionCreate(BaseModel):
     category_id: int | None = Field(default=None, gt=0)
     tag_ids: list[int] = Field(default_factory=list, max_length=50)
     is_base_cost: bool = False
+    splits: list[TransactionSplitInput] | None = Field(
+        default=None, min_length=2, max_length=100
+    )
     source_reference: str | None = Field(default=None, max_length=240)
     notes: Notes | None = None
 
@@ -314,6 +359,19 @@ class TransactionCreate(BaseModel):
         if len(set(value)) != len(value):
             raise ValueError("tag identifiers must be unique")
         return value
+
+    @model_validator(mode="after")
+    def validate_splits(self) -> TransactionCreate:
+        if self.splits is None:
+            return self
+        if self.category_id is not None or self.tag_ids or self.is_base_cost:
+            raise ValueError("split transactions must keep classification on their splits")
+        split_total = sum((split.original_amount for split in self.splits), Decimal("0"))
+        if split_total.quantize(Decimal("0.0001")) != self.original_amount.quantize(
+            Decimal("0.0001")
+        ):
+            raise ValueError("split amounts must equal the transaction amount")
+        return self
 
 
 class TransactionUpdate(BaseModel):
@@ -332,6 +390,9 @@ class TransactionUpdate(BaseModel):
     category_id: int | None = Field(default=None, gt=0)
     tag_ids: list[int] | None = Field(default=None, max_length=50)
     is_base_cost: bool | None = None
+    splits: list[TransactionSplitInput] | None = Field(
+        default=None, min_length=2, max_length=100
+    )
     source_reference: str | None = Field(default=None, max_length=240)
     notes: Notes | None = None
 
@@ -369,11 +430,58 @@ class TransactionRead(ArchivedApiModel):
     source_type: TransactionSource
     source_reference: str | None
     notes: str | None
+    adjustment_direction: AdjustmentDirection | None
     category_id: int | None
     tag_ids: list[int]
     is_base_cost: bool
+    is_split: bool
+    splits: list[TransactionSplitRead]
+    linked_expense_id: int | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class BalanceAdjustmentCreate(BaseModel):
+    confirmation: str
+
+
+class AuditEventRead(ApiModel):
+    audit_event_id: int
+    entity_type: str
+    entity_id: int | None
+    action: str
+    change_source: str
+    changes: dict[str, object]
+    created_at: datetime
+
+
+class RecycleBinItemRead(BaseModel):
+    entity_type: str
+    entity_id: int
+    label: str
+    archived_at: datetime
+    restore_path: str
+
+
+class RecoveryCreate(BaseModel):
+    account_id: int = Field(gt=0)
+    provider_id: int | None = Field(default=None, gt=0)
+    transaction_date: date
+    posting_date: date
+    description: Description
+    original_amount: Decimal = Field(gt=0, max_digits=20, decimal_places=4)
+    original_currency: CurrencyCode
+    converted_amount: Decimal | None = Field(
+        default=None, gt=0, max_digits=20, decimal_places=4
+    )
+    fx_rate: Decimal | None = Field(default=None, gt=0, max_digits=20, decimal_places=10)
+    source_reference: str | None = Field(default=None, max_length=240)
+    notes: Notes | None = None
+
+    @field_validator("original_currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        return value.strip().upper()
 
 
 class TransferCreate(BaseModel):
@@ -493,6 +601,18 @@ class LedgerAnalysisRead(BaseModel):
     date_from: date
     date_to: date
     base_currency: str
+    daily: list[LedgerTrendPointRead]
+    expense_categories: list[LedgerCategoryBreakdownRead]
+    comparison: LedgerComparisonRead | None = None
+
+
+class LedgerComparisonRead(BaseModel):
+    mode: ComparisonMode
+    date_from: date
+    date_to: date
+    income: Decimal
+    expenses: Decimal
+    net_cash_flow: Decimal
     daily: list[LedgerTrendPointRead]
     expense_categories: list[LedgerCategoryBreakdownRead]
 

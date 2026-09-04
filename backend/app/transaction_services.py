@@ -1,21 +1,24 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import selectinload
 
+from app.audit_services import record_pending_audits
 from app.errors import ApiError
-from app.ledger_schemas import TransactionCreate, TransactionUpdate
+from app.ledger_schemas import TransactionCreate, TransactionSplitInput, TransactionUpdate
 from app.ledger_services import get_model, normalize_name
 from app.models import (
     Account,
     Category,
     Provider,
+    RefundLink,
+    ReimbursementLink,
     Tag,
     Transaction,
     TransactionKind,
@@ -36,8 +39,6 @@ def create_manual_transaction(
         if payload.provider_id is not None
         else None
     )
-    category = _category_for_kind(db, payload.category_id, payload.transaction_kind.value)
-    tags = _active_tags(db, payload.tag_ids)
     converted_amount, fx_rate, fx_rate_status = resolve_conversion(
         original_amount,
         payload.original_currency,
@@ -64,15 +65,21 @@ def create_manual_transaction(
         source_reference=payload.source_reference,
         notes=payload.notes,
     )
-    model.splits = [
-        TransactionSplit(
-            category_id=category.category_id if category is not None else None,
-            original_amount=original_amount,
-            converted_amount=converted_amount,
-            is_base_cost=payload.is_base_cost,
-            tags=tags,
+    split_payloads = payload.splits or [
+        _legacy_split_payload(
+            original_amount,
+            payload.category_id,
+            payload.tag_ids,
+            payload.is_base_cost,
         )
     ]
+    model.splits = _build_splits(
+        db,
+        split_payloads,
+        payload.transaction_kind.value,
+        converted_amount,
+        fx_rate,
+    )
     db.add(model)
     _commit(db)
     return model
@@ -93,7 +100,7 @@ def update_manual_transaction(
             "source_managed_transaction",
             "Imported or generated transactions must be edited through their source workflow.",
         )
-    split = _single_component(model)
+    is_split = len(model.splits) > 1
     values = payload.model_dump(exclude_unset=True, mode="python")
     _reject_nulls(
         values,
@@ -114,14 +121,54 @@ def update_manual_transaction(
     transaction_kind = values.get("transaction_kind", model.transaction_kind)
     if hasattr(transaction_kind, "value"):
         transaction_kind = transaction_kind.value
-    category_id = values.get("category_id", split.category_id)
+    amount_fields = {"original_amount", "original_currency", "converted_amount", "fx_rate"}
+    if (
+        is_split
+        and amount_fields.intersection(payload.model_fields_set)
+        and payload.splits is None
+    ):
+        raise ApiError(
+            422,
+            "split_update_required",
+            "Changing a split transaction amount or conversion requires all split amounts.",
+        )
+    split_classification_fields = {"category_id", "tag_ids", "is_base_cost"}
+    if (
+        is_split
+        and payload.splits is None
+        and split_classification_fields.intersection(payload.model_fields_set)
+    ):
+        raise ApiError(
+            422,
+            "split_update_required",
+            "Changing split classification requires all split classifications.",
+        )
+    if (
+        payload.splits is not None
+        and (
+            values.get("category_id") is not None
+            or bool(values.get("tag_ids"))
+            or values.get("is_base_cost") is True
+        )
+    ):
+        raise ApiError(
+            422,
+            "split_classification_conflict",
+            "Split transactions keep categories, tags, and base-cost flags on each split.",
+        )
+    primary_split = model.splits[0]
+    category_id = values.get("category_id", primary_split.category_id)
     amount = values.get("original_amount", model.original_amount).quantize(MONEY_QUANTUM)
     currency = values.get("original_currency", model.original_currency)
 
     _active_model(db, Account, account_id, "Account")
     if provider_id is not None:
         _active_model(db, Provider, provider_id, "Provider")
-    category = _category_for_kind(db, category_id, transaction_kind)
+    category = (
+        _category_for_kind(db, category_id, transaction_kind)
+        if payload.splits is None
+        else None
+    )
 
     conversion_changed = bool(
         {"converted_amount", "fx_rate"}.intersection(payload.model_fields_set)
@@ -173,13 +220,28 @@ def update_manual_transaction(
     if "description" in values:
         model.normalized_description = normalize_name(values["description"])
 
-    split.category_id = category.category_id if category is not None else None
-    split.original_amount = amount
-    split.converted_amount = converted_amount
-    if "is_base_cost" in values:
-        split.is_base_cost = values["is_base_cost"]
-    if "tag_ids" in values:
-        split.tags = _active_tags(db, values["tag_ids"] or [])
+    if payload.splits is not None:
+        split_total = sum(
+            (split.original_amount for split in payload.splits), Decimal("0")
+        ).quantize(MONEY_QUANTUM)
+        if split_total != amount:
+            raise ApiError(
+                422,
+                "split_amount_mismatch",
+                "Split amounts must equal the transaction amount.",
+                [{"expected": str(amount), "actual": str(split_total)}],
+            )
+        model.splits = _build_splits(
+            db, payload.splits, transaction_kind, converted_amount, fx_rate
+        )
+    elif not is_split:
+        primary_split.category_id = category.category_id if category is not None else None
+        primary_split.original_amount = amount
+        primary_split.converted_amount = converted_amount
+        if "is_base_cost" in values:
+            primary_split.is_base_cost = values["is_base_cost"]
+        if "tag_ids" in values:
+            primary_split.tags = _active_tags(db, values["tag_ids"] or [])
 
     _commit(db)
     return model
@@ -207,6 +269,70 @@ def get_manual_transaction(db: DbSession, transaction_id: int) -> Transaction:
     return model
 
 
+def _ledger_filter_expressions(
+    *,
+    account_id: int | None = None,
+    provider_id: int | None = None,
+    category_id: int | None = None,
+    tag_id: int | None = None,
+    is_base_cost: bool | None = None,
+    original_currency: str | None = None,
+    amount_min: Decimal | None = None,
+    amount_max: Decimal | None = None,
+    search: str | None = None,
+) -> list[Any]:
+    filters: list[Any] = [
+        Transaction.transaction_kind.in_(("expense", "income", "refund", "reimbursement"))
+    ]
+    if account_id is not None:
+        filters.append(Transaction.account_id == account_id)
+    if provider_id is not None:
+        filters.append(Transaction.provider_id == provider_id)
+    if original_currency is not None:
+        filters.append(Transaction.original_currency == original_currency)
+    if amount_min is not None:
+        filters.append(Transaction.original_amount >= amount_min)
+    if amount_max is not None:
+        filters.append(Transaction.original_amount <= amount_max)
+    if search:
+        filters.append(
+            Transaction.normalized_description.contains(normalize_name(search), autoescape=True)
+        )
+
+    split_conditions = []
+    if category_id is not None:
+        split_conditions.append(TransactionSplit.category_id == category_id)
+    if tag_id is not None:
+        split_conditions.append(TransactionSplit.tags.any(Tag.tag_id == tag_id))
+    if is_base_cost is not None:
+        split_conditions.append(TransactionSplit.is_base_cost.is_(is_base_cost))
+    if split_conditions:
+        matching_split = and_(*split_conditions)
+        matching_recoveries = (
+            select(RefundLink.refund_transaction_id)
+            .join(
+                TransactionSplit,
+                TransactionSplit.transaction_id == RefundLink.original_expense_id,
+            )
+            .where(matching_split)
+            .union_all(
+                select(ReimbursementLink.reimbursement_transaction_id)
+                .join(
+                    TransactionSplit,
+                    TransactionSplit.transaction_id == ReimbursementLink.original_expense_id,
+                )
+                .where(matching_split)
+            )
+        )
+        filters.append(
+            or_(
+                Transaction.splits.any(matching_split),
+                Transaction.transaction_id.in_(matching_recoveries),
+            )
+        )
+    return filters
+
+
 def list_transactions(
     db: DbSession,
     *,
@@ -220,9 +346,23 @@ def list_transactions(
     provider_id: int | None,
     category_id: int | None,
     tag_id: int | None,
+    is_base_cost: bool | None,
+    original_currency: str | None,
+    amount_min: Decimal | None,
+    amount_max: Decimal | None,
     search: str | None,
 ) -> dict[str, Any]:
-    filters = [Transaction.transaction_kind.in_(("expense", "income"))]
+    filters = _ledger_filter_expressions(
+        account_id=account_id,
+        provider_id=provider_id,
+        category_id=category_id,
+        tag_id=tag_id,
+        is_base_cost=is_base_cost,
+        original_currency=original_currency,
+        amount_min=amount_min,
+        amount_max=amount_max,
+        search=search,
+    )
     if not include_archived:
         filters.append(Transaction.status == "active")
     if date_from is not None:
@@ -231,18 +371,6 @@ def list_transactions(
         filters.append(Transaction.transaction_date <= date_to)
     if transaction_kind is not None:
         filters.append(Transaction.transaction_kind == transaction_kind)
-    if account_id is not None:
-        filters.append(Transaction.account_id == account_id)
-    if provider_id is not None:
-        filters.append(Transaction.provider_id == provider_id)
-    if category_id is not None:
-        filters.append(Transaction.splits.any(TransactionSplit.category_id == category_id))
-    if tag_id is not None:
-        filters.append(Transaction.splits.any(TransactionSplit.tags.any(Tag.tag_id == tag_id)))
-    if search:
-        filters.append(
-            Transaction.normalized_description.contains(normalize_name(search), autoescape=True)
-        )
 
     count_statement = select(func.count()).select_from(Transaction).where(*filters)
     statement = (
@@ -253,8 +381,17 @@ def list_transactions(
         .limit(limit)
         .offset(offset)
     )
+    models = list(db.scalars(statement))
+    recovery_links = _linked_expense_ids(
+        db, [model.transaction_id for model in models]
+    )
     return {
-        "items": [transaction_values(model) for model in db.scalars(statement)],
+        "items": [
+            transaction_values(
+                model, linked_expense_id=recovery_links.get(model.transaction_id)
+            )
+            for model in models
+        ],
         "total": db.scalar(count_statement) or 0,
         "limit": limit,
         "offset": offset,
@@ -262,14 +399,30 @@ def list_transactions(
 
 
 def ledger_summary(
-    db: DbSession, date_from: date, date_to: date, base_currency: str
+    db: DbSession,
+    date_from: date,
+    date_to: date,
+    base_currency: str,
+    *,
+    account_id: int | None = None,
+    provider_id: int | None = None,
+    category_id: int | None = None,
+    tag_id: int | None = None,
+    is_base_cost: bool | None = None,
 ) -> dict[str, Any]:
-    in_period = (
+    in_period = [
         Transaction.status == "active",
-        Transaction.transaction_kind.in_(("expense", "income")),
         Transaction.transaction_date >= date_from,
         Transaction.transaction_date <= date_to,
-    )
+        Transaction.transaction_kind.in_(("expense", "income", "refund", "reimbursement")),
+        *_ledger_filter_expressions(
+            account_id=account_id,
+            provider_id=provider_id,
+            category_id=category_id,
+            tag_id=tag_id,
+            is_base_cost=is_base_cost,
+        ),
+    ]
     usable_conversion = (
         Transaction.base_currency == base_currency,
         Transaction.converted_amount.is_not(None),
@@ -294,10 +447,18 @@ def ledger_summary(
                 func.sum(
                     case(
                         (
-                            (Transaction.transaction_kind == "expense")
+                            Transaction.transaction_kind.in_(
+                                ("expense", "refund", "reimbursement")
+                            )
                             & usable_conversion[0]
                             & usable_conversion[1],
-                            Transaction.converted_amount,
+                            case(
+                                (
+                                    Transaction.transaction_kind == "expense",
+                                    Transaction.converted_amount,
+                                ),
+                                else_=-Transaction.converted_amount,
+                            ),
                         ),
                         else_=0,
                     )
@@ -322,84 +483,192 @@ def ledger_summary(
             ),
         ).where(*in_period)
     ).one()
-    income_value = Decimal(income)
-    expense_value = Decimal(expenses)
+    income_value = Decimal(income).quantize(MONEY_QUANTUM)
+    expense_value = Decimal(expenses).quantize(MONEY_QUANTUM)
+    if category_id is not None or tag_id is not None or is_base_cost is not None:
+        filtered_analysis = _ledger_analysis_period(
+            db,
+            date_from,
+            date_to,
+            base_currency,
+            account_id=account_id,
+            provider_id=provider_id,
+            category_id=category_id,
+            tag_id=tag_id,
+            is_base_cost=is_base_cost,
+        )
+        income_value = sum(
+            (point["income"] for point in filtered_analysis["daily"]), Decimal("0")
+        )
+        expense_value = sum(
+            (point["expenses"] for point in filtered_analysis["daily"]), Decimal("0")
+        ).quantize(MONEY_QUANTUM)
+        income_value = income_value.quantize(MONEY_QUANTUM)
     return {
         "date_from": date_from,
         "date_to": date_to,
         "base_currency": base_currency,
         "income": income_value,
         "expenses": expense_value,
-        "net_cash_flow": income_value - expense_value,
+        "net_cash_flow": (income_value - expense_value).quantize(MONEY_QUANTUM),
         "transaction_count": transaction_count,
         "missing_fx_count": missing_fx_count,
     }
 
 
 def ledger_analysis(
-    db: DbSession, date_from: date, date_to: date, base_currency: str
+    db: DbSession,
+    date_from: date,
+    date_to: date,
+    base_currency: str,
+    comparison_mode: str = "none",
+    *,
+    account_id: int | None = None,
+    provider_id: int | None = None,
+    category_id: int | None = None,
+    tag_id: int | None = None,
+    is_base_cost: bool | None = None,
 ) -> dict[str, Any]:
-    usable_transactions = (
-        Transaction.status == "active",
-        Transaction.transaction_kind.in_(("expense", "income")),
-        Transaction.transaction_date >= date_from,
-        Transaction.transaction_date <= date_to,
-        Transaction.base_currency == base_currency,
-        Transaction.converted_amount.is_not(None),
+    filter_options = {
+        "account_id": account_id,
+        "provider_id": provider_id,
+        "category_id": category_id,
+        "tag_id": tag_id,
+        "is_base_cost": is_base_cost,
+    }
+    result = _ledger_analysis_period(
+        db, date_from, date_to, base_currency, **filter_options
     )
-    daily_rows = db.execute(
-        select(
-            Transaction.transaction_date,
-            func.coalesce(
-                func.sum(
-                    case(
-                        (
-                            Transaction.transaction_kind == "income",
-                            Transaction.converted_amount,
-                        ),
-                        else_=0,
-                    )
-                ),
-                0,
-            ).label("income"),
-            func.coalesce(
-                func.sum(
-                    case(
-                        (
-                            Transaction.transaction_kind == "expense",
-                            Transaction.converted_amount,
-                        ),
-                        else_=0,
-                    )
-                ),
-                0,
-            ).label("expenses"),
-        )
-        .where(*usable_transactions)
-        .group_by(Transaction.transaction_date)
-        .order_by(Transaction.transaction_date)
-    ).all()
+    if comparison_mode == "none":
+        result["comparison"] = None
+        return result
+    comparison_from, comparison_to = _comparison_period(
+        date_from, date_to, comparison_mode
+    )
+    comparison = _ledger_analysis_period(
+        db, comparison_from, comparison_to, base_currency, **filter_options
+    )
+    comparison_income = sum(
+        (point["income"] for point in comparison["daily"]), Decimal("0")
+    ).quantize(MONEY_QUANTUM)
+    comparison_expenses = sum(
+        (point["expenses"] for point in comparison["daily"]), Decimal("0")
+    ).quantize(MONEY_QUANTUM)
+    result["comparison"] = {
+        "mode": comparison_mode,
+        "date_from": comparison_from,
+        "date_to": comparison_to,
+        "income": comparison_income,
+        "expenses": comparison_expenses,
+        "net_cash_flow": (comparison_income - comparison_expenses).quantize(MONEY_QUANTUM),
+        "daily": comparison["daily"],
+        "expense_categories": comparison["expense_categories"],
+    }
+    return result
 
-    category_rows = db.execute(
-        select(
-            TransactionSplit.category_id,
-            Category.name,
-            func.sum(TransactionSplit.converted_amount).label("amount"),
-            func.count(func.distinct(Transaction.transaction_id)).label("transaction_count"),
+
+def _ledger_analysis_period(
+    db: DbSession,
+    date_from: date,
+    date_to: date,
+    base_currency: str,
+    *,
+    account_id: int | None = None,
+    provider_id: int | None = None,
+    category_id: int | None = None,
+    tag_id: int | None = None,
+    is_base_cost: bool | None = None,
+) -> dict[str, Any]:
+    transactions = list(
+        db.scalars(
+            select(Transaction)
+            .where(
+                Transaction.status == "active",
+                Transaction.transaction_date >= date_from,
+                Transaction.transaction_date <= date_to,
+                Transaction.transaction_kind.in_(
+                    ("expense", "income", "refund", "reimbursement")
+                ),
+                Transaction.base_currency == base_currency,
+                Transaction.converted_amount.is_not(None),
+                *_ledger_filter_expressions(
+                    account_id=account_id,
+                    provider_id=provider_id,
+                    category_id=category_id,
+                    tag_id=tag_id,
+                    is_base_cost=is_base_cost,
+                ),
+            )
+            .options(selectinload(Transaction.splits).selectinload(TransactionSplit.tags))
+            .order_by(Transaction.transaction_date)
         )
-        .join(Transaction, Transaction.transaction_id == TransactionSplit.transaction_id)
-        .outerjoin(Category, Category.category_id == TransactionSplit.category_id)
-        .where(
-            Transaction.status == "active",
-            Transaction.transaction_kind == "expense",
-            Transaction.transaction_date >= date_from,
-            Transaction.transaction_date <= date_to,
-            Transaction.base_currency == base_currency,
-            TransactionSplit.converted_amount.is_not(None),
+    )
+    links = _linked_expense_ids(db, [model.transaction_id for model in transactions])
+    original_ids = set(links.values())
+    originals = {
+        model.transaction_id: model
+        for model in db.scalars(
+            select(Transaction)
+            .where(Transaction.transaction_id.in_(original_ids))
+            .options(selectinload(Transaction.splits).selectinload(TransactionSplit.tags))
         )
-        .group_by(TransactionSplit.category_id, Category.name)
-        .order_by(func.sum(TransactionSplit.converted_amount).desc(), Category.name)
-    ).all()
+    }
+    category_ids = {
+        split.category_id
+        for model in (*transactions, *originals.values())
+        for split in model.splits
+        if split.category_id is not None
+    }
+    category_names = {
+        category.category_id: category.name
+        for category in db.scalars(select(Category).where(Category.category_id.in_(category_ids)))
+    }
+    daily: dict[date, dict[str, Decimal]] = {}
+    categories: dict[int | None, dict[str, Any]] = {}
+    for model in transactions:
+        assert model.converted_amount is not None
+        day = daily.setdefault(
+            model.transaction_date,
+            {"income": Decimal("0"), "expenses": Decimal("0")},
+        )
+        if model.transaction_kind == TransactionKind.INCOME:
+            income_contributions = _split_category_amounts(
+                model,
+                category_id=category_id,
+                tag_id=tag_id,
+                is_base_cost=is_base_cost,
+            )
+            day["income"] += sum(income_contributions.values(), Decimal("0"))
+            continue
+        sign = (
+            Decimal("1")
+            if model.transaction_kind == TransactionKind.EXPENSE
+            else Decimal("-1")
+        )
+        if model.transaction_kind == TransactionKind.EXPENSE:
+            contributions = _split_category_amounts(
+                model,
+                category_id=category_id,
+                tag_id=tag_id,
+                is_base_cost=is_base_cost,
+            )
+        else:
+            original = originals[links[model.transaction_id]]
+            contributions = _allocate_recovery_to_categories(
+                original,
+                model.converted_amount,
+                category_id=category_id,
+                tag_id=tag_id,
+                is_base_cost=is_base_cost,
+            )
+        day["expenses"] += sign * sum(contributions.values(), Decimal("0"))
+        for contribution_category_id, amount in contributions.items():
+            bucket = categories.setdefault(
+                contribution_category_id,
+                {"amount": Decimal("0"), "transaction_count": 0},
+            )
+            bucket["amount"] += sign * amount
+            bucket["transaction_count"] += 1
 
     return {
         "date_from": date_from,
@@ -407,27 +676,54 @@ def ledger_analysis(
         "base_currency": base_currency,
         "daily": [
             {
-                "date": row.transaction_date,
-                "income": Decimal(row.income),
-                "expenses": Decimal(row.expenses),
-                "net_cash_flow": Decimal(row.income) - Decimal(row.expenses),
+                "date": day_date,
+                "income": values["income"].quantize(MONEY_QUANTUM),
+                "expenses": values["expenses"].quantize(MONEY_QUANTUM),
+                "net_cash_flow": (values["income"] - values["expenses"]).quantize(
+                    MONEY_QUANTUM
+                ),
             }
-            for row in daily_rows
+            for day_date, values in daily.items()
         ],
         "expense_categories": [
             {
-                "category_id": row.category_id,
-                "category_name": row.name,
-                "amount": Decimal(row.amount),
-                "transaction_count": row.transaction_count,
+                "category_id": category_id,
+                "category_name": category_names.get(category_id),
+                "amount": values["amount"].quantize(MONEY_QUANTUM),
+                "transaction_count": values["transaction_count"],
             }
-            for row in category_rows
+            for category_id, values in sorted(
+                categories.items(),
+                key=lambda item: (-item[1]["amount"], category_names.get(item[0], "")),
+            )
         ],
     }
 
 
-def transaction_values(model: Transaction) -> dict[str, Any]:
-    split = _single_component(model)
+def _comparison_period(
+    date_from: date, date_to: date, comparison_mode: str
+) -> tuple[date, date]:
+    if comparison_mode == "previous_period":
+        period_length = date_to - date_from
+        comparison_to = date_from - timedelta(days=1)
+        return comparison_to - period_length, comparison_to
+    if comparison_mode == "previous_year":
+        return _shift_year(date_from, -1), _shift_year(date_to, -1)
+    raise ApiError(422, "comparison_mode_invalid", "Comparison mode is not supported.")
+
+
+def _shift_year(value: date, delta: int) -> date:
+    try:
+        return value.replace(year=value.year + delta)
+    except ValueError:
+        return value.replace(year=value.year + delta, day=28)
+
+
+def transaction_values(
+    model: Transaction, *, linked_expense_id: int | None = None
+) -> dict[str, Any]:
+    is_split = len(model.splits) > 1
+    split = model.splits[0] if not is_split else None
     return {
         "transaction_id": model.transaction_id,
         "account_id": model.account_id,
@@ -445,14 +741,138 @@ def transaction_values(model: Transaction) -> dict[str, Any]:
         "source_type": model.source_type,
         "source_reference": model.source_reference,
         "notes": model.notes,
-        "category_id": split.category_id,
-        "tag_ids": sorted(tag.tag_id for tag in split.tags),
-        "is_base_cost": split.is_base_cost,
+        "adjustment_direction": model.adjustment_direction,
+        "category_id": split.category_id if split is not None else None,
+        "tag_ids": sorted(tag.tag_id for tag in split.tags) if split is not None else [],
+        "is_base_cost": split.is_base_cost if split is not None else False,
+        "is_split": is_split,
+        "splits": [
+            {
+                "transaction_split_id": component.transaction_split_id,
+                "original_amount": component.original_amount,
+                "converted_amount": component.converted_amount,
+                "category_id": component.category_id,
+                "tag_ids": sorted(tag.tag_id for tag in component.tags),
+                "is_base_cost": component.is_base_cost,
+                "memo": component.memo,
+            }
+            for component in model.splits
+        ],
+        "linked_expense_id": linked_expense_id,
         "status": model.status,
         "archived_at": model.archived_at,
         "created_at": model.created_at,
         "updated_at": model.updated_at,
     }
+
+
+def _linked_expense_ids(db: DbSession, transaction_ids: list[int]) -> dict[int, int]:
+    if not transaction_ids:
+        return {}
+    links = {
+        recovery_id: expense_id
+        for expense_id, recovery_id in db.execute(
+            select(RefundLink.original_expense_id, RefundLink.refund_transaction_id).where(
+                RefundLink.refund_transaction_id.in_(transaction_ids)
+            )
+        )
+    }
+    links.update(
+        {
+            recovery_id: expense_id
+            for expense_id, recovery_id in db.execute(
+                select(
+                    ReimbursementLink.original_expense_id,
+                    ReimbursementLink.reimbursement_transaction_id,
+                ).where(ReimbursementLink.reimbursement_transaction_id.in_(transaction_ids))
+            )
+        }
+    )
+    return links
+
+
+def _split_category_amounts(
+    model: Transaction,
+    *,
+    category_id: int | None = None,
+    tag_id: int | None = None,
+    is_base_cost: bool | None = None,
+) -> dict[int | None, Decimal]:
+    amounts: dict[int | None, Decimal] = {}
+    for split in model.splits:
+        if split.converted_amount is None or not _split_matches(
+            split,
+            category_id=category_id,
+            tag_id=tag_id,
+            is_base_cost=is_base_cost,
+        ):
+            continue
+        amounts[split.category_id] = (
+            amounts.get(split.category_id, Decimal("0")) + split.converted_amount
+        )
+    return amounts
+
+
+def _allocate_recovery_to_categories(
+    original: Transaction,
+    recovery_amount: Decimal,
+    *,
+    category_id: int | None = None,
+    tag_id: int | None = None,
+    is_base_cost: bool | None = None,
+) -> dict[int | None, Decimal]:
+    allocations: dict[int | None, Decimal] = {}
+    for split, amount in allocate_recovery_to_splits(original, recovery_amount):
+        if not _split_matches(
+            split,
+            category_id=category_id,
+            tag_id=tag_id,
+            is_base_cost=is_base_cost,
+        ):
+            continue
+        allocations[split.category_id] = allocations.get(
+            split.category_id, Decimal("0")
+        ) + amount
+    return allocations
+
+
+def allocate_recovery_to_splits(
+    original: Transaction, recovery_amount: Decimal
+) -> list[tuple[TransactionSplit, Decimal]]:
+    weights = [split.converted_amount for split in original.splits]
+    if any(weight is None for weight in weights):
+        weights = [split.original_amount for split in original.splits]
+    precise_weights = [Decimal(weight) for weight in weights if weight is not None]
+    total_weight = sum(precise_weights, Decimal("0"))
+    allocations: list[tuple[TransactionSplit, Decimal]] = []
+    remaining = recovery_amount
+    for index, (split, weight) in enumerate(
+        zip(original.splits, precise_weights, strict=True)
+    ):
+        amount = (
+            remaining
+            if index == len(original.splits) - 1
+            else (recovery_amount * weight / total_weight).quantize(
+                MONEY_QUANTUM, rounding=ROUND_HALF_UP
+            )
+        )
+        remaining -= amount
+        allocations.append((split, amount))
+    return allocations
+
+
+def _split_matches(
+    split: TransactionSplit,
+    *,
+    category_id: int | None,
+    tag_id: int | None,
+    is_base_cost: bool | None,
+) -> bool:
+    return (
+        (category_id is None or split.category_id == category_id)
+        and (tag_id is None or any(tag.tag_id == tag_id for tag in split.tags))
+        and (is_base_cost is None or split.is_base_cost is is_base_cost)
+    )
 
 
 def resolve_conversion(
@@ -501,6 +921,62 @@ def resolve_conversion(
                 [{"expected_converted_amount": str(expected)}],
             )
     return converted_amount, fx_rate, "manual"
+
+
+def _legacy_split_payload(
+    amount: Decimal,
+    category_id: int | None,
+    tag_ids: list[int],
+    is_base_cost: bool,
+) -> TransactionSplitInput:
+    return TransactionSplitInput(
+        original_amount=amount,
+        category_id=category_id,
+        tag_ids=tag_ids,
+        is_base_cost=is_base_cost,
+    )
+
+
+def _build_splits(
+    db: DbSession,
+    payloads: list[TransactionSplitInput],
+    transaction_kind: str,
+    converted_total: Decimal | None,
+    fx_rate: Decimal | None,
+) -> list[TransactionSplit]:
+    original_amounts = [payload.original_amount.quantize(MONEY_QUANTUM) for payload in payloads]
+    if converted_total is None:
+        converted_amounts: list[Decimal | None] = [None for _ in payloads]
+    else:
+        assert fx_rate is not None
+        converted_amounts = [
+            (amount * fx_rate).quantize(MONEY_QUANTUM, rounding=ROUND_HALF_UP)
+            for amount in original_amounts
+        ]
+        converted_amounts[-1] += converted_total - sum(converted_amounts, Decimal("0"))
+        if any(amount <= 0 for amount in converted_amounts):
+            raise ApiError(
+                422,
+                "split_converted_amount_too_small",
+                "Each split must remain positive after conversion and decimal rounding.",
+            )
+
+    components: list[TransactionSplit] = []
+    for payload, original_amount, converted_amount in zip(
+        payloads, original_amounts, converted_amounts, strict=True
+    ):
+        category = _category_for_kind(db, payload.category_id, transaction_kind)
+        components.append(
+            TransactionSplit(
+                category_id=category.category_id if category is not None else None,
+                original_amount=original_amount,
+                converted_amount=converted_amount,
+                is_base_cost=payload.is_base_cost,
+                memo=payload.memo,
+                tags=_active_tags(db, payload.tag_ids),
+            )
+        )
+    return components
 
 
 def _single_component(model: Transaction) -> TransactionSplit:
@@ -577,6 +1053,7 @@ def _reject_nulls(values: dict[str, Any], required_fields: set[str]) -> None:
 
 def _commit(db: DbSession) -> None:
     try:
+        record_pending_audits(db)
         db.commit()
     except IntegrityError as error:
         db.rollback()

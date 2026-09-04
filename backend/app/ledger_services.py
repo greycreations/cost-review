@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
+from app.audit_services import record_pending_audits
 from app.errors import ApiError
 from app.ledger_schemas import (
     AccountCreate,
@@ -428,6 +429,7 @@ def _apply(model: Any, values: dict[str, Any]) -> None:
 
 def _commit(db: DbSession, conflict_code: str = "ledger_conflict") -> None:
     try:
+        record_pending_audits(db)
         db.commit()
     except IntegrityError as error:
         db.rollback()

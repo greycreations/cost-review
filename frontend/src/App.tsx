@@ -2,6 +2,11 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import {
   ApiError,
+  backupDownloadUrl,
+  createBackup,
+  getAuditEvents,
+  getBackups,
+  getRecycleBin,
   getSession,
   getSetupStatus,
   login,
@@ -9,15 +14,23 @@ import {
   resetTestEnvironment,
   saveSettings,
   setup,
+  validateBackup,
+  type AuditEvent,
   type AppSettings,
+  type Backup,
   type Environment,
   type EnvironmentStatus,
   type Language,
+  type RecycleBinItem,
   type Session,
 } from "./api";
 import { LedgerWorkspace } from "./LedgerWorkspace";
-import { OverviewWorkspace } from "./OverviewWorkspace";
-import { TransactionWorkspace } from "./TransactionWorkspace";
+import { BudgetWorkspace } from "./BudgetWorkspace";
+import { OverviewWorkspace, type OverviewDrilldown } from "./OverviewWorkspace";
+import {
+  TransactionWorkspace,
+  type TransactionInitialFilters,
+} from "./TransactionWorkspace";
 
 type LoadState =
   | { kind: "loading" }
@@ -56,6 +69,7 @@ const copy = {
     overview: "Översikt",
     transactions: "Transaktioner",
     accounts: "Konton",
+    budget: "Budget",
     settings: "Inställningar",
     attention: "Uppmärksamhet",
     foundationReady: "Ledger-grunden är aktiv",
@@ -74,6 +88,20 @@ const copy = {
     resetPhrase: "Skriv DELETE ALL TEST DATA för att bekräfta",
     resetAction: "Radera testdata",
     retry: "Försök igen",
+    backups: "Krypterade säkerhetskopior",
+    backupsLead:
+      "Databas och bilagor paketeras tillsammans. Kopian är låst till den här datamiljön och kan hämtas för extern förvaring.",
+    createBackup: "Skapa säkerhetskopia",
+    validate: "Validera",
+    download: "Hämta",
+    noBackups: "Inga säkerhetskopior har skapats i denna datamiljö.",
+    lifecycle: "Papperskorg och ändringshistorik",
+    lifecycleLead:
+      "Arkiverade poster ligger kvar och kan återställas. De senaste Ledger-ändringarna visas som ett granskningsspår.",
+    recycleBin: "Arkiverade poster",
+    auditTrail: "Senaste ändringar",
+    noArchived: "Papperskorgen är tom.",
+    noAudit: "Inga ändringar har registrerats ännu.",
   },
   en: {
     loading: "Connecting to the selected data environment…",
@@ -94,6 +122,7 @@ const copy = {
     overview: "Overview",
     transactions: "Transactions",
     accounts: "Accounts",
+    budget: "Budget",
     settings: "Settings",
     attention: "Attention",
     foundationReady: "Ledger foundation is active",
@@ -112,6 +141,20 @@ const copy = {
     resetPhrase: "Type DELETE ALL TEST DATA to confirm",
     resetAction: "Delete test data",
     retry: "Try again",
+    backups: "Encrypted backups",
+    backupsLead:
+      "The database and attachments are bundled together. Each backup is bound to this data plane and can be downloaded for off-site storage.",
+    createBackup: "Create backup",
+    validate: "Validate",
+    download: "Download",
+    noBackups: "No backups have been created in this data plane.",
+    lifecycle: "Recycle bin and change history",
+    lifecycleLead:
+      "Archived records remain recoverable. Recent Ledger changes are shown as an audit trail.",
+    recycleBin: "Archived records",
+    auditTrail: "Recent changes",
+    noArchived: "The recycle bin is empty.",
+    noAudit: "No changes have been recorded yet.",
   },
 } as const;
 
@@ -484,6 +527,7 @@ function ApplicationShell({
 }) {
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [view, setView] = useState<AppView>(() => viewFromHash(window.location.hash));
+  const [transactionFilters, setTransactionFilters] = useState<TransactionInitialFilters | null>(null);
 
   useEffect(() => {
     const readHash = () => setView(viewFromHash(window.location.hash));
@@ -525,6 +569,7 @@ function ApplicationShell({
           <a
             className={view === "transactions" ? "active" : undefined}
             href="#transactions"
+            onClick={() => setTransactionFilters(null)}
             aria-current={view === "transactions" ? "page" : undefined}
           >
             {labels.transactions}
@@ -535,6 +580,13 @@ function ApplicationShell({
             aria-current={view === "accounts" ? "page" : undefined}
           >
             {labels.accounts}
+          </a>
+          <a
+            className={view === "budget" ? "active" : undefined}
+            href="#budget"
+            aria-current={view === "budget" ? "page" : undefined}
+          >
+            {labels.budget}
           </a>
           <a
             className={view === "settings" ? "active" : undefined}
@@ -557,7 +609,10 @@ function ApplicationShell({
             environment={environment}
             language={session.settings.language}
             onNavigateAccounts={() => navigate("accounts")}
-            onNavigateTransactions={() => navigate("transactions")}
+            onNavigateTransactions={(drilldown?: OverviewDrilldown) => {
+              setTransactionFilters(drilldown ?? null);
+              navigate("transactions");
+            }}
           />
         ) : null}
         {view === "transactions" ? (
@@ -565,6 +620,8 @@ function ApplicationShell({
             baseCurrency={session.settings.base_currency}
             environment={environment}
             language={session.settings.language}
+            initialFilters={transactionFilters}
+            key={`${environment}:${JSON.stringify(transactionFilters)}`}
             onNavigateAccounts={() => navigate("accounts")}
           />
         ) : null}
@@ -575,6 +632,14 @@ function ApplicationShell({
             key={`${environment}-accounts`}
             language={session.settings.language}
             view="accounts"
+          />
+        ) : null}
+        {view === "budget" ? (
+          <BudgetWorkspace
+            baseCurrency={session.settings.base_currency}
+            environment={environment}
+            key={`${environment}-budget`}
+            language={session.settings.language}
           />
         ) : null}
         {view === "settings" ? (
@@ -594,6 +659,11 @@ function ApplicationShell({
               labels={labels}
               session={session}
               onSession={onSession}
+            />
+            <OperationalSafetyPanel
+              environment={environment}
+              labels={labels}
+              language={session.settings.language}
             />
             <LedgerWorkspace
               baseCurrency={session.settings.base_currency}
@@ -647,11 +717,145 @@ function ApplicationShell({
   );
 }
 
-type AppView = "overview" | "transactions" | "accounts" | "settings";
+function OperationalSafetyPanel({
+  environment,
+  labels,
+  language,
+}: {
+  environment: Environment;
+  labels: Labels;
+  language: Language;
+}) {
+  const [backups, setBackups] = useState<Backup[]>([]);
+  const [archived, setArchived] = useState<RecycleBinItem[]>([]);
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  const [message, setMessage] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+
+  const refresh = () =>
+    Promise.all([getBackups(environment), getRecycleBin(environment), getAuditEvents(environment)])
+      .then(([backupItems, recycleItems, auditPage]) => {
+        setBackups(backupItems);
+        setArchived(recycleItems);
+        setAuditEvents(auditPage.items);
+      });
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([getBackups(environment), getRecycleBin(environment), getAuditEvents(environment)])
+      .then(([backupItems, recycleItems, auditPage]) => {
+        if (!active) return;
+        setBackups(backupItems);
+        setArchived(recycleItems);
+        setAuditEvents(auditPage.items);
+      })
+      .catch((error) => {
+        if (active) setMessage(error instanceof Error ? error.message : "Could not load safety data.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [environment]);
+
+  return (
+    <div className="operations-grid">
+      <section className="settings-section operations-panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Backup</p>
+            <h2>{labels.backups}</h2>
+            <p className="quiet-copy">{labels.backupsLead}</p>
+          </div>
+          <button
+            className="primary-button"
+            disabled={working}
+            onClick={() => {
+              setWorking(true);
+              setMessage(null);
+              void createBackup(environment)
+                .then((created) => refresh().then(() => setMessage(created.filename)))
+                .catch((error) => setMessage(error instanceof Error ? error.message : "Backup failed."))
+                .finally(() => setWorking(false));
+            }}
+            type="button"
+          >
+            {labels.createBackup}
+          </button>
+        </div>
+        {backups.length === 0 ? <p className="resource-empty">{labels.noBackups}</p> : null}
+        <div className="operations-list">
+          {backups.map((backup) => (
+            <div className="operation-row" key={backup.filename}>
+              <div>
+                <strong>{new Date(backup.created_at).toLocaleString(language === "sv" ? "sv-SE" : "en-US")}</strong>
+                <span>{backup.kind.replace("_", " ")} · {(backup.size_bytes / 1024).toFixed(1)} kB</span>
+              </div>
+              <div className="row-actions">
+                <button
+                  className="ghost-button"
+                  onClick={() => {
+                    setMessage(null);
+                    void validateBackup(environment, backup.filename)
+                      .then(() => setMessage(`${labels.validate}: ${backup.filename}`))
+                      .catch((error) => setMessage(error instanceof Error ? error.message : "Validation failed."));
+                  }}
+                  type="button"
+                >
+                  {labels.validate}
+                </button>
+                <a className="ghost-button button-link" href={backupDownloadUrl(environment, backup.filename)}>
+                  {labels.download}
+                </a>
+              </div>
+            </div>
+          ))}
+        </div>
+        {message ? <p className="form-message" role="status">{message}</p> : null}
+      </section>
+
+      <section className="settings-section operations-panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Ledger safety</p>
+            <h2>{labels.lifecycle}</h2>
+            <p className="quiet-copy">{labels.lifecycleLead}</p>
+          </div>
+        </div>
+        <div className="lifecycle-columns">
+          <div>
+            <h3>{labels.recycleBin}</h3>
+            {archived.length === 0 ? <p className="resource-empty">{labels.noArchived}</p> : null}
+            <div className="operations-list compact-list">
+              {archived.slice(0, 8).map((item) => (
+                <div className="operation-row" key={`${item.entity_type}:${item.entity_id}`}>
+                  <div><strong>{item.label}</strong><span>{item.entity_type}</span></div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <h3>{labels.auditTrail}</h3>
+            {auditEvents.length === 0 ? <p className="resource-empty">{labels.noAudit}</p> : null}
+            <div className="operations-list compact-list">
+              {auditEvents.map((event) => (
+                <div className="operation-row" key={event.audit_event_id}>
+                  <div><strong>{event.action.replace("_", " ")}</strong><span>{event.entity_type} #{event.entity_id ?? "—"}</span></div>
+                  <time dateTime={event.created_at}>{new Date(event.created_at).toLocaleDateString(language === "sv" ? "sv-SE" : "en-US")}</time>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+type AppView = "overview" | "transactions" | "accounts" | "budget" | "settings";
 
 function viewFromHash(hash: string): AppView {
   const value = hash.replace("#", "");
-  return value === "transactions" || value === "accounts" || value === "settings"
+  return value === "transactions" || value === "accounts" || value === "budget" || value === "settings"
     ? value
     : "overview";
 }

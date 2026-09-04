@@ -137,6 +137,11 @@ def calculated_account_balance(
             or transaction.transaction_id in incoming
         ):
             balance += amount
+        elif transaction.transaction_kind == "adjustment":
+            if transaction.adjustment_direction == "increase":
+                balance += amount
+            elif transaction.adjustment_direction == "decrease":
+                balance -= amount
     return balance.quantize(MONEY_QUANTUM), "complete"
 
 

@@ -125,6 +125,20 @@ def main() -> int:
         },
         test_csrf,
     )
+    _, prod_provider = call(
+        prod,
+        f"{prod_base}/providers",
+        "POST",
+        {"name": "Production isolation provider"},
+        prod_csrf,
+    )
+    _, test_provider = call(
+        test,
+        f"{test_base}/providers",
+        "POST",
+        {"name": "Test isolation provider"},
+        test_csrf,
+    )
     transaction_payload = {
         "transaction_kind": "expense",
         "transaction_date": "2026-08-28",
@@ -132,25 +146,55 @@ def main() -> int:
         "original_amount": "125.50",
         "original_currency": "SEK",
     }
-    call(
+    _, prod_expense = call(
         prod,
         f"{prod_base}/transactions",
         "POST",
         {
             **transaction_payload,
             "account_id": prod_account["account_id"],
+            "provider_id": prod_provider["provider_id"],
             "description": "Production isolation transaction",
         },
         prod_csrf,
     )
-    call(
+    _, test_expense = call(
         test,
         f"{test_base}/transactions",
         "POST",
         {
             **transaction_payload,
             "account_id": test_account["account_id"],
+            "provider_id": test_provider["provider_id"],
             "description": "Test isolation transaction",
+        },
+        test_csrf,
+    )
+    recovery_payload = {
+        "transaction_date": "2026-08-28",
+        "posting_date": "2026-08-28",
+        "original_amount": "25.50",
+        "original_currency": "SEK",
+    }
+    call(
+        prod,
+        f"{prod_base}/transactions/{prod_expense['transaction_id']}/refunds",
+        "POST",
+        {
+            **recovery_payload,
+            "account_id": prod_account["account_id"],
+            "description": "Production isolation refund",
+        },
+        prod_csrf,
+    )
+    call(
+        test,
+        f"{test_base}/transactions/{test_expense['transaction_id']}/reimbursements",
+        "POST",
+        {
+            **recovery_payload,
+            "account_id": test_account["account_id"],
+            "description": "Test isolation reimbursement",
         },
         test_csrf,
     )
@@ -205,6 +249,47 @@ def main() -> int:
         snapshot_payload,
         test_csrf,
     )
+    budget_payload = {
+        "amount": "500.00",
+        "currency": "SEK",
+        "period_type": "calendar_month",
+        "rollover_mode": "reset",
+        "starts_on": "2026-08-01",
+        "ends_on": None,
+        "anchor_day": 25,
+        "analysis_group_id": None,
+        "notes": None,
+        "categories": [],
+        "tags": [],
+    }
+    call(
+        prod,
+        f"{prod_base}/budgets",
+        "POST",
+        {
+            **budget_payload,
+            "name": "Production isolation budget",
+            "accounts": [{"account_id": prod_account["account_id"], "mode": "include"}],
+            "providers": [
+                {"provider_id": prod_provider["provider_id"], "mode": "include"}
+            ],
+        },
+        prod_csrf,
+    )
+    call(
+        test,
+        f"{test_base}/budgets",
+        "POST",
+        {
+            **budget_payload,
+            "name": "Test isolation budget",
+            "accounts": [{"account_id": test_account["account_id"], "mode": "include"}],
+            "providers": [
+                {"provider_id": test_provider["provider_id"], "mode": "include"}
+            ],
+        },
+        test_csrf,
+    )
     _, prod_accounts_before = call(prod, f"{prod_base}/accounts")
     _, test_accounts_before = call(test, f"{test_base}/accounts")
     assert any(
@@ -234,11 +319,27 @@ def main() -> int:
         for item in prod_transactions_before["items"]
     )
     assert any(
+        item["description"] == "Production isolation refund"
+        for item in prod_transactions_before["items"]
+    )
+    assert not any(
+        item["description"] == "Test isolation reimbursement"
+        for item in prod_transactions_before["items"]
+    )
+    assert any(
         item["description"] == "Test isolation transaction"
         for item in test_transactions_before["items"]
     )
     assert not any(
         item["description"] == "Production isolation transaction"
+        for item in test_transactions_before["items"]
+    )
+    assert any(
+        item["description"] == "Test isolation reimbursement"
+        for item in test_transactions_before["items"]
+    )
+    assert not any(
+        item["description"] == "Production isolation refund"
         for item in test_transactions_before["items"]
     )
     _, prod_transfers_before = call(prod, f"{prod_base}/transfers")
@@ -267,6 +368,10 @@ def main() -> int:
     )
     assert len(prod_snapshots_before) == 1
     assert len(test_snapshots_before) == 1
+    _, prod_budgets_before = call(prod, f"{prod_base}/budgets")
+    _, test_budgets_before = call(test, f"{test_base}/budgets")
+    assert [item["name"] for item in prod_budgets_before] == ["Production isolation budget"]
+    assert [item["name"] for item in test_budgets_before] == ["Test isolation budget"]
     _, prod_before = call(prod, f"{prod_base}/auth/session")
     _, prod_environment_before = call(prod, f"{prod_base}/environment")
 
@@ -285,12 +390,15 @@ def main() -> int:
     _, prod_transactions_after = call(prod, f"{prod_base}/transactions")
     _, test_transfers_after = call(test, f"{test_base}/transfers")
     _, prod_transfers_after = call(prod, f"{prod_base}/transfers")
+    _, test_budgets_after = call(test, f"{test_base}/budgets")
+    _, prod_budgets_after = call(prod, f"{prod_base}/budgets")
     _, prod_snapshots_after = call(
         prod, f"{prod_base}/accounts/{prod_account['account_id']}/snapshots"
     )
     assert test_accounts_after["total"] == 0
     assert test_transactions_after["total"] == 0
     assert test_transfers_after["total"] == 0
+    assert test_budgets_after == []
     assert any(
         account["name"] == "Production isolation account"
         for account in prod_accounts_after["items"]
@@ -300,11 +408,16 @@ def main() -> int:
         for item in prod_transactions_after["items"]
     )
     assert any(
+        item["description"] == "Production isolation refund"
+        for item in prod_transactions_after["items"]
+    )
+    assert any(
         item["description"] == "Production isolation transfer"
         for item in prod_transfers_after["items"]
     )
     assert len(prod_snapshots_after) == 1
     assert prod_snapshots_after[0]["reported_balance"] == "825.0000"
+    assert [item["name"] for item in prod_budgets_after] == ["Production isolation budget"]
 
     _, prod_after = call(prod, f"{prod_base}/auth/session")
     _, prod_environment_after = call(prod, f"{prod_base}/environment")

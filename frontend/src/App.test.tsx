@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -23,6 +23,9 @@ const session = (environment: "production" | "test") => ({
 });
 
 let accountItems: object[] = [];
+let transactionItems: object[] = [];
+let budgetItems: Record<string, unknown>[] = [];
+let providerItems: object[] = [];
 let analysisData: object;
 
 const account = (
@@ -52,6 +55,9 @@ describe("App", () => {
     localStorage.clear();
     window.location.hash = "";
     accountItems = [];
+    transactionItems = [];
+    budgetItems = [];
+    providerItems = [];
     analysisData = {
       date_from: "2026-08-01",
       date_to: "2026-08-31",
@@ -98,9 +104,63 @@ describe("App", () => {
           };
         } else if (/\/accounts\/\d+\/snapshots$/.test(path)) {
           body = [];
+        } else if (path.endsWith("/backups") && init?.method === "POST") {
+          body = {
+            filename: "manual-production-20260903T200000Z-a1b2c3d4.crbackup",
+            environment,
+            kind: "manual",
+            created_at: "2026-09-03T20:00:00Z",
+            size_bytes: 2048,
+          };
+        } else if (path.endsWith("/backups")) {
+          body = [];
+        } else if (path.endsWith("/recycle-bin")) {
+          body = [];
+        } else if (path.includes("/audit-events?")) {
+          body = { items: [], total: 0, limit: 10, offset: 0 };
+        } else if (path.endsWith("/budgets") && init?.method === "POST") {
+          const submitted = JSON.parse(String(init.body));
+          body = {
+            budget_id: 1,
+            ...submitted,
+            status: "active",
+            archived_at: null,
+            created_at: "2026-08-29T00:00:00Z",
+            updated_at: "2026-08-29T00:00:00Z",
+          };
+        } else if (/\/budgets\/\d+\/outcome\?/.test(path)) {
+          body = {
+            budget: budgetItems[0],
+            date_from: "2026-08-01",
+            date_to: "2026-08-31",
+            base_currency: "SEK",
+            target_amount: "3500.0000",
+            actual_amount: "2800.0000",
+            remaining_amount: "700.0000",
+            consumed_percent: "80.00",
+            period_count: 1,
+            rollover_adjustment: "0.0000",
+            matched_transaction_count: 4,
+            missing_fx_count: 0,
+            overlapping_budget_ids: [],
+          };
+        } else if (/\/budgets\/\d+\/trend\?/.test(path)) {
+          body = {
+            budget_id: 1,
+            base_currency: "SEK",
+            points: [
+              { period_start: "2026-07-01", period_end: "2026-07-31", target_amount: "3500.0000", actual_amount: "3200.0000", remaining_amount: "300.0000", consumed_percent: "91.43", missing_fx_count: 0 },
+              { period_start: "2026-08-01", period_end: "2026-08-31", target_amount: "3500.0000", actual_amount: "2800.0000", remaining_amount: "700.0000", consumed_percent: "80.00", missing_fx_count: 0 },
+            ],
+          };
+        } else if (path.includes("/budgets?")) {
+          body = budgetItems;
+        } else if (path.includes("/analysis-groups?")) {
+          body = [];
+        } else if (path.includes("/providers?")) {
+          body = { items: providerItems, total: providerItems.length, limit: 50, offset: 0 };
         } else if (
           path.includes("/categories?") ||
-          path.includes("/providers?") ||
           path.includes("/tags?") ||
           path.includes("/sharing-parties?")
         ) {
@@ -119,7 +179,12 @@ describe("App", () => {
             missing_fx_count: 0,
           };
         } else if (path.includes("/transactions?")) {
-          body = { items: [], total: 0, limit: 100, offset: 0 };
+          body = {
+            items: transactionItems,
+            total: transactionItems.length,
+            limit: 100,
+            offset: 0,
+          };
         } else if (path.includes("/transfers?")) {
           body = { items: [], total: 0, limit: 100, offset: 0 };
         } else {
@@ -153,6 +218,18 @@ describe("App", () => {
     expect(screen.queryByText("DEMO / TEST")).not.toBeInTheDocument();
   });
 
+  it("shows pilot data safety controls in Settings", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Settings" }));
+
+    expect(await screen.findByRole("heading", { name: "Encrypted backups" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recycle bin and change history" })).toBeInTheDocument();
+    expect(screen.getByText("No backups have been created in this data plane.")).toBeInTheDocument();
+  });
+
   it("defaults the overview to the current month and can move to a previous month", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -184,16 +261,38 @@ describe("App", () => {
       date_to: "2026-08-31",
       base_currency: "SEK",
       daily: [{ date: "2026-08-12", income: "30000.0000", expenses: "650.0000", net_cash_flow: "29350.0000" }],
-      expense_categories: [{ category_id: 1, category_name: "Groceries", amount: "650.0000", transaction_count: 2 }],
+      expense_categories: [
+        { category_id: 1, category_name: "Groceries", amount: "650.0000", transaction_count: 2 },
+        { category_id: 2, category_name: "Transport", amount: "350.0000", transaction_count: 1 },
+      ],
     };
     const user = userEvent.setup();
     render(<App />);
 
     expect((await screen.findAllByText("Groceries")).length).toBeGreaterThan(0);
-    const tableToggles = screen.getAllByText("Show data as a table");
-    await user.click(tableToggles[1]);
-    expect(screen.getByRole("columnheader", { name: "Category" })).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "2" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Where does the money go?" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Cumulative expenses" })).toBeInTheDocument();
+
+    const distributionTable = screen.getByRole("table", { hidden: true, name: "Where does the money go?" });
+    const distributionPanel = screen.getByRole("heading", { name: "Where does the money go?" }).closest("section");
+    expect(distributionPanel).not.toBeNull();
+    await user.click(within(distributionPanel as HTMLElement).getByText("Show data as a table"));
+    expect(within(distributionTable).getByRole("cell", { name: /65\s*%/ })).toBeInTheDocument();
+
+    const categoryPanel = screen.getByRole("heading", { name: "Expenses by category" }).closest("section");
+    expect(categoryPanel).not.toBeNull();
+    await user.click(within(categoryPanel as HTMLElement).getByText("Show data as a table"));
+    const categoryTable = screen.getByRole("table", { name: "Expenses by category" });
+    expect(within(categoryTable).getByRole("columnheader", { name: "Category" })).toBeInTheDocument();
+    expect(within(categoryTable).getByRole("cell", { name: "2" })).toBeInTheDocument();
+    await user.click(within(categoryPanel as HTMLElement).getByRole("button", { name: "View contributing transactions: Groceries" }));
+    expect(await screen.findByRole("heading", { name: "Transactions" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(vi.mocked(fetch).mock.calls.some(([input]) => {
+        const path = input.toString();
+        return path.includes("/transactions?") && path.includes("category_id=1");
+      })).toBe(true);
+    });
   });
 
   it("keeps daily entry and account setup in separate views", async () => {
@@ -209,6 +308,87 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Go to Accounts" }));
     expect(await screen.findByLabelText("Account name")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Transactions" })).not.toBeInTheDocument();
+  });
+
+  it("creates a monthly budget from the dedicated planning workspace", async () => {
+    accountItems = [account(1, "Daily account")];
+    providerItems = [{
+      provider_id: 7,
+      name: "Grocery store",
+      website: null,
+      notes: null,
+      status: "active",
+      archived_at: null,
+      created_at: "2026-08-01T00:00:00Z",
+      updated_at: "2026-08-01T00:00:00Z",
+    }];
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/Your finances ·/);
+
+    await user.click(screen.getByRole("link", { name: "Budget" }));
+    expect(
+      await screen.findByText("No budgets yet. Create one to start comparing actuals."),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "+ New budget" }));
+    await user.type(screen.getByLabelText("Budget name"), "Groceries");
+    await user.type(screen.getByLabelText("Amount per period"), "3500");
+    await user.selectOptions(screen.getByLabelText("Accounts: Daily account"), "include");
+    await user.selectOptions(screen.getByLabelText("Providers: Grocery store"), "include");
+    await user.click(screen.getByRole("button", { name: "Create budget" }));
+
+    await waitFor(() => {
+      const createCall = vi.mocked(fetch).mock.calls.find(
+        ([input, init]) => input.toString().endsWith("/budgets") && init?.method === "POST",
+      );
+      expect(createCall).toBeDefined();
+      expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({
+        name: "Groceries",
+        amount: "3500",
+        currency: "SEK",
+        period_type: "calendar_month",
+        rollover_mode: "reset",
+        categories: [],
+        tags: [],
+        accounts: [{ account_id: 1, mode: "include" }],
+        providers: [{ provider_id: 7, mode: "include" }],
+      });
+    });
+  });
+
+  it("renders server-derived budget trends with exact accessible values", async () => {
+    budgetItems = [{
+      budget_id: 1,
+      analysis_group_id: null,
+      name: "Groceries",
+      amount: "3500.0000",
+      currency: "SEK",
+      period_type: "calendar_month",
+      rollover_mode: "reset",
+      starts_on: "2026-07-01",
+      ends_on: null,
+      anchor_day: 25,
+      notes: null,
+      categories: [],
+      tags: [],
+      accounts: [],
+      providers: [],
+      status: "active",
+      archived_at: null,
+      created_at: "2026-07-01T00:00:00Z",
+      updated_at: "2026-07-01T00:00:00Z",
+    }];
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/Your finances ·/);
+
+    await user.click(screen.getByRole("link", { name: "Budget" }));
+    expect(await screen.findByRole("heading", { name: "Groceries" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Actuals by budget period" })).toBeInTheDocument();
+    const trendTable = screen.getByRole("table", { name: "Actuals by budget period" });
+    expect(within(trendTable).getAllByRole("cell", { name: /3.*500,00/ })).toHaveLength(2);
+    expect(within(trendTable).getByRole("cell", { name: /3.*200,00/ })).toBeInTheDocument();
+    expect(within(trendTable).getByRole("cell", { name: /2.*800,00/ })).toBeInTheDocument();
   });
 
   it("opens a focused transaction form when an account exists", async () => {
@@ -227,6 +407,89 @@ describe("App", () => {
     expect(screen.getByLabelText("Description")).toBeInTheDocument();
     expect(screen.getByText("More details")).toBeInTheDocument();
     expect(screen.queryByLabelText("Amount in base currency (SEK)")).not.toBeInTheDocument();
+  });
+
+  it("records a refund through the original expense", async () => {
+    accountItems = [account(1, "Daily account")];
+    transactionItems = [{
+      transaction_id: 41,
+      account_id: 1,
+      provider_id: null,
+      transaction_kind: "expense",
+      transaction_date: "2026-08-10",
+      posting_date: "2026-08-10",
+      description: "Train tickets",
+      original_amount: "1000.0000",
+      original_currency: "SEK",
+      converted_amount: "1000.0000",
+      base_currency: "SEK",
+      fx_rate: "1.0000000000",
+      fx_rate_status: "not_required",
+      source_type: "manual",
+      source_reference: null,
+      notes: null,
+      category_id: null,
+      tag_ids: [],
+      is_base_cost: false,
+      linked_expense_id: null,
+      status: "active",
+      archived_at: null,
+      created_at: "2026-08-10T00:00:00Z",
+      updated_at: "2026-08-10T00:00:00Z",
+    }];
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/Your finances ·/);
+
+    await user.click(screen.getByRole("link", { name: "Transactions" }));
+    await user.click(await screen.findByRole("button", { name: "Refund" }));
+    expect(screen.getByRole("heading", { name: "Record refund" })).toBeInTheDocument();
+    expect(screen.getByText(/Linked expense:/).closest("p")).toHaveTextContent("Train tickets");
+    await user.type(screen.getByLabelText("Amount"), "250");
+    await user.click(screen.getByRole("button", { name: "Record refund" }));
+
+    await waitFor(() => {
+      const recoveryCall = vi.mocked(fetch).mock.calls.find(([input, init]) =>
+        input.toString().includes("/transactions/41/refunds") && init?.method === "POST"
+      );
+      expect(recoveryCall).toBeDefined();
+      expect(JSON.parse(String(recoveryCall?.[1]?.body))).toMatchObject({
+        account_id: 1,
+        original_amount: "250",
+        original_currency: "SEK",
+      });
+    });
+  });
+
+  it("creates a balanced split transaction from one account event", async () => {
+    accountItems = [account(1, "Daily account")];
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/Your finances ·/);
+
+    await user.click(screen.getByRole("link", { name: "Transactions" }));
+    await user.click(await screen.findByRole("button", { name: "+ New transaction" }));
+    await user.type(screen.getByLabelText("Description"), "Mixed receipt");
+    await user.type(screen.getByLabelText("Amount"), "1000");
+    await user.click(screen.getByLabelText("Split transaction"));
+    await user.type(screen.getByLabelText("Split 1 · Amount"), "600");
+    await user.type(screen.getByLabelText("Split 2 · Amount"), "400");
+    expect(screen.getByText(/Remaining to allocate:/)).toHaveClass("balanced");
+    await user.click(screen.getByRole("button", { name: "Save transaction" }));
+
+    await waitFor(() => {
+      const createCall = vi.mocked(fetch).mock.calls.find(([input, init]) =>
+        input.toString().endsWith("/transactions") && init?.method === "POST"
+      );
+      expect(createCall).toBeDefined();
+      expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({
+        original_amount: "1000",
+        splits: [
+          { original_amount: "600" },
+          { original_amount: "400" },
+        ],
+      });
+    });
   });
 
   it("creates a credit-card payment through the dedicated transfer workflow", async () => {

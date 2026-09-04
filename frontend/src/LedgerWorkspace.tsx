@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   createAccount,
   createAccountSnapshot,
+  createBalanceAdjustment,
   createCategory,
   createProvider,
   createSharingParty,
@@ -64,6 +65,12 @@ const copy = {
     noSnapshots: "Inga senare saldon har registrerats ännu.",
     snapshotHelp:
       "Varje datum sparas som en historisk observation. Öppningssaldot och transaktionerna ändras inte.",
+    adjustmentTitle: "Bokför saldoförändring",
+    adjustmentLead:
+      "Skapa en separat justeringspost för avvikelsen. Historiken bevaras och posten räknas inte som inkomst eller utgift.",
+    adjustmentPhrase: "Skriv CREATE BALANCE ADJUSTMENT för att bekräfta",
+    createAdjustment: "Skapa justeringspost",
+    adjustmentCreated: "Justeringspost skapad.",
     categories: "Kategorier",
     categoryName: "Kategorinamn",
     categoryKind: "Typ",
@@ -125,6 +132,12 @@ const copy = {
     noSnapshots: "No later balances have been recorded yet.",
     snapshotHelp:
       "Each date is preserved as a historical observation. The opening balance and transactions are unchanged.",
+    adjustmentTitle: "Post balance adjustment",
+    adjustmentLead:
+      "Create a separate adjustment entry for the difference. History is preserved and the entry is not treated as income or expense.",
+    adjustmentPhrase: "Type CREATE BALANCE ADJUSTMENT to confirm",
+    createAdjustment: "Create adjustment entry",
+    adjustmentCreated: "Adjustment entry created.",
     categories: "Categories",
     categoryName: "Category name",
     categoryKind: "Type",
@@ -541,8 +554,10 @@ function AccountRow({
           </form>
           <SnapshotHistory
             account={account}
+            environment={environment}
             isValuation={isValuation}
             labels={labels}
+            onAdjusted={loadSnapshots}
             snapshots={snapshots}
           />
         </div>
@@ -553,13 +568,17 @@ function AccountRow({
 
 function SnapshotHistory({
   account,
+  environment,
   isValuation,
   labels,
+  onAdjusted,
   snapshots,
 }: {
   account: Account;
+  environment: Environment;
   isValuation: boolean;
   labels: Labels;
+  onAdjusted: () => Promise<void>;
   snapshots: AccountSnapshot[];
 }) {
   const language = languageFrom(labels);
@@ -625,9 +644,67 @@ function SnapshotHistory({
               </tbody>
             </table>
           </div>
+          {!isValuation && snapshots[0]?.calculation_status === "complete" &&
+          snapshots[0].difference !== null && Number(snapshots[0].difference) !== 0 ? (
+            <BalanceAdjustmentForm
+              environment={environment}
+              labels={labels}
+              onAdjusted={onAdjusted}
+              snapshot={snapshots[0]}
+            />
+          ) : null}
         </>
       ) : null}
     </div>
+  );
+}
+
+function BalanceAdjustmentForm({
+  environment,
+  labels,
+  onAdjusted,
+  snapshot,
+}: {
+  environment: Environment;
+  labels: Labels;
+  onAdjusted: () => Promise<void>;
+  snapshot: AccountSnapshot;
+}) {
+  const [confirmation, setConfirmation] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const expected = "CREATE BALANCE ADJUSTMENT";
+
+  return (
+    <form
+      className="balance-adjustment-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        setWorking(true);
+        setMessage(null);
+        void createBalanceAdjustment(environment, snapshot.account_snapshot_id, confirmation)
+          .then(() => onAdjusted())
+          .then(() => {
+            setConfirmation("");
+            setMessage(labels.adjustmentCreated);
+          })
+          .catch((error) => setMessage(error instanceof Error ? error.message : "Adjustment failed."))
+          .finally(() => setWorking(false));
+      }}
+    >
+      <div>
+        <h5>{labels.adjustmentTitle}</h5>
+        <p>{labels.adjustmentLead}</p>
+      </div>
+      <label>
+        {labels.adjustmentPhrase}
+        <input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
+      </label>
+      <button className="secondary-button" disabled={working || confirmation !== expected} type="submit">
+        {labels.createAdjustment}
+      </button>
+      {message ? <p className="form-message" role="status">{message}</p> : null}
+    </form>
   );
 }
 

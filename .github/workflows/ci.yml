@@ -45,6 +45,7 @@ jobs:
       APP_TRUSTED_PROXY_IPS: testclient,127.0.0.1
       ATTACHMENT_ROOT: /tmp/cost-review-ci/attachments
       BACKUP_ROOT: /tmp/cost-review-ci/backups
+      BACKUP_ENCRYPTION_KEY: ci-test-backup-encryption-key-32-characters
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -82,11 +83,14 @@ jobs:
       COOKIE_SECURE: false
       APP_ALLOWED_ORIGINS: http://localhost:8080
       APP_ALLOWED_HOSTS: localhost,127.0.0.1
+      BACKUP_PROD_ENCRYPTION_KEY: ci-production-backup-encryption-key-32-chars
+      BACKUP_TEST_ENCRYPTION_KEY: ci-test-backup-encryption-key-32-characters
     steps:
       - uses: actions/checkout@v7
       - run: docker compose config --quiet
       - run: docker compose up --build --detach --wait
       - run: python backend/tests/compose_isolation.py
+      - run: python backend/tests/compose_backup_restore.py
       - name: Prove Test API cannot resolve or connect to Production database
         run: |
           if docker compose exec -T api-test python -c "import socket; socket.create_connection(('db-prod', 5432), 2)"; then

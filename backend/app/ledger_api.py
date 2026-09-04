@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Response
@@ -13,8 +14,14 @@ from app.account_snapshot_services import (
     snapshot_values,
     update_account_snapshot,
 )
+from app.audit_services import list_audit_events
 from app.dependencies import Auth, CsrfAuth, DatabaseSession
 from app.errors import ApiError
+from app.ledger_safety_services import (
+    create_balance_adjustment,
+    list_recycle_bin,
+    set_adjustment_archived,
+)
 from app.ledger_schemas import (
     AccountCreate,
     AccountRead,
@@ -22,14 +29,17 @@ from app.ledger_schemas import (
     AccountSnapshotRead,
     AccountSnapshotUpdate,
     AccountUpdate,
+    AuditEventRead,
+    BalanceAdjustmentCreate,
     CategoryCreate,
     CategoryLinkCreate,
     CategoryLinkRead,
     CategoryRead,
     CategoryUpdate,
+    ComparisonMode,
     LedgerAnalysisRead,
     LedgerSummaryRead,
-    ManualTransactionKind,
+    LedgerTransactionKind,
     Page,
     ProviderAliasCreate,
     ProviderAliasRead,
@@ -39,6 +49,8 @@ from app.ledger_schemas import (
     ProviderLinkRead,
     ProviderRead,
     ProviderUpdate,
+    RecoveryCreate,
+    RecycleBinItemRead,
     SharingPartyCreate,
     SharingPartyRead,
     SharingPartyUpdate,
@@ -86,6 +98,14 @@ from app.models import (
     ProviderLink,
     SharingParty,
     Tag,
+    Transaction,
+    TransactionKind,
+)
+from app.recovery_services import (
+    create_recovery,
+    get_recovery,
+    recovery_values,
+    set_recovery_archived,
 )
 from app.transaction_services import (
     create_manual_transaction,
@@ -109,6 +129,31 @@ router = APIRouter(tags=["ledger-master-data"])
 
 Limit = Annotated[int, Query(ge=1, le=200)]
 Offset = Annotated[int, Query(ge=0)]
+AmountFilter = Annotated[Decimal | None, Query(ge=0)]
+CurrencyFilter = Annotated[str | None, Query(pattern=r"^[A-Z]{3}$")]
+
+
+@router.get("/audit-events", response_model=Page[AuditEventRead])
+def get_audit_events(
+    _: Auth,
+    db: DatabaseSession,
+    limit: Limit = 50,
+    offset: Offset = 0,
+    entity_type: str | None = Query(default=None, max_length=64),
+    entity_id: int | None = Query(default=None, gt=0),
+) -> dict[str, object]:
+    return list_audit_events(
+        db,
+        limit=limit,
+        offset=offset,
+        entity_type=entity_type,
+        entity_id=entity_id,
+    )
+
+
+@router.get("/recycle-bin", response_model=list[RecycleBinItemRead])
+def get_recycle_bin(_: Auth, db: DatabaseSession) -> list[dict[str, object]]:
+    return list_recycle_bin(db)
 
 
 @router.get("/transactions", response_model=Page[TransactionRead])
@@ -120,14 +165,19 @@ def get_transactions(
     include_archived: bool = False,
     date_from: date | None = None,
     date_to: date | None = None,
-    transaction_kind: ManualTransactionKind | None = None,
+    transaction_kind: LedgerTransactionKind | None = None,
     account_id: int | None = Query(default=None, gt=0),
     provider_id: int | None = Query(default=None, gt=0),
     category_id: int | None = Query(default=None, gt=0),
     tag_id: int | None = Query(default=None, gt=0),
+    is_base_cost: bool | None = None,
+    original_currency: CurrencyFilter = None,
+    amount_min: AmountFilter = None,
+    amount_max: AmountFilter = None,
     search: str | None = Query(default=None, max_length=240),
 ) -> dict[str, object]:
     _validate_date_range(date_from, date_to)
+    _validate_amount_range(amount_min, amount_max)
     return list_transactions(
         db,
         limit=limit,
@@ -140,6 +190,10 @@ def get_transactions(
         provider_id=provider_id,
         category_id=category_id,
         tag_id=tag_id,
+        is_base_cost=is_base_cost,
+        original_currency=original_currency,
+        amount_min=amount_min,
+        amount_max=amount_max,
         search=search,
     )
 
@@ -159,9 +213,24 @@ def get_transaction_summary(
     db: DatabaseSession,
     date_from: date,
     date_to: date,
+    account_id: int | None = Query(default=None, gt=0),
+    provider_id: int | None = Query(default=None, gt=0),
+    category_id: int | None = Query(default=None, gt=0),
+    tag_id: int | None = Query(default=None, gt=0),
+    is_base_cost: bool | None = None,
 ) -> dict[str, object]:
     _validate_date_range(date_from, date_to)
-    return ledger_summary(db, date_from, date_to, auth.user.settings.base_currency)
+    return ledger_summary(
+        db,
+        date_from,
+        date_to,
+        auth.user.settings.base_currency,
+        account_id=account_id,
+        provider_id=provider_id,
+        category_id=category_id,
+        tag_id=tag_id,
+        is_base_cost=is_base_cost,
+    )
 
 
 @router.get("/transactions/analysis", response_model=LedgerAnalysisRead)
@@ -170,9 +239,26 @@ def get_transaction_analysis(
     db: DatabaseSession,
     date_from: date,
     date_to: date,
+    comparison: ComparisonMode = ComparisonMode.NONE,
+    account_id: int | None = Query(default=None, gt=0),
+    provider_id: int | None = Query(default=None, gt=0),
+    category_id: int | None = Query(default=None, gt=0),
+    tag_id: int | None = Query(default=None, gt=0),
+    is_base_cost: bool | None = None,
 ) -> dict[str, object]:
     _validate_date_range(date_from, date_to)
-    return ledger_analysis(db, date_from, date_to, auth.user.settings.base_currency)
+    return ledger_analysis(
+        db,
+        date_from,
+        date_to,
+        auth.user.settings.base_currency,
+        comparison.value,
+        account_id=account_id,
+        provider_id=provider_id,
+        category_id=category_id,
+        tag_id=tag_id,
+        is_base_cost=is_base_cost,
+    )
 
 
 @router.get("/transactions/{transaction_id}", response_model=TransactionRead)
@@ -206,6 +292,54 @@ def restore_transaction(
     transaction_id: int, _: CsrfAuth, db: DatabaseSession
 ) -> dict[str, object]:
     return transaction_values(restore_model(db, get_manual_transaction(db, transaction_id)))
+
+
+@router.post(
+    "/transactions/{expense_id}/refunds", response_model=TransactionRead, status_code=201
+)
+def post_refund(
+    expense_id: int, payload: RecoveryCreate, auth: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    expense = get_model(db, Transaction, expense_id, "Transaction")
+    model = create_recovery(
+        db, expense, payload, TransactionKind.REFUND, auth.user.settings.base_currency
+    )
+    return recovery_values(db, model)
+
+
+@router.post(
+    "/transactions/{expense_id}/reimbursements",
+    response_model=TransactionRead,
+    status_code=201,
+)
+def post_reimbursement(
+    expense_id: int, payload: RecoveryCreate, auth: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    expense = get_model(db, Transaction, expense_id, "Transaction")
+    model = create_recovery(
+        db,
+        expense,
+        payload,
+        TransactionKind.REIMBURSEMENT,
+        auth.user.settings.base_currency,
+    )
+    return recovery_values(db, model)
+
+
+@router.post("/recoveries/{transaction_id}/archive", response_model=TransactionRead)
+def archive_recovery(
+    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    model, _ = get_recovery(db, transaction_id)
+    return recovery_values(db, set_recovery_archived(db, model, archived=True))
+
+
+@router.post("/recoveries/{transaction_id}/restore", response_model=TransactionRead)
+def restore_recovery(
+    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    model, _ = get_recovery(db, transaction_id)
+    return recovery_values(db, set_recovery_archived(db, model, archived=False))
 
 
 @router.get("/transfers", response_model=Page[TransferRead])
@@ -352,6 +486,42 @@ def post_account_snapshot(
 ) -> dict[str, object]:
     account = get_model(db, Account, account_id, "Account")
     return create_account_snapshot(db, account, payload, auth.user.settings.base_currency)
+
+
+@router.post(
+    "/account-snapshots/{snapshot_id}/adjustment",
+    response_model=TransactionRead,
+    status_code=201,
+)
+def post_balance_adjustment(
+    snapshot_id: int,
+    payload: BalanceAdjustmentCreate,
+    _: CsrfAuth,
+    db: DatabaseSession,
+) -> dict[str, object]:
+    snapshot = get_model(db, AccountSnapshot, snapshot_id, "Account snapshot")
+    account = get_model(db, Account, snapshot.account_id, "Account")
+    return transaction_values(
+        create_balance_adjustment(
+            db, snapshot, account, confirmation=payload.confirmation
+        )
+    )
+
+
+@router.post("/adjustments/{transaction_id}/archive", response_model=TransactionRead)
+def archive_adjustment(
+    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    model = get_model(db, Transaction, transaction_id, "Balance adjustment")
+    return transaction_values(set_adjustment_archived(db, model, archived=True))
+
+
+@router.post("/adjustments/{transaction_id}/restore", response_model=TransactionRead)
+def restore_adjustment(
+    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    model = get_model(db, Transaction, transaction_id, "Balance adjustment")
+    return transaction_values(set_adjustment_archived(db, model, archived=False))
 
 
 @router.patch("/account-snapshots/{snapshot_id}", response_model=AccountSnapshotRead)
@@ -666,4 +836,15 @@ def _validate_date_range(date_from: date | None, date_to: date | None) -> None:
             422,
             "invalid_date_range",
             "The end date must be on or after the start date.",
+        )
+
+
+def _validate_amount_range(
+    amount_min: Decimal | None, amount_max: Decimal | None
+) -> None:
+    if amount_min is not None and amount_max is not None and amount_max < amount_min:
+        raise ApiError(
+            422,
+            "invalid_amount_range",
+            "The maximum amount must be greater than or equal to the minimum amount.",
         )

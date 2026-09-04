@@ -11,6 +11,8 @@ from fastapi.responses import JSONResponse
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.api import router, test_router
+from app.backup_api import router as backup_router
+from app.budget_api import router as budget_router
 from app.config import Settings, get_settings
 from app.database import Database, ensure_environment_identity
 from app.errors import ApiError
@@ -99,7 +101,9 @@ def create_app(runtime_settings: Settings | None = None) -> FastAPI:
         )
 
     app.include_router(router, prefix=settings.api_prefix)
+    app.include_router(backup_router, prefix=settings.api_prefix)
     app.include_router(ledger_router, prefix=settings.api_prefix)
+    app.include_router(budget_router, prefix=settings.api_prefix)
     if settings.app_environment == "test":
         app.include_router(test_router, prefix=settings.api_prefix)
 
