@@ -241,6 +241,7 @@ export type BudgetOutcome = {
   date_from: string;
   date_to: string;
   base_currency: string;
+  perspective: AnalysisPerspective;
   target_amount: string;
   actual_amount: string;
   remaining_amount: string;
@@ -274,12 +275,23 @@ export type BudgetTrendPoint = {
 export type BudgetTrend = {
   budget_id: number;
   base_currency: string;
+  perspective: AnalysisPerspective;
   points: BudgetTrendPoint[];
 };
 
 export type ManualTransactionKind = "expense" | "income";
 export type RecoveryKind = "refund" | "reimbursement";
 export type TransactionKind = ManualTransactionKind | RecoveryKind | "adjustment";
+export type AnalysisPerspective = "total" | "my_share";
+export type ShareAllocation = {
+  sharing_party_id: number;
+  percentage: string;
+  is_self: boolean;
+};
+export type ShareAllocationInput = {
+  sharing_party_id: number;
+  percentage: string;
+};
 export type TransferPurpose =
   | "internal"
   | "savings"
@@ -310,6 +322,7 @@ export type Transaction = {
   is_base_cost: boolean;
   is_split: boolean;
   splits: TransactionSplit[];
+  sharing_allocations: ShareAllocation[];
   linked_expense_id: number | null;
   status: LifecycleStatus;
   archived_at: string | null;
@@ -325,6 +338,7 @@ export type TransactionSplit = {
   tag_ids: number[];
   is_base_cost: boolean;
   memo: string | null;
+  sharing_allocations: ShareAllocation[];
 };
 
 export type TransactionSplitInput = {
@@ -333,6 +347,7 @@ export type TransactionSplitInput = {
   tag_ids: number[];
   is_base_cost: boolean;
   memo?: string | null;
+  sharing_allocations?: ShareAllocationInput[];
 };
 
 export type TransactionInput = {
@@ -349,6 +364,7 @@ export type TransactionInput = {
   category_id: number | null;
   tag_ids: number[];
   is_base_cost: boolean;
+  sharing_allocations?: ShareAllocationInput[];
   splits?: TransactionSplitInput[] | null;
   source_reference?: string | null;
   notes?: string | null;
@@ -422,6 +438,7 @@ export type LedgerSummary = {
   net_cash_flow: string;
   transaction_count: number;
   missing_fx_count: number;
+  perspective: AnalysisPerspective;
 };
 
 export type LedgerTrendPoint = {
@@ -445,6 +462,7 @@ export type LedgerAnalysis = {
   daily: LedgerTrendPoint[];
   expense_categories: LedgerCategoryBreakdown[];
   comparison: LedgerComparison | null;
+  perspective: AnalysisPerspective;
 };
 
 export type AnalysisComparisonMode = "none" | "previous_period" | "previous_year";
@@ -466,6 +484,7 @@ export type LedgerFilters = {
   categoryId?: number | null;
   tagId?: number | null;
   isBaseCost?: boolean | null;
+  perspective?: AnalysisPerspective;
 };
 
 export class ApiError extends Error {
@@ -787,6 +806,23 @@ export function setTagArchived(
   );
 }
 
+export function mergeTag(
+  environment: Environment,
+  sourceTagId: number,
+  targetTagId: number,
+  confirmation: string,
+): Promise<Tag> {
+  return request(
+    environment,
+    `/tags/${sourceTagId}/merge`,
+    {
+      method: "POST",
+      body: JSON.stringify({ target_tag_id: targetTagId, confirmation }),
+    },
+    true,
+  );
+}
+
 export function getSharingParties(
   environment: Environment,
   includeArchived = false,
@@ -868,8 +904,9 @@ export function getBudgetOutcome(
   budgetId: number,
   dateFrom: string,
   dateTo: string,
+  perspective: AnalysisPerspective = "total",
 ): Promise<BudgetOutcome> {
-  const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo, perspective });
   return request(environment, `/budgets/${budgetId}/outcome?${query.toString()}`);
 }
 
@@ -878,8 +915,9 @@ export function getBudgetTransactions(
   budgetId: number,
   dateFrom: string,
   dateTo: string,
+  perspective: AnalysisPerspective = "total",
 ): Promise<BudgetTransaction[]> {
-  const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo, perspective });
   return request(environment, `/budgets/${budgetId}/transactions?${query.toString()}`);
 }
 
@@ -888,8 +926,9 @@ export function getBudgetTrend(
   budgetId: number,
   through: string,
   periods = 6,
+  perspective: AnalysisPerspective = "total",
 ): Promise<BudgetTrend> {
-  const query = new URLSearchParams({ through, periods: String(periods) });
+  const query = new URLSearchParams({ through, periods: String(periods), perspective });
   return request(environment, `/budgets/${budgetId}/trend?${query.toString()}`);
 }
 
@@ -967,6 +1006,7 @@ function appendLedgerFilters(query: URLSearchParams, filters: LedgerFilters): vo
   if (filters.isBaseCost !== undefined && filters.isBaseCost !== null) {
     query.set("is_base_cost", String(filters.isBaseCost));
   }
+  if (filters.perspective) query.set("perspective", filters.perspective);
 }
 
 export function createTransaction(

@@ -15,6 +15,7 @@ import {
   setBudgetArchived,
   updateBudget,
   type AnalysisGroup,
+  type AnalysisPerspective,
   type Account,
   type Budget,
   type BudgetInput,
@@ -38,6 +39,9 @@ const text = {
     lead: "Koppla budgetar till kategorier, taggar, konton och providers i Ledger-analysen.",
     newBudget: "+ Ny budget",
     month: "Analysmånad",
+    perspective: "Perspektiv",
+    totalPerspective: "Totalt",
+    mySharePerspective: "Min andel",
     empty: "Inga budgetar ännu. Skapa en budget för att börja jämföra utfall.",
     name: "Budgetnamn",
     amount: "Belopp per period",
@@ -89,6 +93,9 @@ const text = {
     lead: "Connect budgets to categories, tags, accounts, and providers in Ledger analysis.",
     newBudget: "+ New budget",
     month: "Analysis month",
+    perspective: "Perspective",
+    totalPerspective: "Total",
+    mySharePerspective: "My share",
     empty: "No budgets yet. Create one to start comparing actuals.",
     name: "Budget name",
     amount: "Amount per period",
@@ -162,6 +169,7 @@ export function BudgetWorkspace({
 }) {
   const labels = text[language];
   const [month, setMonth] = useState(currentMonth());
+  const [perspective, setPerspective] = useState<AnalysisPerspective>("total");
   const [categories, setCategories] = useState<Category[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -198,12 +206,18 @@ export function BudgetWorkspace({
       const [nextOutcomes, nextTrends] = await Promise.all([
         Promise.all(
           budgetItems.map((budget) =>
-            getBudgetOutcome(environment, budget.budget_id, period.from, period.to),
+            getBudgetOutcome(
+              environment,
+              budget.budget_id,
+              period.from,
+              period.to,
+              perspective,
+            ),
           ),
         ),
         Promise.all(
           budgetItems.map((budget) =>
-            getBudgetTrend(environment, budget.budget_id, period.to),
+            getBudgetTrend(environment, budget.budget_id, period.to, 6, perspective),
           ),
         ),
       ]);
@@ -220,7 +234,7 @@ export function BudgetWorkspace({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [environment, period.from, period.to]);
+  }, [environment, period.from, period.to, perspective]);
 
   const selections = () => ({
     categories: Object.entries(draft.categoryModes)
@@ -301,7 +315,13 @@ export function BudgetWorkspace({
     setExpanded(budgetId);
     if (!rows[budgetId]) {
       try {
-        const items = await getBudgetTransactions(environment, budgetId, period.from, period.to);
+        const items = await getBudgetTransactions(
+          environment,
+          budgetId,
+          period.from,
+          period.to,
+          perspective,
+        );
         setRows((current) => ({ ...current, [budgetId]: items }));
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : labels.error);
@@ -331,7 +351,7 @@ export function BudgetWorkspace({
     <section className="budget-workspace" aria-labelledby="budget-title">
       <div className="workspace-heading">
         <div><p className="eyebrow">{labels.eyebrow}</p><h1 id="budget-title">{labels.title}</h1><p>{labels.lead}</p></div>
-        <div className="budget-heading-actions"><label>{labels.month}<input aria-label={labels.month} onChange={(event) => setMonth(event.target.value)} type="month" value={month} /></label><button className="primary-button" onClick={beginCreate} type="button">{labels.newBudget}</button></div>
+        <div className="budget-heading-actions"><label>{labels.perspective}<select onChange={(event) => { setPerspective(event.target.value as AnalysisPerspective); setExpanded(null); setRows({}); }} value={perspective}><option value="total">{labels.totalPerspective}</option><option value="my_share">{labels.mySharePerspective}</option></select></label><label>{labels.month}<input aria-label={labels.month} onChange={(event) => setMonth(event.target.value)} type="month" value={month} /></label><button className="primary-button" onClick={beginCreate} type="button">{labels.newBudget}</button></div>
       </div>
       {error ? <div className="error-banner" role="alert">{error}</div> : null}
       {showForm ? (

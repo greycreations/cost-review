@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
@@ -143,6 +143,7 @@ class BudgetOutcomeRead(BaseModel):
     date_from: date
     date_to: date
     base_currency: str
+    perspective: Literal["total", "my_share"]
     target_amount: Decimal
     actual_amount: Decimal
     remaining_amount: Decimal
@@ -176,4 +177,5 @@ class BudgetTrendPointRead(BaseModel):
 class BudgetTrendRead(BaseModel):
     budget_id: int
     base_currency: str
+    perspective: Literal["total", "my_share"]
     points: list[BudgetTrendPointRead]

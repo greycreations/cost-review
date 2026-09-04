@@ -29,6 +29,7 @@ from app.ledger_schemas import (
     AccountSnapshotRead,
     AccountSnapshotUpdate,
     AccountUpdate,
+    AnalysisPerspective,
     AuditEventRead,
     BalanceAdjustmentCreate,
     CategoryCreate,
@@ -55,6 +56,7 @@ from app.ledger_schemas import (
     SharingPartyRead,
     SharingPartyUpdate,
     TagCreate,
+    TagMergeRequest,
     TagRead,
     TagUpdate,
     TransactionCreate,
@@ -79,6 +81,7 @@ from app.ledger_services import (
     delete_configuration_model,
     get_model,
     list_models,
+    merge_tag,
     restore_category_model,
     restore_model,
     update_account,
@@ -218,6 +221,7 @@ def get_transaction_summary(
     category_id: int | None = Query(default=None, gt=0),
     tag_id: int | None = Query(default=None, gt=0),
     is_base_cost: bool | None = None,
+    perspective: AnalysisPerspective = AnalysisPerspective.TOTAL,
 ) -> dict[str, object]:
     _validate_date_range(date_from, date_to)
     return ledger_summary(
@@ -230,6 +234,7 @@ def get_transaction_summary(
         category_id=category_id,
         tag_id=tag_id,
         is_base_cost=is_base_cost,
+        perspective=perspective.value,
     )
 
 
@@ -245,6 +250,7 @@ def get_transaction_analysis(
     category_id: int | None = Query(default=None, gt=0),
     tag_id: int | None = Query(default=None, gt=0),
     is_base_cost: bool | None = None,
+    perspective: AnalysisPerspective = AnalysisPerspective.TOTAL,
 ) -> dict[str, object]:
     _validate_date_range(date_from, date_to)
     return ledger_analysis(
@@ -258,6 +264,7 @@ def get_transaction_analysis(
         category_id=category_id,
         tag_id=tag_id,
         is_base_cost=is_base_cost,
+        perspective=perspective.value,
     )
 
 
@@ -765,6 +772,13 @@ def archive_tag(tag_id: int, _: CsrfAuth, db: DatabaseSession) -> Tag:
 @router.post("/tags/{tag_id}/restore", response_model=TagRead)
 def restore_tag(tag_id: int, _: CsrfAuth, db: DatabaseSession) -> Tag:
     return restore_model(db, get_model(db, Tag, tag_id, "Tag"))
+
+
+@router.post("/tags/{tag_id}/merge", response_model=TagRead)
+def merge_tag_route(
+    tag_id: int, payload: TagMergeRequest, _: CsrfAuth, db: DatabaseSession
+) -> Tag:
+    return merge_tag(db, get_model(db, Tag, tag_id, "Tag"), payload)
 
 
 @router.get("/sharing-parties", response_model=Page[SharingPartyRead])

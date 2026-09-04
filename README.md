@@ -13,8 +13,11 @@ expense entry, historical FX persistence, real period summaries, and dated
 account balance/value snapshots. Refunds and reimbursements are now preserved
 as linked events that reduce net cost without weakening that boundary or being
 misclassified as income. Transactions can be split across categories, tags,
-and base-cost classifications, and the Overview now applies the same filters
-to totals, charts, comparison periods, and transaction drill-down. It also adds
+base-cost classifications, and sharing parties. The full event is preserved
+while Overview can switch between Total and My Share, including proportional
+refunds and reimbursements. The same perspective controls budget outcome,
+trends, and underlying entries. Overview applies the same filters to totals,
+charts, comparison periods, and transaction drill-down. It also adds
 explicit reconciliation adjustments, an audit-backed Recycle Bin, and encrypted
 database/configuration/attachment backups with offline restore.
 
@@ -44,6 +47,41 @@ Requirements:
 
 - Docker Engine or Docker Desktop with Docker Compose v2.
 - An Ubuntu host for the intended self-hosted deployment.
+
+### Install a published release on Ubuntu
+
+Release installations need only the files in `deploy/`; source code and local
+build tools are not required. Download `deploy/compose.yaml` and
+`deploy/.env.example` from the selected GitHub release after its container
+images have been published, then run:
+
+```sh
+mkdir -p cost-review && cd cost-review
+mv /path/to/downloaded/compose.yaml ./compose.yaml
+mv /path/to/downloaded/.env.example ./.env
+nano .env
+docker compose pull
+docker compose up --detach --wait
+```
+
+Set `COST_REVIEW_VERSION` to the release version and replace every placeholder
+password/key before the first start. The deployment file starts the two API
+instances, both isolated PostgreSQL databases, the gateway, and both scheduled
+backup processes without a profile flag. Open `http://SERVER-IP:8080` unless
+`GATEWAY_PORT` was changed.
+
+Container packages inherit the repository visibility when first published. If
+they are private, authenticate the Ubuntu host using a GitHub token with
+`read:packages` before `docker compose pull`:
+
+```sh
+echo "$GHCR_TOKEN" | docker login ghcr.io -u GITHUB_USERNAME --password-stdin
+```
+
+Never copy a development machine's `.env` to another installation. Generate
+new database passwords and backup keys for every installation.
+
+### Build from source for development
 
 Create local configuration from the example. Replace both database passwords
 with different long random values and set two different backup encryption keys
@@ -226,6 +264,13 @@ GitHub Actions runs three gates:
 - frontend lint, component tests, and production build;
 - complete Compose startup plus an HTTP isolation scenario.
 
+Version tags matching `vMAJOR.MINOR.PATCH` also publish provenance and
+SBOM-enabled `linux/amd64` and `linux/arm64` API/frontend images to GitHub
+Container Registry. Release deployments pin `COST_REVIEW_VERSION` rather than
+silently following `latest`. The same workflow creates a GitHub release with
+`compose.yaml`, `.env.example`, and checksums so an Ubuntu installation does
+not require cloning or building the source repository.
+
 The isolation scenario creates independent Production/Test users, accounts,
 transactions, linked transfers, snapshots, and budgets, proves writes cannot
 cross the boundary, resets Demo/Test, and proves Production identity, settings,
@@ -258,10 +303,11 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET/POST/PATCH/DELETE | `/api/v1/providers/.../aliases`, `/api/v1/provider-aliases/...` | Canonical provider aliases |
 | GET/POST/DELETE | `/api/v1/provider-links`, `/api/v1/category-links` | Non-destructive analytical relationships |
 | GET/POST/PATCH | `/api/v1/tags[...]`, `/api/v1/sharing-parties[...]` | Reusable tags and sharing-party register |
+| POST | `/api/v1/tags/{id}/merge` | Confirmed reference-safe tag merge with conflict detection |
 | GET/POST/PATCH | `/api/v1/transactions[...]` | Manual income/expense CRUD, filtering and archive/restore |
 | POST | `/api/v1/transactions/{id}/refunds`, `/api/v1/transactions/{id}/reimbursements` | Create a linked recovery while preserving the gross expense |
 | POST | `/api/v1/recoveries/{id}/archive`, `/api/v1/recoveries/{id}/restore` | Archive or restore a linked recovery |
-| GET | `/api/v1/transactions/summary` | Canonical income, expense and cash-flow totals for a date range |
+| GET | `/api/v1/transactions/summary` | Canonical income, expense and cash-flow totals with Total/My Share perspective |
 | GET | `/api/v1/transactions/analysis` | Filtered daily/category analysis with optional previous-period or previous-year comparison |
 | GET/POST/PATCH | `/api/v1/transfers[...]` | Atomic owned-account transfers, filtering and archive/restore |
 | GET/POST/PATCH | `/api/v1/analysis-groups[...]` | Reusable category/tag selections plus archive/restore |
@@ -278,10 +324,12 @@ Ledger list endpoints return `{ items, total, limit, offset }`, support bounded
 pagination, and hide archived master records unless `include_archived=true` is
 requested. Master records use explicit archive/restore operations and appear in
 the central Recycle Bin. Audit records material creates, updates, archives,
-restores, and balance adjustments. Dependency-aware permanent deletion, tag
-merge, bulk-edit grouping, and percentage allocations remain later Ledger
-slices. See `docs/adr/0002-ledger-master-data-invariants.md` and
-`docs/adr/0009-pilot-data-safety-and-offline-restore.md`.
+restores, balance adjustments, allocation changes, and tag merges.
+Dependency-aware permanent deletion and bulk-edit grouping remain later Ledger
+slices. See `docs/adr/0002-ledger-master-data-invariants.md`,
+`docs/adr/0009-pilot-data-safety-and-offline-restore.md`, and
+`docs/adr/0010-transaction-sharing-perspectives.md`. Release packaging is
+defined in `docs/adr/0011-published-container-release.md`.
 
 Transactions store an immutable economic date separately from posting and
 system timestamps. Original amount/currency and the converted base-currency
@@ -296,8 +344,9 @@ they preserve gross cost, reduce net expense in summaries and analysis, and are
 never counted as ordinary income. A split transaction remains one economic and
 account event while its decimal-safe component amounts carry category, tag,
 base-cost, and memo classification. PostgreSQL deferred constraints require the
-components to equal the header amount exactly. Share allocation remains a later
-Ledger slice. A reconciliation adjustment is an explicit system-sourced event
+components to equal the header amount exactly. Each component may allocate
+multiple sharing parties by percentage; PostgreSQL requires an explicit
+allocation to total exactly 100 percent. A reconciliation adjustment is an explicit system-sourced event
 linked to one balance observation; it changes calculated balance but is excluded
 from ordinary income/expense and budget analysis.
 
@@ -318,8 +367,10 @@ calculated by the API from canonical split components; linked refunds and
 reimbursements reduce the relevant budget proportionally. Overlapping active
 budgets are explicitly marked non-additive and every result can be drilled down
 to its contributing Ledger events. A six-period trend uses each budget's own
-period definition rather than inventing monthly periodization. Total/My Share and Actual/Periodized views
-remain gated on the corresponding Ledger sharing and periodization semantics.
+period definition rather than inventing monthly periodization. Total/My Share
+switches the actual, trend, and drill-down using the original split allocation;
+the configured budget target remains explicit and unchanged. Actual/Periodized
+views remain gated on the corresponding periodization semantics.
 
 The Accounts view accepts dated reconciled balances and current values without
 changing the opening balance or transaction history. Ordinary accounts compare

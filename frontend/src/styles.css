@@ -1131,6 +1131,39 @@ button.distribution-legend-row:focus-visible {
   background: var(--background);
 }
 
+.sharing-editor {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-subtle);
+}
+
+.sharing-editor legend {
+  padding: 0 0.35rem;
+  font-weight: 700;
+}
+
+.sharing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+  margin-top: 0.8rem;
+}
+
+.percentage-input {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.sharing-grid > strong {
+  padding-bottom: 0.7rem;
+}
+
 .split-editor-heading {
   display: flex;
   align-items: flex-start;
@@ -1543,6 +1576,36 @@ button.distribution-legend-row:focus-visible {
 
 .tag-fields {
   grid-template-columns: minmax(0, 1fr) 72px;
+}
+
+.tag-merge-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--accent-soft));
+}
+
+.tag-merge-form h4,
+.tag-merge-form p {
+  margin: 0;
+}
+
+.tag-merge-form h4 {
+  font-size: 12px;
+}
+
+.tag-merge-form p {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.tag-merge-form .secondary-button {
+  justify-self: start;
 }
 
 input[type="color"] {

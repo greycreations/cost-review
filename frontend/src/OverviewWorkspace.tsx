@@ -10,6 +10,7 @@ import {
   getTransactions,
   type Account,
   type AnalysisComparisonMode,
+  type AnalysisPerspective,
   type Category,
   type Environment,
   type Language,
@@ -75,6 +76,9 @@ const copy = {
     clearFilters: "Rensa filter",
     comparedWith: "jämfört med",
     drillDown: "Visa bidragande transaktioner",
+    perspective: "Perspektiv",
+    totalPerspective: "Totalt",
+    mySharePerspective: "Min andel",
   },
   en: {
     eyebrow: "Release 1 · Core MVP",
@@ -129,6 +133,9 @@ const copy = {
     clearFilters: "Clear filters",
     comparedWith: "compared with",
     drillDown: "View contributing transactions",
+    perspective: "Perspective",
+    totalPerspective: "Total",
+    mySharePerspective: "My share",
   },
 } as const;
 
@@ -169,6 +176,7 @@ export function OverviewWorkspace({
   const labels = copy[language];
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey);
   const [comparison, setComparison] = useState<AnalysisComparisonMode>("previous_period");
+  const [perspective, setPerspective] = useState<AnalysisPerspective>("total");
   const [filters, setFilters] = useState({
     accountId: "",
     providerId: "",
@@ -184,8 +192,9 @@ export function OverviewWorkspace({
       categoryId: numberOrNull(filters.categoryId),
       tagId: numberOrNull(filters.tagId),
       isBaseCost: filters.baseCostOnly ? true : null,
+      perspective,
     }),
-    [filters],
+    [filters, perspective],
   );
   const requestKey = `${environment}:${period.from}:${period.to}:${comparison}:${JSON.stringify(ledgerFilters)}`;
   const [data, setData] = useState<OverviewData | null>(null);
@@ -266,6 +275,7 @@ export function OverviewWorkspace({
       </div>
 
       <div className="analysis-toolbar" aria-label={labels.filters}>
+        <label>{labels.perspective}<select onChange={(event) => setPerspective(event.target.value as AnalysisPerspective)} value={perspective}><option value="total">{labels.totalPerspective}</option><option value="my_share">{labels.mySharePerspective}</option></select></label>
         <label>{labels.comparison}<select onChange={(event) => setComparison(event.target.value as AnalysisComparisonMode)} value={comparison}><option value="none">{labels.noComparison}</option><option value="previous_period">{labels.previousPeriod}</option><option value="previous_year">{labels.previousYear}</option></select></label>
         <label>{labels.allAccounts}<select onChange={(event) => setFilters({ ...filters, accountId: event.target.value })} value={filters.accountId}><option value="">{labels.allAccounts}</option>{accounts.map((account) => <option key={account.account_id} value={account.account_id}>{account.name}</option>)}</select></label>
         <label>{labels.allCategories}<select onChange={(event) => setFilters({ ...filters, categoryId: event.target.value })} value={filters.categoryId}><option value="">{labels.allCategories}</option>{categories.filter((category) => category.category_kind === "expense").map((category) => <option key={category.category_id} value={category.category_id}>{category.name}</option>)}</select></label>

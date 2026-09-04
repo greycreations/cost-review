@@ -843,6 +843,37 @@ class TransactionSplit(TimestampMixin, Base):
 
     transaction: Mapped[Transaction] = relationship(back_populates="splits")
     tags: Mapped[list[Tag]] = relationship(secondary="transaction_split_tags")
+    share_allocations: Mapped[list[TransactionSplitShare]] = relationship(
+        back_populates="transaction_split",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class TransactionSplitShare(Base):
+    __tablename__ = "transaction_split_shares"
+    __table_args__ = (
+        CheckConstraint("percentage > 0 AND percentage <= 100", name="percentage_range"),
+        Index("ix_transaction_split_shares_party_id", "sharing_party_id"),
+    )
+
+    transaction_split_id: Mapped[int] = mapped_column(
+        ForeignKey("transaction_splits.transaction_split_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    sharing_party_id: Mapped[int] = mapped_column(
+        ForeignKey("sharing_parties.sharing_party_id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    percentage: Mapped[Decimal] = mapped_column(Numeric(7, 4))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    transaction_split: Mapped[TransactionSplit] = relationship(
+        back_populates="share_allocations"
+    )
+    sharing_party: Mapped[SharingParty] = relationship(lazy="joined")
 
 
 class TransactionSplitTag(Base):

@@ -33,6 +33,7 @@ from app.budget_services import (
     update_budget,
 )
 from app.dependencies import Auth, CsrfAuth, DatabaseSession
+from app.ledger_schemas import AnalysisPerspective
 
 router = APIRouter(tags=["analysis-and-budgets"])
 
@@ -123,6 +124,7 @@ def get_budget_outcome(
     date_to: date,
     auth: Auth,
     db: DatabaseSession,
+    perspective: AnalysisPerspective = AnalysisPerspective.TOTAL,
 ) -> dict[str, object]:
     return budget_outcome(
         db,
@@ -130,6 +132,7 @@ def get_budget_outcome(
         date_from,
         date_to,
         auth.user.settings.base_currency,
+        perspective.value,
     )
 
 
@@ -140,6 +143,7 @@ def get_budget_transactions(
     date_to: date,
     auth: Auth,
     db: DatabaseSession,
+    perspective: AnalysisPerspective = AnalysisPerspective.TOTAL,
 ) -> list[dict[str, object]]:
     return budget_transactions(
         db,
@@ -147,6 +151,7 @@ def get_budget_transactions(
         date_from,
         date_to,
         auth.user.settings.base_currency,
+        perspective.value,
     )
 
 
@@ -157,6 +162,7 @@ def get_budget_trend(
     auth: Auth,
     db: DatabaseSession,
     periods: int = Query(default=6, ge=1, le=24),
+    perspective: AnalysisPerspective = AnalysisPerspective.TOTAL,
 ) -> dict[str, object]:
     return budget_trend(
         db,
@@ -164,4 +170,5 @@ def get_budget_trend(
         through,
         periods,
         auth.user.settings.base_currency,
+        perspective.value,
     )

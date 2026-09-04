@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
@@ -40,6 +40,11 @@ Description = Annotated[
 class ManualTransactionKind(StrEnum):
     EXPENSE = "expense"
     INCOME = "income"
+
+
+class AnalysisPerspective(StrEnum):
+    TOTAL = "total"
+    MY_SHARE = "my_share"
 
 
 class LedgerTransactionKind(StrEnum):
@@ -268,6 +273,11 @@ class TagUpdate(BaseModel):
     color: HexColor | None = None
 
 
+class TagMergeRequest(BaseModel):
+    target_tag_id: int = Field(gt=0)
+    confirmation: Literal["MERGE TAG"]
+
+
 class TagRead(ArchivedApiModel):
     tag_id: int
     name: str
@@ -297,12 +307,24 @@ class SharingPartyRead(ArchivedApiModel):
     updated_at: datetime
 
 
+class ShareAllocationInput(BaseModel):
+    sharing_party_id: int = Field(gt=0)
+    percentage: Decimal = Field(gt=0, le=100, max_digits=7, decimal_places=4)
+
+
+class ShareAllocationRead(BaseModel):
+    sharing_party_id: int
+    percentage: Decimal
+    is_self: bool
+
+
 class TransactionSplitInput(BaseModel):
     original_amount: Decimal = Field(gt=0, max_digits=20, decimal_places=4)
     category_id: int | None = Field(default=None, gt=0)
     tag_ids: list[int] = Field(default_factory=list, max_length=50)
     is_base_cost: bool = False
     memo: str | None = Field(default=None, max_length=240)
+    sharing_allocations: list[ShareAllocationInput] = Field(default_factory=list, max_length=50)
 
     @field_validator("tag_ids")
     @classmethod
@@ -311,6 +333,18 @@ class TransactionSplitInput(BaseModel):
             raise ValueError("tag identifiers must be positive")
         if len(set(value)) != len(value):
             raise ValueError("tag identifiers must be unique")
+        return value
+
+    @field_validator("sharing_allocations")
+    @classmethod
+    def valid_sharing_allocations(
+        cls, value: list[ShareAllocationInput]
+    ) -> list[ShareAllocationInput]:
+        identifiers = [item.sharing_party_id for item in value]
+        if len(set(identifiers)) != len(identifiers):
+            raise ValueError("sharing party identifiers must be unique")
+        if value and sum((item.percentage for item in value), Decimal("0")) != Decimal("100"):
+            raise ValueError("sharing allocation percentages must total 100")
         return value
 
 
@@ -322,6 +356,7 @@ class TransactionSplitRead(ApiModel):
     tag_ids: list[int]
     is_base_cost: bool
     memo: str | None
+    sharing_allocations: list[ShareAllocationRead]
 
 
 class TransactionCreate(BaseModel):
@@ -340,6 +375,7 @@ class TransactionCreate(BaseModel):
     category_id: int | None = Field(default=None, gt=0)
     tag_ids: list[int] = Field(default_factory=list, max_length=50)
     is_base_cost: bool = False
+    sharing_allocations: list[ShareAllocationInput] = Field(default_factory=list, max_length=50)
     splits: list[TransactionSplitInput] | None = Field(
         default=None, min_length=2, max_length=100
     )
@@ -360,11 +396,23 @@ class TransactionCreate(BaseModel):
             raise ValueError("tag identifiers must be unique")
         return value
 
+    @field_validator("sharing_allocations")
+    @classmethod
+    def valid_sharing_allocations(
+        cls, value: list[ShareAllocationInput]
+    ) -> list[ShareAllocationInput]:
+        return _validate_sharing_allocations(value)
+
     @model_validator(mode="after")
     def validate_splits(self) -> TransactionCreate:
         if self.splits is None:
             return self
-        if self.category_id is not None or self.tag_ids or self.is_base_cost:
+        if (
+            self.category_id is not None
+            or self.tag_ids
+            or self.is_base_cost
+            or self.sharing_allocations
+        ):
             raise ValueError("split transactions must keep classification on their splits")
         split_total = sum((split.original_amount for split in self.splits), Decimal("0"))
         if split_total.quantize(Decimal("0.0001")) != self.original_amount.quantize(
@@ -390,6 +438,7 @@ class TransactionUpdate(BaseModel):
     category_id: int | None = Field(default=None, gt=0)
     tag_ids: list[int] | None = Field(default=None, max_length=50)
     is_base_cost: bool | None = None
+    sharing_allocations: list[ShareAllocationInput] | None = Field(default=None, max_length=50)
     splits: list[TransactionSplitInput] | None = Field(
         default=None, min_length=2, max_length=100
     )
@@ -411,6 +460,13 @@ class TransactionUpdate(BaseModel):
         if len(set(value)) != len(value):
             raise ValueError("tag identifiers must be unique")
         return value
+
+    @field_validator("sharing_allocations")
+    @classmethod
+    def valid_sharing_allocations(
+        cls, value: list[ShareAllocationInput] | None
+    ) -> list[ShareAllocationInput] | None:
+        return _validate_sharing_allocations(value) if value is not None else None
 
 
 class TransactionRead(ArchivedApiModel):
@@ -436,6 +492,7 @@ class TransactionRead(ArchivedApiModel):
     is_base_cost: bool
     is_split: bool
     splits: list[TransactionSplitRead]
+    sharing_allocations: list[ShareAllocationRead]
     linked_expense_id: int | None = None
     created_at: datetime
     updated_at: datetime
@@ -581,6 +638,7 @@ class LedgerSummaryRead(BaseModel):
     net_cash_flow: Decimal
     transaction_count: int
     missing_fx_count: int
+    perspective: AnalysisPerspective
 
 
 class LedgerTrendPointRead(BaseModel):
@@ -604,6 +662,7 @@ class LedgerAnalysisRead(BaseModel):
     daily: list[LedgerTrendPointRead]
     expense_categories: list[LedgerCategoryBreakdownRead]
     comparison: LedgerComparisonRead | None = None
+    perspective: AnalysisPerspective
 
 
 class LedgerComparisonRead(BaseModel):
@@ -622,3 +681,14 @@ def _validate_lock_dates(start: date | None, end: date | None) -> None:
         raise ValueError("lock_end_date requires lock_start_date")
     if start is not None and end is not None and end < start:
         raise ValueError("lock_end_date must be on or after lock_start_date")
+
+
+def _validate_sharing_allocations(
+    value: list[ShareAllocationInput],
+) -> list[ShareAllocationInput]:
+    identifiers = [item.sharing_party_id for item in value]
+    if len(set(identifiers)) != len(identifiers):
+        raise ValueError("sharing party identifiers must be unique")
+    if value and sum((item.percentage for item in value), Decimal("0")) != Decimal("100"):
+        raise ValueError("sharing allocation percentages must total 100")
+    return value

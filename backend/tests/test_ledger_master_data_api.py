@@ -222,6 +222,104 @@ def test_tags_parties_and_test_reset_obey_lifecycle_and_environment_contract(
     assert client.get("/api/v1/auth/session").status_code == 200
 
 
+def test_tag_merge_retargets_references_deduplicates_and_preserves_audit(
+    client: TestClient, settings: Settings
+) -> None:
+    headers = authenticate(client, settings)
+    source = client.post("/api/v1/tags", headers=headers, json={"name": "Mat"}).json()
+    target = client.post("/api/v1/tags", headers=headers, json={"name": "Livsmedel"}).json()
+    account = client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={
+            "name": "Vardagskonto",
+            "account_type": "current",
+            "opening_balance": "0",
+            "opening_balance_date": "2026-09-01",
+            "currency": "SEK",
+        },
+    ).json()
+    transaction = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            "account_id": account["account_id"],
+            "transaction_kind": "expense",
+            "transaction_date": "2026-09-02",
+            "posting_date": "2026-09-02",
+            "description": "Matbutik",
+            "original_amount": "100",
+            "original_currency": "SEK",
+            "tag_ids": [source["tag_id"], target["tag_id"]],
+        },
+    ).json()
+    group = client.post(
+        "/api/v1/analysis-groups",
+        headers=headers,
+        json={
+            "name": "Matgrupp",
+            "tags": [
+                {"tag_id": source["tag_id"], "mode": "include"},
+                {"tag_id": target["tag_id"], "mode": "include"},
+            ],
+        },
+    )
+    assert group.status_code == 201, group.text
+
+    merged = client.post(
+        f"/api/v1/tags/{source['tag_id']}/merge",
+        headers=headers,
+        json={"target_tag_id": target["tag_id"], "confirmation": "MERGE TAG"},
+    )
+    assert merged.status_code == 200, merged.text
+    assert merged.json()["tag_id"] == target["tag_id"]
+    assert client.get(f"/api/v1/tags/{source['tag_id']}").json()["status"] == "archived"
+    reloaded = client.get(f"/api/v1/transactions/{transaction['transaction_id']}").json()
+    assert reloaded["tag_ids"] == [target["tag_id"]]
+    groups = client.get("/api/v1/analysis-groups").json()
+    assert groups[0]["tags"] == [{"tag_id": target["tag_id"], "mode": "include"}]
+    audit = client.get(
+        f"/api/v1/audit-events?entity_type=tag&entity_id={source['tag_id']}"
+    ).json()
+    assert any(
+        event["action"] == "updated"
+        and event["changes"].get("target_tag_id") == target["tag_id"]
+        for event in audit["items"]
+    )
+
+
+def test_tag_merge_stops_on_conflicting_analysis_selection(
+    client: TestClient, settings: Settings
+) -> None:
+    headers = authenticate(client, settings)
+    source = client.post("/api/v1/tags", headers=headers, json={"name": "Källa"}).json()
+    target = client.post("/api/v1/tags", headers=headers, json={"name": "Mål"}).json()
+    group = client.post(
+        "/api/v1/analysis-groups",
+        headers=headers,
+        json={
+            "name": "Konflikt",
+            "tags": [
+                {"tag_id": source["tag_id"], "mode": "include"},
+                {"tag_id": target["tag_id"], "mode": "exclude"},
+            ],
+        },
+    )
+    assert group.status_code == 201, group.text
+
+    conflict = client.post(
+        f"/api/v1/tags/{source['tag_id']}/merge",
+        headers=headers,
+        json={"target_tag_id": target["tag_id"], "confirmation": "MERGE TAG"},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "tag_merge_selection_conflict"
+    assert conflict.json()["error"]["details"] == [
+        {"resource": "analysis_group", "id": group.json()["analysis_group_id"]}
+    ]
+    assert client.get(f"/api/v1/tags/{source['tag_id']}").json()["status"] == "active"
+
+
 def _create_category(
     client: TestClient, headers: dict[str, str], name: str, parent_id: int | None = None
 ) -> dict:

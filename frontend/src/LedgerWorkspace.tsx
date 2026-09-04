@@ -14,6 +14,7 @@ import {
   getProviders,
   getSharingParties,
   getTags,
+  mergeTag,
   setAccountArchived,
   setCategoryArchived,
   setProviderArchived,
@@ -87,6 +88,14 @@ const copy = {
     tagName: "Taggnamn",
     color: "Färg",
     addTag: "Lägg till tagg",
+    mergeTags: "Slå ihop taggar",
+    mergeTagsLead:
+      "Alla referenser flyttas till måltaggen och källtaggen arkiveras. Motstridiga budget- eller analysval stoppas.",
+    sourceTag: "Källtagg",
+    targetTag: "Måltagg",
+    chooseTag: "Välj tagg",
+    mergeConfirmation: "Skriv MERGE TAG för att bekräfta",
+    mergeTagAction: "Slå ihop taggar",
     parties: "Delningsparter",
     partyName: "Namn",
     isSelf: "Representerar mig",
@@ -154,6 +163,14 @@ const copy = {
     tagName: "Tag name",
     color: "Color",
     addTag: "Add tag",
+    mergeTags: "Merge tags",
+    mergeTagsLead:
+      "All references move to the target tag and the source is archived. Conflicting budget or analysis selections are stopped.",
+    sourceTag: "Source tag",
+    targetTag: "Target tag",
+    chooseTag: "Choose tag",
+    mergeConfirmation: "Type MERGE TAG to confirm",
+    mergeTagAction: "Merge tags",
     parties: "Sharing parties",
     partyName: "Name",
     isSelf: "Represents me",
@@ -867,6 +884,10 @@ function TagPanel({
 }) {
   const [name, setName] = useState("");
   const [color, setColor] = useState("#4A67D6");
+  const [sourceTagId, setSourceTagId] = useState("");
+  const [targetTagId, setTargetTagId] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const activeTags = tags.filter((tag) => tag.status === "active");
   return (
     <ResourcePanel title={labels.tags} count={tags.length}>
       <form
@@ -905,6 +926,83 @@ function TagPanel({
         }))}
         labels={labels}
       />
+      {activeTags.length >= 2 ? (
+        <form
+          className="tag-merge-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void mutate(() =>
+              mergeTag(
+                environment,
+                Number(sourceTagId),
+                Number(targetTagId),
+                confirmation,
+              ),
+            )
+              .then(() => {
+                setSourceTagId("");
+                setTargetTagId("");
+                setConfirmation("");
+              })
+              .catch(() => undefined);
+          }}
+        >
+          <div>
+            <h4>{labels.mergeTags}</h4>
+            <p>{labels.mergeTagsLead}</p>
+          </div>
+          <div className="split-fields">
+            <label>
+              {labels.sourceTag}
+              <select
+                required
+                value={sourceTagId}
+                onChange={(event) => setSourceTagId(event.target.value)}
+              >
+                <option value="">{labels.chooseTag}</option>
+                {activeTags.map((tag) => (
+                  <option key={tag.tag_id} value={tag.tag_id}>{tag.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {labels.targetTag}
+              <select
+                required
+                value={targetTagId}
+                onChange={(event) => setTargetTagId(event.target.value)}
+              >
+                <option value="">{labels.chooseTag}</option>
+                {activeTags
+                  .filter((tag) => String(tag.tag_id) !== sourceTagId)
+                  .map((tag) => (
+                    <option key={tag.tag_id} value={tag.tag_id}>{tag.name}</option>
+                  ))}
+              </select>
+            </label>
+          </div>
+          <label>
+            {labels.mergeConfirmation}
+            <input
+              autoComplete="off"
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+            />
+          </label>
+          <button
+            className="secondary-button"
+            disabled={
+              !sourceTagId ||
+              !targetTagId ||
+              sourceTagId === targetTagId ||
+              confirmation !== "MERGE TAG"
+            }
+            type="submit"
+          >
+            {labels.mergeTagAction}
+          </button>
+        </form>
+      ) : null}
     </ResourcePanel>
   );
 }
