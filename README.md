@@ -1,4 +1,5 @@
 # Cost Review
+<img width="1218" height="1125" alt="image" src="https://github.com/user-attachments/assets/3295c3cf-31a2-461f-b592-c4aaaebc1eea" />
 
 Cost Review is a private, self-hosted web application for trustworthy personal
 and household economics. Product behavior is defined by
