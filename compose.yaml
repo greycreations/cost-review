@@ -62,7 +62,7 @@ services:
     restart: unless-stopped
 
   api-prod:
-    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.3.2}
+    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.4.0}
     pull_policy: always
     environment:
       <<: *api-environment
@@ -87,7 +87,7 @@ services:
     restart: unless-stopped
 
   api-test:
-    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.3.2}
+    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.4.0}
     pull_policy: always
     environment:
       <<: *api-environment
@@ -112,7 +112,7 @@ services:
     restart: unless-stopped
 
   backup-prod:
-    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.3.2}
+    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.4.0}
     pull_policy: always
     command: ["python", "-m", "app.backup_cli", "schedule"]
     environment:
@@ -134,7 +134,7 @@ services:
     restart: unless-stopped
 
   backup-test:
-    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.3.2}
+    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.4.0}
     pull_policy: always
     command: ["python", "-m", "app.backup_cli", "schedule"]
     environment:
@@ -156,7 +156,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ghcr.io/greycreations/cost-review-frontend:${COST_REVIEW_VERSION:-0.3.2}
+    image: ghcr.io/greycreations/cost-review-frontend:${COST_REVIEW_VERSION:-0.4.0}
     pull_policy: always
     depends_on:
       api-prod:

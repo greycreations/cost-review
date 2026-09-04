@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -77,6 +78,32 @@ def test_backup_api_encrypts_lists_downloads_and_detects_tampering(
         assert downloaded.content.startswith(backup_services.MAGIC)
 
         path = backup_root / item["filename"]
+        path.unlink()
+        imported = client.post(
+            "/api/v1/backups/import",
+            headers=headers,
+            files={
+                "file": (
+                    item["filename"],
+                    downloaded.content,
+                    "application/octet-stream",
+                )
+            },
+        )
+        assert imported.status_code == 201, imported.text
+        assert imported.json()["filename"] == item["filename"]
+        assert imported.json()["environment"] == "test"
+        assert imported.json()["valid"] is True
+        assert path.read_bytes() == downloaded.content
+
+        duplicate = client.post(
+            "/api/v1/backups/import",
+            headers=headers,
+            files={"file": (item["filename"], downloaded.content)},
+        )
+        assert duplicate.status_code == 409
+        assert duplicate.json()["error"]["code"] == "backup_already_exists"
+
         payload = bytearray(path.read_bytes())
         payload[-1] ^= 1
         path.write_bytes(payload)
@@ -85,6 +112,20 @@ def test_backup_api_encrypts_lists_downloads_and_detects_tampering(
         )
         assert invalid.status_code == 422
         assert invalid.json()["error"]["code"] == "backup_decryption_failed"
+
+        path.unlink()
+        wrong_plane_name = item["filename"].replace("-test-", "-production-")
+        try:
+            backup_services.import_backup(
+                settings,
+                wrong_plane_name,
+                io.BytesIO(downloaded.content),
+            )
+        except backup_services.ApiError as error:
+            assert error.code == "backup_environment_mismatch"
+        else:
+            raise AssertionError("a Production backup filename was accepted by Test")
+        assert not list(backup_root.glob("*.upload"))
     finally:
         (
             settings.backup_root,

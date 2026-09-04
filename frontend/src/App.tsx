@@ -9,6 +9,7 @@ import {
   getRecycleBin,
   getSession,
   getSetupStatus,
+  importBackup,
   login,
   logout,
   resetTestEnvironment,
@@ -92,6 +93,12 @@ const copy = {
     backupsLead:
       "Databas och bilagor paketeras tillsammans. Kopian är låst till den här datamiljön och kan hämtas för extern förvaring.",
     createBackup: "Skapa säkerhetskopia",
+    importBackup: "Importera backupfil",
+    importBackupLead:
+      "Välj en krypterad .crbackup-fil från datorn. Filen dekrypteras och integritetskontrolleras innan den sparas i den valda datamiljön.",
+    importBackupKeyHint:
+      "En backup från en tidigare installation kräver samma backupnyckel i .env. Själva återställningen körs offline för att skydda databasen från samtidiga ändringar.",
+    importComplete: "Backupfilen importerades och verifierades",
     validate: "Validera",
     download: "Hämta",
     noBackups: "Inga säkerhetskopior har skapats i denna datamiljö.",
@@ -145,6 +152,12 @@ const copy = {
     backupsLead:
       "The database and attachments are bundled together. Each backup is bound to this data plane and can be downloaded for off-site storage.",
     createBackup: "Create backup",
+    importBackup: "Import backup file",
+    importBackupLead:
+      "Choose an encrypted .crbackup file from this computer. It is decrypted and integrity-checked before being stored in the selected data environment.",
+    importBackupKeyHint:
+      "A backup from an earlier installation requires the same backup key in .env. Restoration itself runs offline to protect the database from concurrent changes.",
+    importComplete: "The backup was imported and verified",
     validate: "Validate",
     download: "Download",
     noBackups: "No backups have been created in this data plane.",
@@ -731,6 +744,7 @@ function OperationalSafetyPanel({
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+  const importInputId = `backup-import-${environment}`;
 
   const refresh = () =>
     Promise.all([getBackups(environment), getRecycleBin(environment), getAuditEvents(environment)])
@@ -766,22 +780,53 @@ function OperationalSafetyPanel({
             <h2>{labels.backups}</h2>
             <p className="quiet-copy">{labels.backupsLead}</p>
           </div>
-          <button
-            className="primary-button"
-            disabled={working}
-            onClick={() => {
-              setWorking(true);
-              setMessage(null);
-              void createBackup(environment)
-                .then((created) => refresh().then(() => setMessage(created.filename)))
-                .catch((error) => setMessage(error instanceof Error ? error.message : "Backup failed."))
-                .finally(() => setWorking(false));
-            }}
-            type="button"
-          >
-            {labels.createBackup}
-          </button>
+          <div className="backup-actions">
+            <label className={`ghost-button button-link${working ? " disabled" : ""}`} htmlFor={importInputId}>
+              {labels.importBackup}
+            </label>
+            <input
+              accept=".crbackup,application/octet-stream"
+              className="sr-only"
+              disabled={working}
+              id={importInputId}
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (!file) return;
+                setWorking(true);
+                setMessage(null);
+                void importBackup(environment, file)
+                  .then((validation) =>
+                    refresh().then(() =>
+                      setMessage(`${labels.importComplete}: ${validation.filename}`),
+                    ),
+                  )
+                  .catch((error) =>
+                    setMessage(error instanceof Error ? error.message : "Backup import failed."),
+                  )
+                  .finally(() => setWorking(false));
+              }}
+              type="file"
+            />
+            <button
+              className="primary-button"
+              disabled={working}
+              onClick={() => {
+                setWorking(true);
+                setMessage(null);
+                void createBackup(environment)
+                  .then((created) => refresh().then(() => setMessage(created.filename)))
+                  .catch((error) => setMessage(error instanceof Error ? error.message : "Backup failed."))
+                  .finally(() => setWorking(false));
+              }}
+              type="button"
+            >
+              {labels.createBackup}
+            </button>
+          </div>
         </div>
+        <p className="quiet-copy">{labels.importBackupLead}</p>
+        <p className="backup-key-hint">{labels.importBackupKeyHint}</p>
         {backups.length === 0 ? <p className="resource-empty">{labels.noBackups}</p> : null}
         <div className="operations-list">
           {backups.map((backup) => (

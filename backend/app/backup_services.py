@@ -11,7 +11,7 @@ import tarfile
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, BinaryIO, Literal
 from uuid import UUID, uuid4
 
 from cryptography.exceptions import InvalidTag
@@ -28,6 +28,7 @@ MAGIC = b"COSTREVIEW-BACKUP-1\n"
 SALT_SIZE = 16
 NONCE_SIZE = 12
 BACKUP_SUFFIX = ".crbackup"
+MAX_BACKUP_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024
 FILENAME_PATTERN = re.compile(
     r"^(?P<kind>manual|automatic|pre-restore)-"
     r"(?P<environment>production|test)-"
@@ -122,11 +123,73 @@ def list_backups(settings: Settings) -> list[dict[str, Any]]:
 
 def validate_backup(settings: Settings, filename: str) -> dict[str, Any]:
     path = resolve_backup_path(settings, filename)
+    return _validate_backup_path(settings, path)
+
+
+def import_backup(
+    settings: Settings,
+    filename: str,
+    source: BinaryIO,
+) -> dict[str, Any]:
+    match = FILENAME_PATTERN.fullmatch(filename)
+    if match is None:
+        raise ApiError(
+            422,
+            "backup_filename_invalid",
+            "Select an original Cost Review .crbackup file.",
+        )
+    if match.group("environment") != settings.app_environment:
+        raise ApiError(
+            409,
+            "backup_environment_mismatch",
+            "The backup filename belongs to a different data plane.",
+        )
+
+    settings.backup_root.mkdir(parents=True, exist_ok=True)
+    destination = settings.backup_root / filename
+    if destination.exists():
+        raise ApiError(409, "backup_already_exists", "This backup has already been imported.")
+
+    temporary = settings.backup_root / f".{uuid4().hex}.upload"
+    uploaded = 0
+    try:
+        with temporary.open("xb") as output:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                uploaded += len(chunk)
+                if uploaded > MAX_BACKUP_UPLOAD_BYTES:
+                    raise ApiError(
+                        413,
+                        "backup_upload_too_large",
+                        "The backup exceeds the 5 GiB upload limit.",
+                    )
+                output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+
+        validation = _validate_backup_path(settings, temporary, filename=filename)
+        if validation["environment"] != settings.app_environment:
+            raise ApiError(
+                409,
+                "backup_environment_mismatch",
+                "The backup belongs to a different data plane and cannot be imported here.",
+            )
+        temporary.replace(destination)
+        return validation
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _validate_backup_path(
+    settings: Settings,
+    path: Path,
+    *,
+    filename: str | None = None,
+) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="cost-review-validate-") as temporary:
         extracted = Path(temporary)
         manifest = _decrypt_extract_validate(settings, path, extracted)
     return {
-        "filename": path.name,
+        "filename": filename or path.name,
         "environment": manifest["environment"],
         "data_plane_id": UUID(manifest["data_plane_id"]),
         "created_at": datetime.fromisoformat(manifest["created_at"]),

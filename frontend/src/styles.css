@@ -1856,6 +1856,28 @@ input[type="color"] {
   gap: 8px;
 }
 
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.backup-actions .disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.backup-key-hint {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  background: var(--accent-soft);
+  font-size: 11px;
+}
+
 .operation-row {
   display: flex;
   align-items: center;
