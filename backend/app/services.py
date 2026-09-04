@@ -109,7 +109,7 @@ def reset_test_environment(
             "analysis_group_accounts, analysis_group_tags, analysis_group_categories, "
             "analysis_groups, "
             "account_snapshots, refund_links, reimbursement_links, "
-            "transfer_links, transaction_split_tags, "
+            "transfer_links, transaction_split_tags, transaction_split_shares, "
             "transaction_splits, "
             "transactions, "
             "category_links, provider_links, provider_aliases, "

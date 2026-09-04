@@ -10,6 +10,7 @@ import {
   getCategories,
   getLedgerSummary,
   getProviders,
+  getSharingParties,
   getTags,
   getTransfers,
   getTransactions,
@@ -26,6 +27,7 @@ import {
   type ManualTransactionKind,
   type Provider,
   type RecoveryKind,
+  type SharingParty,
   type Tag,
   type Transfer,
   type TransferInput,
@@ -125,6 +127,11 @@ const copy = {
     periodIncome: "Inkomster",
     periodExpenses: "Utgifter",
     periodNet: "Netto",
+    sharing: "Delad ekonomi",
+    sharingLead: "Fördela posten i procent. Totalt måste alltid bli 100 %.",
+    notShared: "Inte delad – 100 % räknas som min",
+    allocationTotal: "Fördelat",
+    self: "jag",
   },
   en: {
     eyebrow: "Daily work",
@@ -215,6 +222,11 @@ const copy = {
     periodIncome: "Income",
     periodExpenses: "Expenses",
     periodNet: "Net",
+    sharing: "Shared finances",
+    sharingLead: "Allocate the entry by percentage. The total must always be 100%.",
+    notShared: "Not shared – 100% counts as mine",
+    allocationTotal: "Allocated",
+    self: "me",
   },
 } as const;
 
@@ -235,7 +247,10 @@ type Draft = {
   notes: string;
   splitMode: boolean;
   splits: SplitDraft[];
+  sharingAllocations: ShareDraft[];
 };
+
+type ShareDraft = { partyId: string; percentage: string };
 
 type SplitDraft = {
   key: string;
@@ -244,6 +259,7 @@ type SplitDraft = {
   tagIds: number[];
   isBaseCost: boolean;
   memo: string;
+  sharingAllocations: ShareDraft[];
 };
 
 type TransferDraft = {
@@ -321,6 +337,7 @@ export function TransactionWorkspace({
   const [categories, setCategories] = useState<Category[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
+  const [sharingParties, setSharingParties] = useState<SharingParty[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [summary, setSummary] = useState<LedgerSummary | null>(null);
@@ -360,6 +377,7 @@ export function TransactionWorkspace({
       getCategories(environment),
       getProviders(environment),
       getTags(environment),
+      getSharingParties(environment),
       getTransactions(environment, {
         dateFrom: appliedFilters.dateFrom,
         dateTo: appliedFilters.dateTo,
@@ -387,12 +405,13 @@ export function TransactionWorkspace({
         isBaseCost: appliedFilters.baseCostOnly ? true : null,
       }),
     ])
-      .then(([accountPage, categoryPage, providerPage, tagPage, transactionPage, transferPage, totals]) => {
+      .then(([accountPage, categoryPage, providerPage, tagPage, partyPage, transactionPage, transferPage, totals]) => {
         if (!active) return;
         setAccounts(accountPage.items);
         setCategories(categoryPage.items);
         setProviders(providerPage.items);
         setTags(tagPage.items);
+        setSharingParties(partyPage.items);
         setTransactions(appliedFilters.kind === "transfer" ? [] : transactionPage.items);
         setTransfers(
           (appliedFilters.kind !== "" && appliedFilters.kind !== "transfer")
@@ -467,6 +486,10 @@ export function TransactionWorkspace({
       isBaseCost: transaction.is_base_cost,
       sourceReference: transaction.source_reference ?? "",
       notes: transaction.notes ?? "",
+      sharingAllocations: transaction.sharing_allocations.map((allocation) => ({
+        partyId: String(allocation.sharing_party_id),
+        percentage: allocation.percentage,
+      })),
       splitMode: transaction.is_split,
       splits: transaction.is_split
         ? transaction.splits.map((split) => ({
@@ -476,6 +499,10 @@ export function TransactionWorkspace({
             tagIds: split.tag_ids,
             isBaseCost: split.is_base_cost,
             memo: split.memo ?? "",
+            sharingAllocations: split.sharing_allocations.map((allocation) => ({
+              partyId: String(allocation.sharing_party_id),
+              percentage: allocation.percentage,
+            })),
           }))
         : initialSplits(),
     });
@@ -604,6 +631,7 @@ export function TransactionWorkspace({
       category_id: numberOrNull(draft.categoryId),
       tag_ids: draft.tagIds,
       is_base_cost: draft.isBaseCost,
+      sharing_allocations: shareAllocationPayload(draft.sharingAllocations),
       source_reference: draft.sourceReference.trim() || null,
       notes: draft.notes.trim() || null,
     };
@@ -614,10 +642,12 @@ export function TransactionWorkspace({
         tag_ids: split.tagIds,
         is_base_cost: split.isBaseCost,
         memo: split.memo.trim() || null,
+        sharing_allocations: shareAllocationPayload(split.sharingAllocations),
       }));
       payload.category_id = null;
       payload.tag_ids = [];
       payload.is_base_cost = false;
+      payload.sharing_allocations = [];
     }
     if (draft.currency.toUpperCase() !== baseCurrency) {
       payload.converted_amount = draft.convertedAmount
@@ -747,6 +777,7 @@ export function TransactionWorkspace({
           newCategory={newCategory}
           newProvider={newProvider}
           providers={providers}
+          sharingParties={sharingParties}
           setDraft={setDraft}
           setNewCategory={setNewCategory}
           setNewProvider={setNewProvider}
@@ -971,7 +1002,7 @@ function SummaryStrip({ labels, language, summary }: { labels: Labels; language:
 function TransactionForm({
   accounts, availableCategories, baseCurrency, categories, draft, editing, labels,
   language,
-  newCategory, newProvider, providers, setDraft, setNewCategory, setNewProvider,
+  newCategory, newProvider, providers, sharingParties, setDraft, setNewCategory, setNewProvider,
   setShowNewCategory, setShowNewProvider, showNewCategory, showNewProvider, tags,
   working, onCancel, onCreateCategory, onCreateProvider, onSubmit,
 }: {
@@ -979,6 +1010,7 @@ function TransactionForm({
   draft: Draft; editing: boolean; environment: Environment; labels: Labels; newCategory: string;
   language: Language;
   newProvider: string; providers: Provider[]; setDraft: React.Dispatch<React.SetStateAction<Draft>>;
+  sharingParties: SharingParty[];
   setNewCategory: (value: string) => void; setNewProvider: (value: string) => void;
   setShowNewCategory: (value: boolean) => void; setShowNewProvider: (value: boolean) => void;
   showNewCategory: boolean; showNewProvider: boolean; tags: Tag[]; working: boolean;
@@ -993,6 +1025,9 @@ function TransactionForm({
       )
     : 0;
   const splitBalanced = !draft.splitMode || Math.abs(splitRemaining) < 0.00005;
+  const sharingBalanced = draft.splitMode
+    ? draft.splits.every((split) => allocationsBalanced(split.sharingAllocations))
+    : allocationsBalanced(draft.sharingAllocations);
   return (
     <form className="transaction-editor" onSubmit={onSubmit}>
       <div className="editor-title"><h2>{editing ? labels.editTransaction : labels.newTransaction}</h2><button className="ghost-button" onClick={onCancel} type="button">{labels.cancel}</button></div>
@@ -1010,12 +1045,12 @@ function TransactionForm({
         {!draft.splitMode ? <label>{labels.category}<select onChange={(event) => setDraft({ ...draft, categoryId: event.target.value })} value={draft.categoryId}><option value="">{labels.noCategory}</option>{availableCategories.map((category) => <option key={category.category_id} value={category.category_id}>{category.name}</option>)}</select><button className="inline-add" onClick={() => setShowNewCategory(!showNewCategory)} type="button">+ {labels.addCategory}</button></label> : null}
         <label>{labels.provider}<select onChange={(event) => setDraft({ ...draft, providerId: event.target.value })} value={draft.providerId}><option value="">{labels.noProvider}</option>{providers.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.name}</option>)}</select><button className="inline-add" onClick={() => setShowNewProvider(!showNewProvider)} type="button">+ {labels.addProvider}</button></label>
       </div>
-      {draft.splitMode ? <SplitEditor availableCategories={availableCategories} currency={draft.currency} draft={draft} labels={labels} language={language} setDraft={setDraft} tags={tags} /> : null}
+      {draft.splitMode ? <SplitEditor availableCategories={availableCategories} currency={draft.currency} draft={draft} labels={labels} language={language} setDraft={setDraft} sharingParties={sharingParties} tags={tags} /> : <SharingEditor allocations={draft.sharingAllocations} labels={labels} onChange={(sharingAllocations) => setDraft({ ...draft, sharingAllocations })} parties={sharingParties} />}
       {showNewCategory ? <InlineCreate label={labels.addCategory} name={newCategory} labels={labels} onChange={setNewCategory} onCreate={onCreateCategory} /> : null}
       {showNewProvider ? <InlineCreate label={labels.addProvider} name={newProvider} labels={labels} onChange={setNewProvider} onCreate={onCreateProvider} /> : null}
       {draft.currency !== baseCurrency ? <label className="conversion-field">{labels.convertedAmount} ({baseCurrency})<input inputMode="decimal" onChange={(event) => setDraft({ ...draft, convertedAmount: event.target.value })} pattern="[0-9]+([.,][0-9]{1,4})?" value={draft.convertedAmount} /><small>{labels.convertedHelp}</small></label> : null}
       <details className="optional-fields"><summary>{labels.optional}</summary><div className="optional-grid"><label>{labels.reference}<input onChange={(event) => setDraft({ ...draft, sourceReference: event.target.value })} value={draft.sourceReference} /></label><label>{labels.notes}<input onChange={(event) => setDraft({ ...draft, notes: event.target.value })} value={draft.notes} /></label>{!draft.splitMode ? <><fieldset><legend>{labels.tags}</legend>{tags.map((tag) => <label className="checkbox-field" key={tag.tag_id}><input checked={draft.tagIds.includes(tag.tag_id)} onChange={(event) => setDraft({ ...draft, tagIds: event.target.checked ? [...draft.tagIds, tag.tag_id] : draft.tagIds.filter((id) => id !== tag.tag_id) })} type="checkbox" />{tag.name}</label>)}</fieldset><label className="checkbox-field"><input checked={draft.isBaseCost} onChange={(event) => setDraft({ ...draft, isBaseCost: event.target.checked })} type="checkbox" />{labels.baseCost}</label></> : null}</div></details>
-      <div className="editor-actions"><button className="secondary-button" onClick={onCancel} type="button">{labels.cancel}</button><button className="primary-button" disabled={working || !splitBalanced} type="submit">{editing ? labels.update : labels.save}</button></div>
+      <div className="editor-actions"><button className="secondary-button" onClick={onCancel} type="button">{labels.cancel}</button><button className="primary-button" disabled={working || !splitBalanced || !sharingBalanced} type="submit">{editing ? labels.update : labels.save}</button></div>
     </form>
   );
 }
@@ -1027,6 +1062,7 @@ function SplitEditor({
   labels,
   language,
   setDraft,
+  sharingParties,
   tags,
 }: {
   availableCategories: Category[];
@@ -1035,6 +1071,7 @@ function SplitEditor({
   labels: Labels;
   language: Language;
   setDraft: React.Dispatch<React.SetStateAction<Draft>>;
+  sharingParties: SharingParty[];
   tags: Tag[];
 }) {
   const allocated = draft.splits.reduce(
@@ -1070,6 +1107,7 @@ function SplitEditor({
             <label>{labels.splitMemo}<input onChange={(event) => updateSplit(split.key, { memo: event.target.value })} value={split.memo} /></label>
             <label className="checkbox-field"><input checked={split.isBaseCost} onChange={(event) => updateSplit(split.key, { isBaseCost: event.target.checked })} type="checkbox" />{labels.baseCost}</label>
             {tags.length ? <details className="split-tags"><summary>{labels.tags}</summary>{tags.map((tag) => <label className="checkbox-field" key={tag.tag_id}><input checked={split.tagIds.includes(tag.tag_id)} onChange={(event) => updateSplit(split.key, { tagIds: event.target.checked ? [...split.tagIds, tag.tag_id] : split.tagIds.filter((id) => id !== tag.tag_id) })} type="checkbox" />{tag.name}</label>)}</details> : null}
+            <SharingEditor allocations={split.sharingAllocations} labels={labels} onChange={(sharingAllocations) => updateSplit(split.key, { sharingAllocations })} parties={sharingParties} />
             <button className="ghost-button" disabled={draft.splits.length <= 2} onClick={() => setDraft((current) => ({ ...current, splits: current.splits.filter((item) => item.key !== split.key) }))} type="button">{labels.removeSplit}</button>
           </fieldset>
         ))}
@@ -1077,6 +1115,107 @@ function SplitEditor({
       <button className="secondary-button" disabled={draft.splits.length >= 100} onClick={() => setDraft((current) => ({ ...current, splits: [...current.splits, newSplitDraft()] }))} type="button">+ {labels.addSplit}</button>
     </section>
   );
+}
+
+function SharingEditor({
+  allocations,
+  labels,
+  onChange,
+  parties,
+}: {
+  allocations: ShareDraft[];
+  labels: Labels;
+  onChange: (allocations: ShareDraft[]) => void;
+  parties: SharingParty[];
+}) {
+  const [enabled, setEnabled] = useState(allocations.length > 0);
+  if (!parties.length) return null;
+  const total = allocationTotal(allocations);
+  const setPercentage = (partyId: number, percentage: string) => {
+    const withoutParty = allocations.filter(
+      (allocation) => allocation.partyId !== String(partyId),
+    );
+    onChange([...withoutParty, { partyId: String(partyId), percentage }]);
+  };
+  return (
+    <fieldset className="sharing-editor">
+      <legend>{labels.sharing}</legend>
+      <label className="checkbox-field">
+        <input
+          checked={enabled}
+          onChange={(event) => {
+            if (!event.target.checked) {
+              setEnabled(false);
+              onChange([]);
+              return;
+            }
+            setEnabled(true);
+            const initialParty = parties.find((party) => party.is_self) ?? parties[0];
+            onChange([
+              { partyId: String(initialParty.sharing_party_id), percentage: "100" },
+            ]);
+          }}
+          type="checkbox"
+        />
+        {enabled ? labels.sharingLead : labels.notShared}
+      </label>
+      {enabled ? (
+        <div className="sharing-grid">
+          {parties.map((party) => (
+            <label key={party.sharing_party_id}>
+              {party.name}{party.is_self ? ` · ${labels.self}` : ""}
+              <span className="percentage-input">
+                <input
+                  inputMode="decimal"
+                  min="0"
+                  max="100"
+                  onChange={(event) =>
+                    setPercentage(party.sharing_party_id, event.target.value)
+                  }
+                  step="0.0001"
+                  type="number"
+                  value={
+                    allocations.find(
+                      (allocation) =>
+                        allocation.partyId === String(party.sharing_party_id),
+                    )?.percentage ?? ""
+                  }
+                />
+                <span>%</span>
+              </span>
+            </label>
+          ))}
+          <strong className={Math.abs(total - 100) < 0.00005 ? "balanced" : "unbalanced"}>
+            {labels.allocationTotal}: {total.toLocaleString(undefined, { maximumFractionDigits: 4 })}%
+          </strong>
+        </div>
+      ) : null}
+    </fieldset>
+  );
+}
+
+function allocationTotal(allocations: ShareDraft[]): number {
+  return allocations.reduce(
+    (total, allocation) =>
+      total + Number(normalizeDecimalInput(allocation.percentage) || 0),
+    0,
+  );
+}
+
+function shareAllocationPayload(allocations: ShareDraft[]) {
+  return allocations
+    .filter(
+      (allocation) =>
+        Number(normalizeDecimalInput(allocation.percentage) || 0) > 0,
+    )
+    .map((allocation) => ({
+      sharing_party_id: Number(allocation.partyId),
+      percentage: normalizeDecimalInput(allocation.percentage),
+    }));
+}
+
+function allocationsBalanced(allocations: ShareDraft[]): boolean {
+  return allocations.length === 0 || Math.abs(allocationTotal(allocations) - 100) < 0.00005;
 }
 
 function RecoveryForm({
@@ -1456,7 +1595,7 @@ function EntryList({ accounts, categories, environment, labels, language, provid
 
 function emptyDraft(baseCurrency: string): Draft {
   const today = localDate(new Date());
-  return { accountId: "", providerId: "", kind: "expense", transactionDate: today, postingDate: today, description: "", amount: "", currency: baseCurrency, convertedAmount: "", categoryId: "", tagIds: [], isBaseCost: false, sourceReference: "", notes: "", splitMode: false, splits: initialSplits() };
+  return { accountId: "", providerId: "", kind: "expense", transactionDate: today, postingDate: today, description: "", amount: "", currency: baseCurrency, convertedAmount: "", categoryId: "", tagIds: [], isBaseCost: false, sourceReference: "", notes: "", splitMode: false, splits: initialSplits(), sharingAllocations: [] };
 }
 
 function initialSplits(): SplitDraft[] {
@@ -1471,6 +1610,7 @@ function newSplitDraft(): SplitDraft {
     tagIds: [],
     isBaseCost: false,
     memo: "",
+    sharingAllocations: [],
   };
 }
 

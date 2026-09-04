@@ -37,6 +37,7 @@ def clean_database(database) -> None:
                 "analysis_groups, "
                 "account_snapshots, refund_links, reimbursement_links, "
                 "transfer_links, transaction_split_tags, "
+                "transaction_split_shares, "
                 "transaction_splits, "
                 "transactions, category_links, provider_links, provider_aliases, accounts, "
                 "categories, providers, tags, sharing_parties, sessions, app_settings, users "

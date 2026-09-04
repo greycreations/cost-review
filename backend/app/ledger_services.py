@@ -4,11 +4,11 @@ import unicodedata
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
-from app.audit_services import record_pending_audits
+from app.audit_services import record_audit, record_pending_audits
 from app.errors import ApiError
 from app.ledger_schemas import (
     AccountCreate,
@@ -24,6 +24,7 @@ from app.ledger_schemas import (
     SharingPartyCreate,
     SharingPartyUpdate,
     TagCreate,
+    TagMergeRequest,
     TagUpdate,
     _validate_lock_dates,
 )
@@ -316,6 +317,95 @@ def update_tag(db: DbSession, model: Tag, payload: TagUpdate) -> Tag:
     _commit(db, "tag_name_exists")
     db.refresh(model)
     return model
+
+
+def merge_tag(
+    db: DbSession, source: Tag, payload: TagMergeRequest
+) -> Tag:
+    if source.tag_id == payload.target_tag_id:
+        raise ApiError(422, "tag_merge_self_reference", "A tag cannot be merged into itself.")
+    _require_active(source, "Source tag")
+    target = get_model(db, Tag, payload.target_tag_id, "Target tag")
+    _require_active(target, "Target tag")
+
+    conflicts: list[dict[str, Any]] = []
+    for table_name, owner_column, resource in (
+        ("budget_tags", "budget_id", "budget"),
+        ("analysis_group_tags", "analysis_group_id", "analysis_group"),
+    ):
+        owner_ids = db.scalars(
+            text(
+                f"SELECT DISTINCT source.{owner_column} "
+                f"FROM {table_name} AS source "
+                f"JOIN {table_name} AS target "
+                f"ON target.{owner_column} = source.{owner_column} "
+                "WHERE source.tag_id = :source_id AND target.tag_id = :target_id "
+                "AND source.selection_mode <> target.selection_mode"
+            ),
+            {"source_id": source.tag_id, "target_id": target.tag_id},
+        ).all()
+        conflicts.extend(
+            {"resource": resource, "id": int(owner_id)} for owner_id in owner_ids
+        )
+    if conflicts:
+        raise ApiError(
+            409,
+            "tag_merge_selection_conflict",
+            "The tags have conflicting include/exclude selections.",
+            conflicts,
+        )
+
+    _replace_tag_references(db, source.tag_id, target.tag_id)
+    source.status = "archived"
+    source.archived_at = datetime.now(UTC)
+    record_audit(
+        db,
+        entity_type="tag",
+        entity_id=source.tag_id,
+        action="updated",
+        changes={"target_tag_id": target.tag_id},
+    )
+    _commit(db, "tag_merge_conflict")
+    db.refresh(target)
+    return target
+
+
+def _replace_tag_references(db: DbSession, source_id: int, target_id: int) -> None:
+    statements = (
+        """
+        INSERT INTO transaction_split_tags (transaction_split_id, tag_id)
+        SELECT transaction_split_id, :target_id
+          FROM transaction_split_tags
+         WHERE tag_id = :source_id
+        ON CONFLICT DO NOTHING
+        """,
+        """
+        INSERT INTO budget_tags (budget_id, tag_id, selection_mode)
+        SELECT budget_id, :target_id, selection_mode
+          FROM budget_tags
+         WHERE tag_id = :source_id
+        ON CONFLICT DO NOTHING
+        """,
+        """
+        INSERT INTO analysis_group_tags (analysis_group_id, tag_id, selection_mode)
+        SELECT analysis_group_id, :target_id, selection_mode
+          FROM analysis_group_tags
+         WHERE tag_id = :source_id
+        ON CONFLICT DO NOTHING
+        """,
+    )
+    parameters = {"source_id": source_id, "target_id": target_id}
+    for statement in statements:
+        db.execute(text(statement), parameters)
+    for table_name in (
+        "transaction_split_tags",
+        "budget_tags",
+        "analysis_group_tags",
+    ):
+        db.execute(
+            text(f"DELETE FROM {table_name} WHERE tag_id = :source_id"),
+            parameters,
+        )
 
 
 def create_sharing_party(db: DbSession, payload: SharingPartyCreate) -> SharingParty:

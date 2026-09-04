@@ -26,6 +26,8 @@ let accountItems: object[] = [];
 let transactionItems: object[] = [];
 let budgetItems: Record<string, unknown>[] = [];
 let providerItems: object[] = [];
+let sharingPartyItems: object[] = [];
+let tagItems: object[] = [];
 let analysisData: object;
 
 const account = (
@@ -58,10 +60,13 @@ describe("App", () => {
     transactionItems = [];
     budgetItems = [];
     providerItems = [];
+    sharingPartyItems = [];
+    tagItems = [];
     analysisData = {
       date_from: "2026-08-01",
       date_to: "2026-08-31",
       base_currency: "SEK",
+      perspective: "total",
       daily: [],
       expense_categories: [],
     };
@@ -134,6 +139,7 @@ describe("App", () => {
             date_from: "2026-08-01",
             date_to: "2026-08-31",
             base_currency: "SEK",
+            perspective: path.includes("perspective=my_share") ? "my_share" : "total",
             target_amount: "3500.0000",
             actual_amount: "2800.0000",
             remaining_amount: "700.0000",
@@ -148,6 +154,7 @@ describe("App", () => {
           body = {
             budget_id: 1,
             base_currency: "SEK",
+            perspective: path.includes("perspective=my_share") ? "my_share" : "total",
             points: [
               { period_start: "2026-07-01", period_end: "2026-07-31", target_amount: "3500.0000", actual_amount: "3200.0000", remaining_amount: "300.0000", consumed_percent: "91.43", missing_fx_count: 0 },
               { period_start: "2026-08-01", period_end: "2026-08-31", target_amount: "3500.0000", actual_amount: "2800.0000", remaining_amount: "700.0000", consumed_percent: "80.00", missing_fx_count: 0 },
@@ -159,11 +166,16 @@ describe("App", () => {
           body = [];
         } else if (path.includes("/providers?")) {
           body = { items: providerItems, total: providerItems.length, limit: 50, offset: 0 };
-        } else if (
-          path.includes("/categories?") ||
-          path.includes("/tags?") ||
-          path.includes("/sharing-parties?")
-        ) {
+        } else if (path.includes("/sharing-parties?")) {
+          body = {
+            items: sharingPartyItems,
+            total: sharingPartyItems.length,
+            limit: 50,
+            offset: 0,
+          };
+        } else if (path.includes("/tags?")) {
+          body = { items: tagItems, total: tagItems.length, limit: 50, offset: 0 };
+        } else if (path.includes("/categories?")) {
           body = { items: [], total: 0, limit: 50, offset: 0 };
         } else if (path.includes("/transactions/analysis?")) {
           body = analysisData;
@@ -177,6 +189,7 @@ describe("App", () => {
             net_cash_flow: "0.0000",
             transaction_count: 0,
             missing_fx_count: 0,
+            perspective: path.includes("perspective=my_share") ? "my_share" : "total",
           };
         } else if (path.includes("/transactions?")) {
           body = {
@@ -230,6 +243,52 @@ describe("App", () => {
     expect(screen.getByText("No backups have been created in this data plane.")).toBeInTheDocument();
   });
 
+  it("merges tags only after an explicit confirmation", async () => {
+    tagItems = [
+      {
+        tag_id: 3,
+        name: "Food",
+        color: "#4A67D6",
+        status: "active",
+        archived_at: null,
+        created_at: "2026-08-01T00:00:00Z",
+        updated_at: "2026-08-01T00:00:00Z",
+      },
+      {
+        tag_id: 4,
+        name: "Groceries",
+        color: "#39755B",
+        status: "active",
+        archived_at: null,
+        created_at: "2026-08-01T00:00:00Z",
+        updated_at: "2026-08-01T00:00:00Z",
+      },
+    ];
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Merge tags" })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Source tag"), "3");
+    await user.selectOptions(screen.getByLabelText("Target tag"), "4");
+    const mergeButton = screen.getByRole("button", { name: "Merge tags" });
+    expect(mergeButton).toBeDisabled();
+    await user.type(screen.getByLabelText("Type MERGE TAG to confirm"), "MERGE TAG");
+    await user.click(mergeButton);
+
+    await waitFor(() => {
+      const mergeCall = vi.mocked(fetch).mock.calls.find(
+        ([input, init]) => input.toString().endsWith("/tags/3/merge") && init?.method === "POST",
+      );
+      expect(mergeCall).toBeDefined();
+      expect(JSON.parse(String(mergeCall?.[1]?.body))).toEqual({
+        target_tag_id: 4,
+        confirmation: "MERGE TAG",
+      });
+    });
+  });
+
   it("defaults the overview to the current month and can move to a previous month", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -255,11 +314,38 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "This month" })).toBeInTheDocument();
   });
 
+  it("can analyse the selected month from the user's share perspective", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.selectOptions(screen.getByLabelText("Perspective"), "my_share");
+
+    await waitFor(() => {
+      const requestedPaths = vi.mocked(fetch).mock.calls.map(([input]) => input.toString());
+      expect(
+        requestedPaths.some(
+          (path) =>
+            path.includes("/transactions/summary?") &&
+            path.includes("perspective=my_share"),
+        ),
+      ).toBe(true);
+      expect(
+        requestedPaths.some(
+          (path) =>
+            path.includes("/transactions/analysis?") &&
+            path.includes("perspective=my_share"),
+        ),
+      ).toBe(true);
+    });
+  });
+
   it("renders truthful daily and category analysis with accessible data tables", async () => {
     analysisData = {
       date_from: "2026-08-01",
       date_to: "2026-08-31",
       base_currency: "SEK",
+      perspective: "total",
       daily: [{ date: "2026-08-12", income: "30000.0000", expenses: "650.0000", net_cash_flow: "29350.0000" }],
       expense_categories: [
         { category_id: 1, category_name: "Groceries", amount: "650.0000", transaction_count: 2 },
@@ -389,6 +475,23 @@ describe("App", () => {
     expect(within(trendTable).getAllByRole("cell", { name: /3.*500,00/ })).toHaveLength(2);
     expect(within(trendTable).getByRole("cell", { name: /3.*200,00/ })).toBeInTheDocument();
     expect(within(trendTable).getByRole("cell", { name: /2.*800,00/ })).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Perspective"), "my_share");
+    await waitFor(() => {
+      const paths = vi.mocked(fetch).mock.calls.map(([input]) => input.toString());
+      expect(
+        paths.some(
+          (path) =>
+            path.includes("/budgets/1/outcome?") && path.includes("perspective=my_share"),
+        ),
+      ).toBe(true);
+      expect(
+        paths.some(
+          (path) =>
+            path.includes("/budgets/1/trend?") && path.includes("perspective=my_share"),
+        ),
+      ).toBe(true);
+    });
   });
 
   it("opens a focused transaction form when an account exists", async () => {
@@ -487,6 +590,59 @@ describe("App", () => {
         splits: [
           { original_amount: "600" },
           { original_amount: "400" },
+        ],
+      });
+    });
+  });
+
+  it("saves an explicit household allocation on a transaction", async () => {
+    accountItems = [account(1, "Daily account")];
+    sharingPartyItems = [
+      {
+        sharing_party_id: 11,
+        name: "Alex",
+        is_self: true,
+        notes: null,
+        status: "active",
+        archived_at: null,
+        created_at: "2026-08-01T00:00:00Z",
+        updated_at: "2026-08-01T00:00:00Z",
+      },
+      {
+        sharing_party_id: 12,
+        name: "Sam",
+        is_self: false,
+        notes: null,
+        status: "active",
+        archived_at: null,
+        created_at: "2026-08-01T00:00:00Z",
+        updated_at: "2026-08-01T00:00:00Z",
+      },
+    ];
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/Your finances ·/);
+
+    await user.click(screen.getByRole("link", { name: "Transactions" }));
+    await user.click(await screen.findByRole("button", { name: "+ New transaction" }));
+    await user.type(screen.getByLabelText("Description"), "Shared groceries");
+    await user.type(screen.getByLabelText("Amount"), "1000");
+    await user.click(screen.getByLabelText("Not shared – 100% counts as mine"));
+    const myPercentage = screen.getByRole("spinbutton", { name: /Alex · me/ });
+    await user.clear(myPercentage);
+    await user.type(myPercentage, "40");
+    await user.type(screen.getByRole("spinbutton", { name: /Sam/ }), "60");
+    await user.click(screen.getByRole("button", { name: "Save transaction" }));
+
+    await waitFor(() => {
+      const createCall = vi.mocked(fetch).mock.calls.find(([input, init]) =>
+        input.toString().endsWith("/transactions") && init?.method === "POST"
+      );
+      expect(createCall).toBeDefined();
+      expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({
+        sharing_allocations: [
+          { sharing_party_id: 11, percentage: "40" },
+          { sharing_party_id: 12, percentage: "60" },
         ],
       });
     });

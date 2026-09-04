@@ -136,6 +136,7 @@ def test_manual_transaction_crud_filters_and_period_summary(
         "net_cash_flow": "29574.6500",
         "transaction_count": 2,
         "missing_fx_count": 0,
+        "perspective": "total",
     }
 
     analysis = client.get(
@@ -163,6 +164,7 @@ def test_manual_transaction_crud_filters_and_period_summary(
             }
         ],
         "comparison": None,
+        "perspective": "total",
     }
 
     updated = client.patch(
@@ -239,6 +241,165 @@ def test_fx_gaps_are_preserved_and_excluded_from_canonical_totals(
     )
     assert invalid.status_code == 422
     assert invalid.json()["error"]["code"] == "fx_conversion_mismatch"
+
+
+def test_sharing_allocations_drive_total_and_my_share_analysis(
+    client: TestClient, settings: Settings
+) -> None:
+    headers = authenticate(client, settings)
+    data = seed_master_data(client, headers)
+    me = client.post(
+        "/api/v1/sharing-parties",
+        headers=headers,
+        json={"name": "Jag", "is_self": True},
+    ).json()
+    partner = client.post(
+        "/api/v1/sharing-parties",
+        headers=headers,
+        json={"name": "Partner", "is_self": False},
+    ).json()
+    allocations = [
+        {"sharing_party_id": me["sharing_party_id"], "percentage": "40"},
+        {"sharing_party_id": partner["sharing_party_id"], "percentage": "60"},
+    ]
+
+    created = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json=transaction_payload(
+            data,
+            original_amount="100",
+            sharing_allocations=allocations,
+        ),
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["sharing_allocations"] == [
+        {
+            "sharing_party_id": me["sharing_party_id"],
+            "percentage": "40.0000",
+            "is_self": True,
+        },
+        {
+            "sharing_party_id": partner["sharing_party_id"],
+            "percentage": "60.0000",
+            "is_self": False,
+        },
+    ]
+
+    total = client.get(
+        "/api/v1/transactions/summary?date_from=2026-08-01&date_to=2026-08-31"
+        "&perspective=total"
+    ).json()
+    mine = client.get(
+        "/api/v1/transactions/summary?date_from=2026-08-01&date_to=2026-08-31"
+        "&perspective=my_share"
+    ).json()
+    assert total["expenses"] == "100.0000"
+    assert total["perspective"] == "total"
+    assert mine["expenses"] == "40.0000"
+    assert mine["perspective"] == "my_share"
+
+    invalid = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json=transaction_payload(
+            data,
+            sharing_allocations=[
+                {"sharing_party_id": me["sharing_party_id"], "percentage": "90"}
+            ],
+        ),
+    )
+    assert invalid.status_code == 422
+
+    updated = client.patch(
+        f"/api/v1/transactions/{created.json()['transaction_id']}",
+        headers=headers,
+        json={
+            "sharing_allocations": [
+                {"sharing_party_id": me["sharing_party_id"], "percentage": "25"},
+                {
+                    "sharing_party_id": partner["sharing_party_id"],
+                    "percentage": "75",
+                },
+            ]
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    mine_after_update = client.get(
+        "/api/v1/transactions/analysis?date_from=2026-08-01&date_to=2026-08-31"
+        "&perspective=my_share"
+    ).json()
+    assert mine_after_update["perspective"] == "my_share"
+    assert mine_after_update["expense_categories"][0]["amount"] == "25.0000"
+
+    refund = client.post(
+        f"/api/v1/transactions/{created.json()['transaction_id']}/refunds",
+        headers=headers,
+        json={
+            "account_id": data["account"]["account_id"],
+            "transaction_date": "2026-08-22",
+            "posting_date": "2026-08-22",
+            "description": "Delvis återbetalning",
+            "original_amount": "20",
+            "original_currency": "SEK",
+        },
+    )
+    assert refund.status_code == 201, refund.text
+    mine_after_refund = client.get(
+        "/api/v1/transactions/summary?date_from=2026-08-01&date_to=2026-08-31"
+        "&perspective=my_share"
+    ).json()
+    assert mine_after_refund["expenses"] == "20.0000"
+
+    budget = client.post(
+        "/api/v1/budgets",
+        headers=headers,
+        json={
+            "name": "Delad matbudget",
+            "amount": "100",
+            "currency": "SEK",
+            "period_type": "calendar_month",
+            "rollover_mode": "reset",
+            "starts_on": "2026-08-01",
+        },
+    )
+    assert budget.status_code == 201, budget.text
+    budget_id = budget.json()["budget_id"]
+    total_budget = client.get(
+        f"/api/v1/budgets/{budget_id}/outcome"
+        "?date_from=2026-08-01&date_to=2026-08-31&perspective=total"
+    ).json()
+    my_budget = client.get(
+        f"/api/v1/budgets/{budget_id}/outcome"
+        "?date_from=2026-08-01&date_to=2026-08-31&perspective=my_share"
+    ).json()
+    assert total_budget["actual_amount"] == "80.0000"
+    assert total_budget["perspective"] == "total"
+    assert my_budget["actual_amount"] == "20.0000"
+    assert my_budget["perspective"] == "my_share"
+    my_budget_rows = client.get(
+        f"/api/v1/budgets/{budget_id}/transactions"
+        "?date_from=2026-08-01&date_to=2026-08-31&perspective=my_share"
+    ).json()
+    assert [row["matched_amount"] for row in my_budget_rows] == ["-5.0000", "25.0000"]
+
+    split_id = created.json()["splits"][0]["transaction_split_id"]
+    with pytest.raises(IntegrityError), client.app.state.database.engine.begin() as connection:
+        connection.execute(
+            text(
+                "DELETE FROM transaction_split_shares "
+                "WHERE transaction_split_id = :split_id"
+            ),
+            {"split_id": split_id},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO transaction_split_shares "
+                "(transaction_split_id, sharing_party_id, percentage) "
+                "VALUES (:split_id, :party_id, 90)"
+            ),
+            {"split_id": split_id, "party_id": me["sharing_party_id"]},
+        )
 
 
 def test_split_transactions_comparison_and_category_filter_share_one_semantics(

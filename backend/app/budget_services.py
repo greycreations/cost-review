@@ -176,18 +176,21 @@ def budget_outcome(
     date_from: date,
     date_to: date,
     base_currency: str,
+    perspective: str = "total",
 ) -> dict[str, Any]:
     if date_to < date_from:
         raise ApiError(422, "date_range_invalid", "date_to must not precede date_from.")
     selection = compile_budget_selection(db, model)
     active_range = _active_range(model, date_from, date_to)
     matches = (
-        _budget_matches(db, selection, *active_range, base_currency)
+        _budget_matches(db, selection, *active_range, base_currency, perspective)
         if active_range is not None
         else []
     )
     missing_fx_count = (
-        _missing_fx_match_count(db, selection, *active_range, base_currency)
+        _missing_fx_match_count(
+            db, selection, *active_range, base_currency, perspective
+        )
         if active_range is not None
         else 0
     )
@@ -196,11 +199,18 @@ def budget_outcome(
     target = (model.amount * len(periods)).quantize(MONEY_QUANTUM)
     rollover = Decimal("0.0000")
     if model.rollover_mode == "rollover" and periods:
-        rollover = _rollover_entering(db, model, selection, periods[0][0], base_currency)
+        rollover = _rollover_entering(
+            db, model, selection, periods[0][0], base_currency, perspective
+        )
         prior_end = periods[0][0] - timedelta(days=1)
         if prior_end >= model.starts_on:
             missing_fx_count += _missing_fx_match_count(
-                db, selection, model.starts_on, prior_end, base_currency
+                db,
+                selection,
+                model.starts_on,
+                prior_end,
+                base_currency,
+                perspective,
             )
         target = (target + rollover).quantize(MONEY_QUANTUM)
     remaining = (target - actual).quantize(MONEY_QUANTUM)
@@ -215,6 +225,7 @@ def budget_outcome(
         "date_from": date_from,
         "date_to": date_to,
         "base_currency": base_currency,
+        "perspective": perspective,
         "target_amount": target,
         "actual_amount": actual,
         "remaining_amount": remaining,
@@ -233,6 +244,7 @@ def budget_transactions(
     date_from: date,
     date_to: date,
     base_currency: str,
+    perspective: str = "total",
 ) -> list[dict[str, Any]]:
     if date_to < date_from:
         raise ApiError(422, "date_range_invalid", "date_to must not precede date_from.")
@@ -240,7 +252,7 @@ def budget_transactions(
     active_range = _active_range(model, date_from, date_to)
     if active_range is None:
         return []
-    return _budget_matches(db, selection, *active_range, base_currency)
+    return _budget_matches(db, selection, *active_range, base_currency, perspective)
 
 
 def budget_trend(
@@ -249,10 +261,13 @@ def budget_trend(
     through: date,
     period_count: int,
     base_currency: str,
+    perspective: str = "total",
 ) -> dict[str, Any]:
     points: list[dict[str, Any]] = []
     for period_start, period_end in _recent_budget_periods(model, through, period_count):
-        outcome = budget_outcome(db, model, period_start, period_end, base_currency)
+        outcome = budget_outcome(
+            db, model, period_start, period_end, base_currency, perspective
+        )
         points.append(
             {
                 "period_start": period_start,
@@ -267,6 +282,7 @@ def budget_trend(
     return {
         "budget_id": model.budget_id,
         "base_currency": base_currency,
+        "perspective": perspective,
         "points": points,
     }
 
@@ -382,6 +398,7 @@ def _budget_matches(
     date_from: date,
     date_to: date,
     base_currency: str,
+    perspective: str = "total",
 ) -> list[dict[str, Any]]:
     transactions = list(
         db.scalars(
@@ -394,7 +411,12 @@ def _budget_matches(
                 Transaction.base_currency == base_currency,
                 Transaction.converted_amount.is_not(None),
             )
-            .options(selectinload(Transaction.splits).selectinload(TransactionSplit.tags))
+            .options(
+                selectinload(Transaction.splits).selectinload(TransactionSplit.tags),
+                selectinload(Transaction.splits).selectinload(
+                    TransactionSplit.share_allocations
+                ),
+            )
             .order_by(Transaction.transaction_date.desc(), Transaction.transaction_id.desc())
         )
     )
@@ -405,7 +427,12 @@ def _budget_matches(
         for item in db.scalars(
             select(Transaction)
             .where(Transaction.transaction_id.in_(original_ids))
-            .options(selectinload(Transaction.splits).selectinload(TransactionSplit.tags))
+            .options(
+                selectinload(Transaction.splits).selectinload(TransactionSplit.tags),
+                selectinload(Transaction.splits).selectinload(
+                    TransactionSplit.share_allocations
+                ),
+            )
         )
     }
     results: list[dict[str, Any]] = []
@@ -414,14 +441,22 @@ def _budget_matches(
         if transaction.transaction_kind == "expense":
             source = transaction
             components = [
-                (split, split.converted_amount)
+                (
+                    split,
+                    split.converted_amount * _share_multiplier(split, perspective),
+                )
                 for split in transaction.splits
                 if split.converted_amount is not None
             ]
             sign = Decimal("1")
         else:
             source = originals[links[transaction.transaction_id]]
-            components = allocate_recovery_to_splits(source, transaction.converted_amount)
+            components = [
+                (split, amount * _share_multiplier(split, perspective))
+                for split, amount in allocate_recovery_to_splits(
+                    source, transaction.converted_amount
+                )
+            ]
             sign = Decimal("-1")
         if not _header_matches(source, selection):
             continue
@@ -472,6 +507,7 @@ def _missing_fx_match_count(
     date_from: date,
     date_to: date,
     base_currency: str,
+    perspective: str = "total",
 ) -> int:
     transactions = list(
         db.scalars(
@@ -484,7 +520,12 @@ def _missing_fx_match_count(
                 Transaction.base_currency == base_currency,
                 Transaction.converted_amount.is_(None),
             )
-            .options(selectinload(Transaction.splits).selectinload(TransactionSplit.tags))
+            .options(
+                selectinload(Transaction.splits).selectinload(TransactionSplit.tags),
+                selectinload(Transaction.splits).selectinload(
+                    TransactionSplit.share_allocations
+                ),
+            )
         )
     )
     links = _linked_expense_ids(db, [item.transaction_id for item in transactions])
@@ -494,7 +535,12 @@ def _missing_fx_match_count(
         for item in db.scalars(
             select(Transaction)
             .where(Transaction.transaction_id.in_(original_ids))
-            .options(selectinload(Transaction.splits).selectinload(TransactionSplit.tags))
+            .options(
+                selectinload(Transaction.splits).selectinload(TransactionSplit.tags),
+                selectinload(Transaction.splits).selectinload(
+                    TransactionSplit.share_allocations
+                ),
+            )
         )
     }
     count = 0
@@ -507,7 +553,11 @@ def _missing_fx_match_count(
         if (
             source is not None
             and _header_matches(source, selection)
-            and any(_selection_matches(split, selection) for split in source.splits)
+            and any(
+                _selection_matches(split, selection)
+                and _share_multiplier(split, perspective) > 0
+                for split in source.splits
+            )
         ):
             count += 1
     return count
@@ -592,6 +642,7 @@ def _rollover_entering(
     selection: CompiledSelection,
     selected_start: date,
     base_currency: str,
+    perspective: str = "total",
 ) -> Decimal:
     prior_end = selected_start - timedelta(days=1)
     periods = _periods_for_budget(model, model.starts_on, prior_end)
@@ -600,11 +651,31 @@ def _rollover_entering(
     actual = sum(
         (
             item["matched_amount"]
-            for item in _budget_matches(db, selection, model.starts_on, prior_end, base_currency)
+            for item in _budget_matches(
+                db,
+                selection,
+                model.starts_on,
+                prior_end,
+                base_currency,
+                perspective,
+            )
         ),
         Decimal("0"),
     )
     return (model.amount * len(periods) - actual).quantize(MONEY_QUANTUM)
+
+
+def _share_multiplier(split: TransactionSplit, perspective: str) -> Decimal:
+    if perspective == "total" or not split.share_allocations:
+        return Decimal("1")
+    return sum(
+        (
+            allocation.percentage
+            for allocation in split.share_allocations
+            if allocation.sharing_party.is_self
+        ),
+        Decimal("0"),
+    ) / Decimal("100")
 
 
 def _overlapping_budget_ids(

@@ -88,6 +88,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: docker compose config --quiet
+      - run: docker compose --env-file deploy/.env.example -f deploy/compose.yaml config --quiet
       - run: docker compose up --build --detach --wait
       - run: python backend/tests/compose_isolation.py
       - run: python backend/tests/compose_backup_restore.py

@@ -9,9 +9,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import selectinload
 
-from app.audit_services import record_pending_audits
+from app.audit_services import record_audit, record_pending_audits
 from app.errors import ApiError
-from app.ledger_schemas import TransactionCreate, TransactionSplitInput, TransactionUpdate
+from app.ledger_schemas import (
+    ShareAllocationInput,
+    TransactionCreate,
+    TransactionSplitInput,
+    TransactionUpdate,
+)
 from app.ledger_services import get_model, normalize_name
 from app.models import (
     Account,
@@ -19,10 +24,12 @@ from app.models import (
     Provider,
     RefundLink,
     ReimbursementLink,
+    SharingParty,
     Tag,
     Transaction,
     TransactionKind,
     TransactionSplit,
+    TransactionSplitShare,
 )
 
 MONEY_QUANTUM = Decimal("0.0001")
@@ -71,6 +78,7 @@ def create_manual_transaction(
             payload.category_id,
             payload.tag_ids,
             payload.is_base_cost,
+            payload.sharing_allocations,
         )
     ]
     model.splits = _build_splits(
@@ -101,6 +109,7 @@ def update_manual_transaction(
             "Imported or generated transactions must be edited through their source workflow.",
         )
     is_split = len(model.splits) > 1
+    previous_sharing = _transaction_share_snapshot(model)
     values = payload.model_dump(exclude_unset=True, mode="python")
     _reject_nulls(
         values,
@@ -132,7 +141,12 @@ def update_manual_transaction(
             "split_update_required",
             "Changing a split transaction amount or conversion requires all split amounts.",
         )
-    split_classification_fields = {"category_id", "tag_ids", "is_base_cost"}
+    split_classification_fields = {
+        "category_id",
+        "tag_ids",
+        "is_base_cost",
+        "sharing_allocations",
+    }
     if (
         is_split
         and payload.splits is None
@@ -149,6 +163,7 @@ def update_manual_transaction(
             values.get("category_id") is not None
             or bool(values.get("tag_ids"))
             or values.get("is_base_cost") is True
+            or bool(values.get("sharing_allocations"))
         )
     ):
         raise ApiError(
@@ -242,6 +257,26 @@ def update_manual_transaction(
             primary_split.is_base_cost = values["is_base_cost"]
         if "tag_ids" in values:
             primary_split.tags = _active_tags(db, values["tag_ids"] or [])
+        if "sharing_allocations" in values:
+            primary_split.share_allocations = _active_share_allocations(
+                db, payload.sharing_allocations or []
+            )
+
+    if payload.splits is not None or "sharing_allocations" in values:
+        current_sharing = _transaction_share_snapshot(model)
+        if current_sharing != previous_sharing:
+            record_audit(
+                db,
+                entity_type="transaction",
+                entity_id=model.transaction_id,
+                action="updated",
+                changes={
+                    "sharing_allocations": {
+                        "old": previous_sharing,
+                        "new": current_sharing,
+                    }
+                },
+            )
 
     _commit(db)
     return model
@@ -409,6 +444,7 @@ def ledger_summary(
     category_id: int | None = None,
     tag_id: int | None = None,
     is_base_cost: bool | None = None,
+    perspective: str = "total",
 ) -> dict[str, Any]:
     in_period = [
         Transaction.status == "active",
@@ -485,7 +521,12 @@ def ledger_summary(
     ).one()
     income_value = Decimal(income).quantize(MONEY_QUANTUM)
     expense_value = Decimal(expenses).quantize(MONEY_QUANTUM)
-    if category_id is not None or tag_id is not None or is_base_cost is not None:
+    if (
+        category_id is not None
+        or tag_id is not None
+        or is_base_cost is not None
+        or perspective == "my_share"
+    ):
         filtered_analysis = _ledger_analysis_period(
             db,
             date_from,
@@ -496,6 +537,7 @@ def ledger_summary(
             category_id=category_id,
             tag_id=tag_id,
             is_base_cost=is_base_cost,
+            perspective=perspective,
         )
         income_value = sum(
             (point["income"] for point in filtered_analysis["daily"]), Decimal("0")
@@ -513,6 +555,7 @@ def ledger_summary(
         "net_cash_flow": (income_value - expense_value).quantize(MONEY_QUANTUM),
         "transaction_count": transaction_count,
         "missing_fx_count": missing_fx_count,
+        "perspective": perspective,
     }
 
 
@@ -528,6 +571,7 @@ def ledger_analysis(
     category_id: int | None = None,
     tag_id: int | None = None,
     is_base_cost: bool | None = None,
+    perspective: str = "total",
 ) -> dict[str, Any]:
     filter_options = {
         "account_id": account_id,
@@ -535,10 +579,12 @@ def ledger_analysis(
         "category_id": category_id,
         "tag_id": tag_id,
         "is_base_cost": is_base_cost,
+        "perspective": perspective,
     }
     result = _ledger_analysis_period(
         db, date_from, date_to, base_currency, **filter_options
     )
+    result["perspective"] = perspective
     if comparison_mode == "none":
         result["comparison"] = None
         return result
@@ -578,6 +624,7 @@ def _ledger_analysis_period(
     category_id: int | None = None,
     tag_id: int | None = None,
     is_base_cost: bool | None = None,
+    perspective: str = "total",
 ) -> dict[str, Any]:
     transactions = list(
         db.scalars(
@@ -637,6 +684,7 @@ def _ledger_analysis_period(
                 category_id=category_id,
                 tag_id=tag_id,
                 is_base_cost=is_base_cost,
+                perspective=perspective,
             )
             day["income"] += sum(income_contributions.values(), Decimal("0"))
             continue
@@ -651,6 +699,7 @@ def _ledger_analysis_period(
                 category_id=category_id,
                 tag_id=tag_id,
                 is_base_cost=is_base_cost,
+                perspective=perspective,
             )
         else:
             original = originals[links[model.transaction_id]]
@@ -660,6 +709,7 @@ def _ledger_analysis_period(
                 category_id=category_id,
                 tag_id=tag_id,
                 is_base_cost=is_base_cost,
+                perspective=perspective,
             )
         day["expenses"] += sign * sum(contributions.values(), Decimal("0"))
         for contribution_category_id, amount in contributions.items():
@@ -724,6 +774,9 @@ def transaction_values(
 ) -> dict[str, Any]:
     is_split = len(model.splits) > 1
     split = model.splits[0] if not is_split else None
+    top_level_allocations = (
+        _share_allocation_values(split) if split is not None else []
+    )
     return {
         "transaction_id": model.transaction_id,
         "account_id": model.account_id,
@@ -746,6 +799,7 @@ def transaction_values(
         "tag_ids": sorted(tag.tag_id for tag in split.tags) if split is not None else [],
         "is_base_cost": split.is_base_cost if split is not None else False,
         "is_split": is_split,
+        "sharing_allocations": top_level_allocations,
         "splits": [
             {
                 "transaction_split_id": component.transaction_split_id,
@@ -755,6 +809,7 @@ def transaction_values(
                 "tag_ids": sorted(tag.tag_id for tag in component.tags),
                 "is_base_cost": component.is_base_cost,
                 "memo": component.memo,
+                "sharing_allocations": _share_allocation_values(component),
             }
             for component in model.splits
         ],
@@ -797,6 +852,7 @@ def _split_category_amounts(
     category_id: int | None = None,
     tag_id: int | None = None,
     is_base_cost: bool | None = None,
+    perspective: str = "total",
 ) -> dict[int | None, Decimal]:
     amounts: dict[int | None, Decimal] = {}
     for split in model.splits:
@@ -807,9 +863,8 @@ def _split_category_amounts(
             is_base_cost=is_base_cost,
         ):
             continue
-        amounts[split.category_id] = (
-            amounts.get(split.category_id, Decimal("0")) + split.converted_amount
-        )
+        amount = split.converted_amount * _share_multiplier(split, perspective)
+        amounts[split.category_id] = amounts.get(split.category_id, Decimal("0")) + amount
     return amounts
 
 
@@ -820,6 +875,7 @@ def _allocate_recovery_to_categories(
     category_id: int | None = None,
     tag_id: int | None = None,
     is_base_cost: bool | None = None,
+    perspective: str = "total",
 ) -> dict[int | None, Decimal]:
     allocations: dict[int | None, Decimal] = {}
     for split, amount in allocate_recovery_to_splits(original, recovery_amount):
@@ -832,8 +888,38 @@ def _allocate_recovery_to_categories(
             continue
         allocations[split.category_id] = allocations.get(
             split.category_id, Decimal("0")
-        ) + amount
+        ) + amount * _share_multiplier(split, perspective)
     return allocations
+
+
+def _share_multiplier(split: TransactionSplit, perspective: str) -> Decimal:
+    if perspective == "total" or not split.share_allocations:
+        return Decimal("1")
+    return sum(
+        (
+            allocation.percentage
+            for allocation in split.share_allocations
+            if allocation.sharing_party.is_self
+        ),
+        Decimal("0"),
+    ) / Decimal("100")
+
+
+def _share_allocation_values(split: TransactionSplit) -> list[dict[str, Any]]:
+    return [
+        {
+            "sharing_party_id": allocation.sharing_party_id,
+            "percentage": allocation.percentage,
+            "is_self": allocation.sharing_party.is_self,
+        }
+        for allocation in sorted(
+            split.share_allocations, key=lambda item: item.sharing_party_id
+        )
+    ]
+
+
+def _transaction_share_snapshot(model: Transaction) -> list[list[dict[str, Any]]]:
+    return [_share_allocation_values(split) for split in model.splits]
 
 
 def allocate_recovery_to_splits(
@@ -928,12 +1014,14 @@ def _legacy_split_payload(
     category_id: int | None,
     tag_ids: list[int],
     is_base_cost: bool,
+    sharing_allocations: list[ShareAllocationInput],
 ) -> TransactionSplitInput:
     return TransactionSplitInput(
         original_amount=amount,
         category_id=category_id,
         tag_ids=tag_ids,
         is_base_cost=is_base_cost,
+        sharing_allocations=sharing_allocations,
     )
 
 
@@ -974,6 +1062,9 @@ def _build_splits(
                 is_base_cost=payload.is_base_cost,
                 memo=payload.memo,
                 tags=_active_tags(db, payload.tag_ids),
+                share_allocations=_active_share_allocations(
+                    db, payload.sharing_allocations
+                ),
             )
         )
     return components
@@ -1023,6 +1114,40 @@ def _active_tags(db: DbSession, tag_ids: list[int]) -> list[Tag]:
         )
     by_id = {model.tag_id: model for model in models}
     return [by_id[tag_id] for tag_id in tag_ids]
+
+
+def _active_share_allocations(
+    db: DbSession, payloads: list[ShareAllocationInput]
+) -> list[TransactionSplitShare]:
+    if not payloads:
+        return []
+    party_ids = [payload.sharing_party_id for payload in payloads]
+    parties = list(
+        db.scalars(
+            select(SharingParty).where(
+                SharingParty.sharing_party_id.in_(party_ids),
+                SharingParty.status == "active",
+            )
+        )
+    )
+    found = {party.sharing_party_id for party in parties}
+    missing = sorted(set(party_ids) - found)
+    if missing:
+        raise ApiError(
+            422,
+            "sharing_party_not_available",
+            "One or more sharing parties are missing or archived.",
+            [{"sharing_party_ids": missing}],
+        )
+    by_id = {party.sharing_party_id: party for party in parties}
+    return [
+        TransactionSplitShare(
+            sharing_party_id=payload.sharing_party_id,
+            percentage=payload.percentage.quantize(MONEY_QUANTUM),
+            sharing_party=by_id[payload.sharing_party_id],
+        )
+        for payload in payloads
+    ]
 
 
 def _active_model[ModelT](
