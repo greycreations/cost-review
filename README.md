@@ -51,15 +51,15 @@ Requirements:
 
 ### Install a published release on Ubuntu
 
-Release installations need only the files in `deploy/`; source code and local
-build tools are not required. Download `deploy/compose.yaml` and
-`deploy/.env.example` from the selected GitHub release after its container
-images have been published, then run:
+Release installations need only two files; source code and local build tools
+are not required. Download `compose.yaml` and `cost-review.env.example` from
+the selected GitHub release after its container images have been published,
+then run:
 
 ```sh
 mkdir -p cost-review && cd cost-review
 mv /path/to/downloaded/compose.yaml ./compose.yaml
-mv /path/to/downloaded/.env.example ./.env
+mv /path/to/downloaded/cost-review.env.example ./.env
 nano .env
 docker compose pull
 docker compose up --detach --wait
@@ -269,8 +269,10 @@ Version tags matching `vMAJOR.MINOR.PATCH` also publish provenance and
 SBOM-enabled `linux/amd64` and `linux/arm64` API/frontend images to GitHub
 Container Registry. Release deployments pin `COST_REVIEW_VERSION` rather than
 silently following `latest`. The same workflow creates a GitHub release with
-`compose.yaml`, `.env.example`, and checksums so an Ubuntu installation does
-not require cloning or building the source repository.
+`compose.yaml`, `cost-review.env.example`, and checksums so an Ubuntu installation does
+not require cloning or building the source repository. The environment asset
+is named `cost-review.env.example` in the release because GitHub rewrites
+leading-dot asset names.
 
 The isolation scenario creates independent Production/Test users, accounts,
 transactions, linked transfers, snapshots, and budgets, proves writes cannot

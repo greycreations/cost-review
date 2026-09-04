@@ -23,7 +23,7 @@ collapsed merely to simplify installation.
   images to GitHub Container Registry for `linux/amd64` and `linux/arm64`.
 - Published images include OCI source metadata, provenance, and an SBOM.
 - The tag workflow creates a GitHub release containing `compose.yaml`, an
-  `.env.example` template, and SHA-256 checksums.
+  environment template named `cost-review.env.example`, and SHA-256 checksums.
 - The standalone Compose file pulls a fixed `COST_REVIEW_VERSION`. Operators
   upgrade by changing that value deliberately and pulling the new images.
 - The standalone project preserves two PostgreSQL services, two API services,
