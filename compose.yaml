@@ -147,7 +147,7 @@ services:
       - prod-attachments:/app/storage/attachments:ro
       - prod-backups:/app/storage/backups
     depends_on:
-      db-prod:
+      api-prod:
         condition: service_healthy
     networks:
       - prod-data
@@ -175,7 +175,7 @@ services:
       - test-attachments:/app/storage/attachments:ro
       - test-backups:/app/storage/backups
     depends_on:
-      db-test:
+      api-test:
         condition: service_healthy
     networks:
       - test-data
