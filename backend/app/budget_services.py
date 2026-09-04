@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import selectinload
 
+from app.audit_services import record_pending_audits
 from app.budget_schemas import AnalysisGroupCreate, AnalysisGroupUpdate, BudgetCreate, BudgetUpdate
 from app.errors import ApiError
 from app.ledger_services import normalize_name
@@ -105,7 +106,7 @@ def set_analysis_group_archived(
             )
     model.status = "archived" if archived else "active"
     model.archived_at = datetime.now(UTC) if archived else None
-    db.commit()
+    _commit(db, "analysis_group_lifecycle_conflict")
     return get_analysis_group(db, model.analysis_group_id)
 
 
@@ -165,7 +166,7 @@ def set_budget_archived(db: DbSession, model: Budget, archived: bool) -> Budget:
         )
     model.status = "archived" if archived else "active"
     model.archived_at = datetime.now(UTC) if archived else None
-    db.commit()
+    _commit(db, "budget_lifecycle_conflict")
     return get_budget(db, model.budget_id)
 
 
@@ -789,6 +790,7 @@ def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
 
 def _commit(db: DbSession, code: str) -> None:
     try:
+        record_pending_audits(db)
         db.commit()
     except IntegrityError as error:
         db.rollback()

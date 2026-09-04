@@ -86,6 +86,42 @@ export type AccountSnapshot = {
   updated_at: string;
 };
 
+export type Backup = {
+  filename: string;
+  environment: Environment;
+  kind: "manual" | "automatic" | "pre_restore";
+  created_at: string;
+  size_bytes: number;
+};
+
+export type BackupValidation = {
+  filename: string;
+  environment: Environment;
+  data_plane_id: string;
+  created_at: string;
+  schema_revision: string;
+  file_count: number;
+  valid: boolean;
+};
+
+export type RecycleBinItem = {
+  entity_type: string;
+  entity_id: number;
+  label: string;
+  archived_at: string;
+  restore_path: string;
+};
+
+export type AuditEvent = {
+  audit_event_id: number;
+  entity_type: string;
+  entity_id: number | null;
+  action: string;
+  change_source: string;
+  changes: Record<string, unknown>;
+  created_at: string;
+};
+
 export type Category = {
   category_id: number;
   parent_category_id: number | null;
@@ -243,7 +279,7 @@ export type BudgetTrend = {
 
 export type ManualTransactionKind = "expense" | "income";
 export type RecoveryKind = "refund" | "reimbursement";
-export type TransactionKind = ManualTransactionKind | RecoveryKind;
+export type TransactionKind = ManualTransactionKind | RecoveryKind | "adjustment";
 export type TransferPurpose =
   | "internal"
   | "savings"
@@ -256,6 +292,7 @@ export type Transaction = {
   account_id: number;
   provider_id: number | null;
   transaction_kind: TransactionKind;
+  adjustment_direction: "increase" | "decrease" | null;
   transaction_date: string;
   posting_date: string;
   description: string;
@@ -603,6 +640,51 @@ export function createAccountSnapshot(
     { method: "POST", body: JSON.stringify(payload) },
     true,
   );
+}
+
+export function createBalanceAdjustment(
+  environment: Environment,
+  snapshotId: number,
+  confirmation: string,
+): Promise<Transaction> {
+  return request(
+    environment,
+    `/account-snapshots/${snapshotId}/adjustment`,
+    { method: "POST", body: JSON.stringify({ confirmation }) },
+    true,
+  );
+}
+
+export function getBackups(environment: Environment): Promise<Backup[]> {
+  return request(environment, "/backups");
+}
+
+export function createBackup(environment: Environment): Promise<Backup> {
+  return request(environment, "/backups", { method: "POST" }, true);
+}
+
+export function validateBackup(
+  environment: Environment,
+  filename: string,
+): Promise<BackupValidation> {
+  return request(
+    environment,
+    `/backups/${encodeURIComponent(filename)}/validate`,
+    { method: "POST" },
+    true,
+  );
+}
+
+export function backupDownloadUrl(environment: Environment, filename: string): string {
+  return `${apiBase(environment)}/backups/${encodeURIComponent(filename)}/download`;
+}
+
+export function getRecycleBin(environment: Environment): Promise<RecycleBinItem[]> {
+  return request(environment, "/recycle-bin");
+}
+
+export function getAuditEvents(environment: Environment): Promise<Page<AuditEvent>> {
+  return request(environment, "/audit-events?limit=10&offset=0");
 }
 
 export function getCategories(

@@ -8,7 +8,10 @@ WORKDIR /app
 
 COPY pyproject.toml ./
 COPY app ./app
-RUN pip install --no-cache-dir . \
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y postgresql-client \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir . \
     && addgroup --system costreview \
     && adduser --system --ingroup costreview costreview \
     && mkdir -p /app/storage/attachments /app/storage/backups \

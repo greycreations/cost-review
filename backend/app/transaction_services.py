@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import selectinload
 
+from app.audit_services import record_pending_audits
 from app.errors import ApiError
 from app.ledger_schemas import TransactionCreate, TransactionSplitInput, TransactionUpdate
 from app.ledger_services import get_model, normalize_name
@@ -413,6 +414,7 @@ def ledger_summary(
         Transaction.status == "active",
         Transaction.transaction_date >= date_from,
         Transaction.transaction_date <= date_to,
+        Transaction.transaction_kind.in_(("expense", "income", "refund", "reimbursement")),
         *_ledger_filter_expressions(
             account_id=account_id,
             provider_id=provider_id,
@@ -584,6 +586,9 @@ def _ledger_analysis_period(
                 Transaction.status == "active",
                 Transaction.transaction_date >= date_from,
                 Transaction.transaction_date <= date_to,
+                Transaction.transaction_kind.in_(
+                    ("expense", "income", "refund", "reimbursement")
+                ),
                 Transaction.base_currency == base_currency,
                 Transaction.converted_amount.is_not(None),
                 *_ledger_filter_expressions(
@@ -736,6 +741,7 @@ def transaction_values(
         "source_type": model.source_type,
         "source_reference": model.source_reference,
         "notes": model.notes,
+        "adjustment_direction": model.adjustment_direction,
         "category_id": split.category_id if split is not None else None,
         "tag_ids": sorted(tag.tag_id for tag in split.tags) if split is not None else [],
         "is_base_cost": split.is_base_cost if split is not None else False,
@@ -1047,6 +1053,7 @@ def _reject_nulls(values: dict[str, Any], required_fields: set[str]) -> None:
 
 def _commit(db: DbSession) -> None:
     try:
+        record_pending_audits(db)
         db.commit()
     except IntegrityError as error:
         db.rollback()

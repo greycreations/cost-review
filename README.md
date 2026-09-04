@@ -8,13 +8,15 @@ and household economics. Product behavior is defined by
 Sprint 1 established the Platform Foundation: PostgreSQL, migrations, first-run
 setup, local authentication, independent locale settings, reverse-proxy safety,
 and a persistent hard boundary between Production and Demo/Test. The current
-Sprint 2 slice adds accounts, reusable ledger master data, manual income and
+pilot slice adds accounts, reusable ledger master data, manual income and
 expense entry, historical FX persistence, real period summaries, and dated
 account balance/value snapshots. Refunds and reimbursements are now preserved
 as linked events that reduce net cost without weakening that boundary or being
 misclassified as income. Transactions can be split across categories, tags,
 and base-cost classifications, and the Overview now applies the same filters
-to totals, charts, comparison periods, and transaction drill-down.
+to totals, charts, comparison periods, and transaction drill-down. It also adds
+explicit reconciliation adjustments, an audit-backed Recycle Bin, and encrypted
+database/configuration/attachment backups with offline restore.
 
 ## Architecture
 
@@ -43,8 +45,10 @@ Requirements:
 - Docker Engine or Docker Desktop with Docker Compose v2.
 - An Ubuntu host for the intended self-hosted deployment.
 
-Create local configuration from the example and replace both database
-passwords with different long random values:
+Create local configuration from the example. Replace both database passwords
+with different long random values and set two different backup encryption keys
+of at least 32 characters. Store a recovery copy of those keys away from this
+repository and away from the Docker host:
 
 ```powershell
 Copy-Item .env.example .env
@@ -64,6 +68,12 @@ Build and start the complete stack:
 
 ```sh
 docker compose up --build --detach --wait
+```
+
+Enable scheduled encrypted backups after the keys have been configured:
+
+```sh
+docker compose --profile backup up --build --detach --wait
 ```
 
 Open <http://localhost:8080>. Production and Demo/Test are initialized
@@ -88,10 +98,36 @@ Compose creates six named volumes:
 - `prod-attachments` and `test-attachments`;
 - `prod-backups` and `test-backups`.
 
-Attachments and encrypted backup workflows are delivered later, but their
-storage boundary exists from Sprint 1. A future backup is complete only when it
-includes the applicable database, configuration, and attachment volume. Manual
-copying of PostgreSQL volume files is not a supported backup method.
+Each `.crbackup` includes the applicable PostgreSQL database (including
+configuration), the data plane's attachments, a manifest, and checksums. The
+archive is authenticated and encrypted using that data plane's installation
+key. Manual copying of PostgreSQL volume files is not a supported backup method.
+
+Manual backups can be created, validated, and downloaded under **Settings**.
+Automatic retention is configured with `BACKUP_*_RETENTION_COUNT`; it never
+removes manual or pre-restore safety backups. Keep at least one recently
+validated download on a different machine or storage service.
+
+### Offline restore drill
+
+Restore one data plane at a time. The filename must belong to that environment.
+For Production:
+
+```sh
+docker compose stop api-prod backup-prod
+docker compose run --rm --no-deps api-prod \
+  python -m app.backup_cli validate manual-production-YYYYMMDDTHHMMSSZ-ID.crbackup
+docker compose run --rm --no-deps api-prod \
+  python -m app.backup_cli restore manual-production-YYYYMMDDTHHMMSSZ-ID.crbackup \
+  --confirmation "RESTORE PRODUCTION"
+docker compose up --detach --wait api-prod
+```
+
+Use `api-test`, `backup-test`, a `test` filename, and confirmation
+`RESTORE DEMO/TEST` for Demo/Test. Restore validates the complete encrypted
+archive before overwrite, creates a new pre-restore safety backup, replaces the
+database and attachments, and invalidates all restored sessions. Do not run a
+restore while the corresponding API or scheduler is active.
 
 ## Reverse proxy and Cloudflare
 
@@ -102,6 +138,12 @@ copying of PostgreSQL volume files is not a supported backup method.
 - Set the exact public host/origin and enable secure cookies for HTTPS.
 - Preserve the environment prefixes `/api/production/` and `/api/test/` when an
   outer proxy forwards to the gateway.
+
+For the documented home-network topology, Cloudflare Tunnel on `192.168.1.40`
+should forward the public hostname to `http://192.168.1.41:8080`. The Ubuntu
+host publishes only that gateway port; PostgreSQL and APIs remain private Docker
+services. Set `COOKIE_SECURE=true` and configure the exact public hostname and
+origin before exposing the application.
 
 If the edge subnet or proxy topology changes, update
 `APP_TRUSTED_PROXY_IPS`/the Compose network deliberately; do not broadly trust
@@ -210,6 +252,7 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET/POST/PATCH | `/api/v1/accounts[...]` | Account list/create/read/update plus archive/restore |
 | GET/POST | `/api/v1/accounts/{id}/snapshots` | Dated account balance or valuation history |
 | PATCH/POST | `/api/v1/account-snapshots/{id}[...]` | Correct, archive, or restore a snapshot |
+| POST | `/api/v1/account-snapshots/{id}/adjustment` | Create one explicit reconciliation adjustment |
 | GET/POST/PATCH | `/api/v1/categories[...]` | Arbitrary-depth category hierarchy plus archive/restore |
 | GET/POST/PATCH | `/api/v1/providers[...]` | Provider records and lifecycle |
 | GET/POST/PATCH/DELETE | `/api/v1/providers/.../aliases`, `/api/v1/provider-aliases/...` | Canonical provider aliases |
@@ -226,12 +269,19 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET | `/api/v1/budgets/{id}/outcome` | Decimal-safe target, actual, remaining, overlap and consumption for a date range |
 | GET | `/api/v1/budgets/{id}/transactions` | Traceable matching Ledger events and allocated recoveries |
 | GET | `/api/v1/budgets/{id}/trend` | Server-derived recent outcomes using the budget's own periods |
+| GET | `/api/v1/recycle-bin` | List recoverable archived Ledger records |
+| GET | `/api/v1/audit-events` | Paginated material Ledger change history |
+| GET/POST | `/api/v1/backups` | List or create encrypted backups |
+| POST/GET | `/api/v1/backups/{filename}/validate`, `/download` | Validate or download one archive |
 
 Ledger list endpoints return `{ items, total, limit, offset }`, support bounded
 pagination, and hide archived master records unless `include_archived=true` is
-requested. Master records use explicit archive/restore operations; permanent
-deletion, Recycle Bin, audit, tag merge, and percentage allocations remain in
-their later Ledger slices. See `docs/adr/0002-ledger-master-data-invariants.md`.
+requested. Master records use explicit archive/restore operations and appear in
+the central Recycle Bin. Audit records material creates, updates, archives,
+restores, and balance adjustments. Dependency-aware permanent deletion, tag
+merge, bulk-edit grouping, and percentage allocations remain later Ledger
+slices. See `docs/adr/0002-ledger-master-data-invariants.md` and
+`docs/adr/0009-pilot-data-safety-and-offline-restore.md`.
 
 Transactions store an immutable economic date separately from posting and
 system timestamps. Original amount/currency and the converted base-currency
@@ -246,8 +296,10 @@ they preserve gross cost, reduce net expense in summaries and analysis, and are
 never counted as ordinary income. A split transaction remains one economic and
 account event while its decimal-safe component amounts carry category, tag,
 base-cost, and memo classification. PostgreSQL deferred constraints require the
-components to equal the header amount exactly. Share allocation and explicit
-balance adjustments remain later Ledger slices.
+components to equal the header amount exactly. Share allocation remains a later
+Ledger slice. A reconciliation adjustment is an explicit system-sourced event
+linked to one balance observation; it changes calculated balance but is excluded
+from ordinary income/expense and budget analysis.
 
 The Overview defaults to the current calendar month and supports explicit month
 navigation. It visualizes daily income/expense movement and expenses by category,

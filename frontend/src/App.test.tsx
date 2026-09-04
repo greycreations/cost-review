@@ -104,6 +104,20 @@ describe("App", () => {
           };
         } else if (/\/accounts\/\d+\/snapshots$/.test(path)) {
           body = [];
+        } else if (path.endsWith("/backups") && init?.method === "POST") {
+          body = {
+            filename: "manual-production-20260903T200000Z-a1b2c3d4.crbackup",
+            environment,
+            kind: "manual",
+            created_at: "2026-09-03T20:00:00Z",
+            size_bytes: 2048,
+          };
+        } else if (path.endsWith("/backups")) {
+          body = [];
+        } else if (path.endsWith("/recycle-bin")) {
+          body = [];
+        } else if (path.includes("/audit-events?")) {
+          body = { items: [], total: 0, limit: 10, offset: 0 };
         } else if (path.endsWith("/budgets") && init?.method === "POST") {
           const submitted = JSON.parse(String(init.body));
           body = {
@@ -202,6 +216,18 @@ describe("App", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText("DEMO / TEST")).not.toBeInTheDocument();
+  });
+
+  it("shows pilot data safety controls in Settings", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Settings" }));
+
+    expect(await screen.findByRole("heading", { name: "Encrypted backups" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recycle bin and change history" })).toBeInTheDocument();
+    expect(screen.getByText("No backups have been created in this data plane.")).toBeInTheDocument();
   });
 
   it("defaults the overview to the current month and can move to a previous month", async () => {

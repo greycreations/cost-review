@@ -6,6 +6,7 @@ from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -155,6 +156,11 @@ class SelectionMode(StrEnum):
     EXCLUDE = "exclude"
 
 
+class AdjustmentDirection(StrEnum):
+    INCREASE = "increase"
+    DECREASE = "decrease"
+
+
 class EnvironmentMetadata(Base):
     __tablename__ = "environment_metadata"
     __table_args__ = (
@@ -170,6 +176,35 @@ class EnvironmentMetadata(Base):
     data_plane_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), unique=True)
     reset_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     initialized_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('created', 'updated', 'archived', 'restored', "
+            "'balance_adjusted', 'permanently_deleted')",
+            name="action_allowed",
+        ),
+        CheckConstraint(
+            "change_source IN ('user', 'system', 'import', 'restore')",
+            name="change_source_allowed",
+        ),
+        Index("ix_audit_events_entity", "entity_type", "entity_id", "created_at"),
+        Index("ix_audit_events_created_at", "created_at"),
+    )
+
+    audit_event_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    entity_type: Mapped[str] = mapped_column(String(64))
+    entity_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    action: Mapped[str] = mapped_column(String(32))
+    change_source: Mapped[str] = mapped_column(String(16), default="user")
+    changes: Mapped[dict[str, object]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
@@ -733,6 +768,12 @@ class Transaction(ArchiveMixin, TimestampMixin, Base):
             "source_type IN ('manual', 'import', 'recurring', 'system')",
             name="source_type_allowed",
         ),
+        CheckConstraint(
+            "(transaction_kind = 'adjustment' AND adjustment_direction IN "
+            "('increase', 'decrease')) OR "
+            "(transaction_kind <> 'adjustment' AND adjustment_direction IS NULL)",
+            name="adjustment_direction_required",
+        ),
         CheckConstraint("status IN ('active', 'archived')", name="status_allowed"),
         Index("ix_transactions_transaction_date", "transaction_date"),
         Index("ix_transactions_posting_date", "posting_date"),
@@ -740,6 +781,12 @@ class Transaction(ArchiveMixin, TimestampMixin, Base):
         Index("ix_transactions_provider_id", "provider_id"),
         Index("ix_transactions_status", "status"),
         Index("ix_transactions_normalized_description", "normalized_description"),
+        Index(
+            "uq_transactions_adjustment_source_reference",
+            "source_reference",
+            unique=True,
+            postgresql_where=text("transaction_kind = 'adjustment'"),
+        ),
     )
 
     transaction_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -761,6 +808,7 @@ class Transaction(ArchiveMixin, TimestampMixin, Base):
     source_type: Mapped[str] = mapped_column(String(16), default="manual", server_default="manual")
     source_reference: Mapped[str | None] = mapped_column(String(240), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    adjustment_direction: Mapped[str | None] = mapped_column(String(12), nullable=True)
 
     splits: Mapped[list[TransactionSplit]] = relationship(
         back_populates="transaction", cascade="all, delete-orphan"

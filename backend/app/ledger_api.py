@@ -14,8 +14,14 @@ from app.account_snapshot_services import (
     snapshot_values,
     update_account_snapshot,
 )
+from app.audit_services import list_audit_events
 from app.dependencies import Auth, CsrfAuth, DatabaseSession
 from app.errors import ApiError
+from app.ledger_safety_services import (
+    create_balance_adjustment,
+    list_recycle_bin,
+    set_adjustment_archived,
+)
 from app.ledger_schemas import (
     AccountCreate,
     AccountRead,
@@ -23,6 +29,8 @@ from app.ledger_schemas import (
     AccountSnapshotRead,
     AccountSnapshotUpdate,
     AccountUpdate,
+    AuditEventRead,
+    BalanceAdjustmentCreate,
     CategoryCreate,
     CategoryLinkCreate,
     CategoryLinkRead,
@@ -42,6 +50,7 @@ from app.ledger_schemas import (
     ProviderRead,
     ProviderUpdate,
     RecoveryCreate,
+    RecycleBinItemRead,
     SharingPartyCreate,
     SharingPartyRead,
     SharingPartyUpdate,
@@ -122,6 +131,29 @@ Limit = Annotated[int, Query(ge=1, le=200)]
 Offset = Annotated[int, Query(ge=0)]
 AmountFilter = Annotated[Decimal | None, Query(ge=0)]
 CurrencyFilter = Annotated[str | None, Query(pattern=r"^[A-Z]{3}$")]
+
+
+@router.get("/audit-events", response_model=Page[AuditEventRead])
+def get_audit_events(
+    _: Auth,
+    db: DatabaseSession,
+    limit: Limit = 50,
+    offset: Offset = 0,
+    entity_type: str | None = Query(default=None, max_length=64),
+    entity_id: int | None = Query(default=None, gt=0),
+) -> dict[str, object]:
+    return list_audit_events(
+        db,
+        limit=limit,
+        offset=offset,
+        entity_type=entity_type,
+        entity_id=entity_id,
+    )
+
+
+@router.get("/recycle-bin", response_model=list[RecycleBinItemRead])
+def get_recycle_bin(_: Auth, db: DatabaseSession) -> list[dict[str, object]]:
+    return list_recycle_bin(db)
 
 
 @router.get("/transactions", response_model=Page[TransactionRead])
@@ -454,6 +486,42 @@ def post_account_snapshot(
 ) -> dict[str, object]:
     account = get_model(db, Account, account_id, "Account")
     return create_account_snapshot(db, account, payload, auth.user.settings.base_currency)
+
+
+@router.post(
+    "/account-snapshots/{snapshot_id}/adjustment",
+    response_model=TransactionRead,
+    status_code=201,
+)
+def post_balance_adjustment(
+    snapshot_id: int,
+    payload: BalanceAdjustmentCreate,
+    _: CsrfAuth,
+    db: DatabaseSession,
+) -> dict[str, object]:
+    snapshot = get_model(db, AccountSnapshot, snapshot_id, "Account snapshot")
+    account = get_model(db, Account, snapshot.account_id, "Account")
+    return transaction_values(
+        create_balance_adjustment(
+            db, snapshot, account, confirmation=payload.confirmation
+        )
+    )
+
+
+@router.post("/adjustments/{transaction_id}/archive", response_model=TransactionRead)
+def archive_adjustment(
+    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    model = get_model(db, Transaction, transaction_id, "Balance adjustment")
+    return transaction_values(set_adjustment_archived(db, model, archived=True))
+
+
+@router.post("/adjustments/{transaction_id}/restore", response_model=TransactionRead)
+def restore_adjustment(
+    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+) -> dict[str, object]:
+    model = get_model(db, Transaction, transaction_id, "Balance adjustment")
+    return transaction_values(set_adjustment_archived(db, model, archived=False))
 
 
 @router.patch("/account-snapshots/{snapshot_id}", response_model=AccountSnapshotRead)

@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import selectinload
 
+from app.audit_services import record_model_created, record_pending_audits
 from app.errors import ApiError
 from app.ledger_schemas import TransferCreate, TransferUpdate
 from app.ledger_services import get_model, normalize_name
@@ -79,6 +80,8 @@ def create_transfer(
     )
     db.add_all([outgoing, incoming])
     db.flush()
+    record_model_created(db, outgoing)
+    record_model_created(db, incoming)
     link = TransferLink(
         outgoing_transaction_id=outgoing.transaction_id,
         incoming_transaction_id=incoming.transaction_id,
@@ -536,6 +539,7 @@ def _reject_nulls(values: dict[str, Any], fields: set[str]) -> None:
 
 def _commit(db: DbSession) -> None:
     try:
+        record_pending_audits(db)
         db.commit()
     except IntegrityError as error:
         db.rollback()

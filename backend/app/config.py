@@ -41,6 +41,9 @@ class Settings(BaseSettings):
 
     attachment_root: Path = Path("/app/storage/attachments")
     backup_root: Path = Path("/app/storage/backups")
+    backup_encryption_key: str = ""
+    backup_retention_count: int = Field(default=14, ge=1, le=365)
+    backup_interval_hours: int = Field(default=24, ge=1, le=720)
 
     @field_validator("session_cookie_name", "csrf_cookie_name")
     @classmethod

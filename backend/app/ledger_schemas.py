@@ -16,6 +16,7 @@ from pydantic import (
 
 from app.models import (
     AccountType,
+    AdjustmentDirection,
     CategoryKind,
     FxRateStatus,
     LifecycleStatus,
@@ -46,6 +47,7 @@ class LedgerTransactionKind(StrEnum):
     INCOME = "income"
     REFUND = "refund"
     REIMBURSEMENT = "reimbursement"
+    ADJUSTMENT = "adjustment"
 
 
 class ComparisonMode(StrEnum):
@@ -428,6 +430,7 @@ class TransactionRead(ArchivedApiModel):
     source_type: TransactionSource
     source_reference: str | None
     notes: str | None
+    adjustment_direction: AdjustmentDirection | None
     category_id: int | None
     tag_ids: list[int]
     is_base_cost: bool
@@ -436,6 +439,28 @@ class TransactionRead(ArchivedApiModel):
     linked_expense_id: int | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class BalanceAdjustmentCreate(BaseModel):
+    confirmation: str
+
+
+class AuditEventRead(ApiModel):
+    audit_event_id: int
+    entity_type: str
+    entity_id: int | None
+    action: str
+    change_source: str
+    changes: dict[str, object]
+    created_at: datetime
+
+
+class RecycleBinItemRead(BaseModel):
+    entity_type: str
+    entity_id: int
+    label: str
+    archived_at: datetime
+    restore_path: str
 
 
 class RecoveryCreate(BaseModel):

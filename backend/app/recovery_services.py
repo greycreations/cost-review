@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
+from app.audit_services import record_model_created, record_pending_audits
 from app.errors import ApiError
 from app.ledger_schemas import RecoveryCreate
 from app.ledger_services import archive_model, normalize_name, restore_model
@@ -86,6 +87,7 @@ def create_recovery(
     )
     db.add(recovery)
     db.flush()
+    record_model_created(db, recovery)
     if kind == TransactionKind.REFUND:
         db.add(
             RefundLink(
@@ -165,6 +167,7 @@ def _active_dependency(db: DbSession, model_type, model_id: int, label: str):
 
 def _commit(db: DbSession) -> None:
     try:
+        record_pending_audits(db)
         db.commit()
     except IntegrityError as error:
         db.rollback()

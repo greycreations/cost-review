@@ -1711,6 +1711,31 @@ input[type="color"] {
   font-weight: 680;
 }
 
+.balance-adjustment-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.balance-adjustment-form h5,
+.balance-adjustment-form p {
+  margin: 0;
+}
+
+.balance-adjustment-form h5 {
+  font-size: 12px;
+}
+
+.balance-adjustment-form p {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .ghost-button {
   min-height: 34px;
   padding: 0 9px;
@@ -1744,6 +1769,73 @@ input[type="color"] {
 .settings-section,
 .danger-section {
   margin-top: 18px;
+}
+
+.operations-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.operations-panel {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
+.operations-panel .section-heading,
+.operations-panel p {
+  margin-bottom: 0;
+}
+
+.operations-list {
+  display: grid;
+  gap: 8px;
+}
+
+.operation-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 11px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.operation-row > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.operation-row strong,
+.operation-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.operation-row span,
+.operation-row time {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.lifecycle-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.lifecycle-columns h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
 }
 
 .section-heading {
@@ -2132,6 +2224,7 @@ footer {
 @media (max-width: 760px) {
   .budget-cards, .budget-selection-grid { grid-template-columns: 1fr; }
   .budget-heading-actions, .analysis-group-save { align-items: stretch; flex-direction: column; }
+  .operations-grid, .lifecycle-columns { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 520px) {

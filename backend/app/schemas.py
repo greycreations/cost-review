@@ -127,6 +127,24 @@ class TestResetRead(BaseModel):
     message: str
 
 
+class BackupRead(BaseModel):
+    filename: str
+    environment: str
+    kind: str
+    created_at: datetime
+    size_bytes: int
+
+
+class BackupValidationRead(BaseModel):
+    filename: str
+    environment: str
+    data_plane_id: UUID
+    created_at: datetime
+    schema_revision: str
+    file_count: int
+    valid: bool
+
+
 class ErrorBody(BaseModel):
     code: str
     message: str
