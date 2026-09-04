@@ -68,15 +68,15 @@ jobs:
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
-          grep -Fx "COST_REVIEW_VERSION=${version}" deploy/.env.example
+          grep -Fx "COST_REVIEW_VERSION=${version}" .env.example
           grep -Fqx "version = \"${version}\"" backend/pyproject.toml
           RELEASE_VERSION="$version" node -e 'if (require("./frontend/package.json").version !== process.env.RELEASE_VERSION) process.exit(1)'
       - name: Prepare release assets
         shell: bash
         run: |
           mkdir release
-          cp deploy/compose.yaml release/compose.yaml
-          cp deploy/.env.example release/cost-review.env.example
+          cp compose.yaml release/compose.yaml
+          cp .env.example release/cost-review.env.example
           cd release
           sha256sum compose.yaml cost-review.env.example > SHA256SUMS
       - name: Create GitHub release

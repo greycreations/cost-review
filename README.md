@@ -49,45 +49,56 @@ Requirements:
 - Docker Engine or Docker Desktop with Docker Compose v2.
 - An Ubuntu host for the intended self-hosted deployment.
 
-### Install a published release on Ubuntu
+### Install on Ubuntu
 
-Release installations need only two files; source code and local build tools
-are not required. Download `compose.yaml` and `cost-review.env.example` from
-the selected GitHub release after its container images have been published,
-then run:
+The repository-root `compose.yaml` is the only standard installation file. It
+pulls published images and does not require local Python, Node.js, backend, or
+frontend build contexts:
 
 ```sh
-mkdir -p cost-review && cd cost-review
-mv /path/to/downloaded/compose.yaml ./compose.yaml
-mv /path/to/downloaded/cost-review.env.example ./.env
-nano .env
-docker compose pull
+git clone https://github.com/greycreations/cost-review.git
+cd cost-review
+./scripts/init-env.sh http://SERVER-IP:8080
 docker compose up --detach --wait
+docker compose ps
 ```
 
-Set `COST_REVIEW_VERSION` to the release version and replace every placeholder
-password/key before the first start. The deployment file starts the two API
-instances, both isolated PostgreSQL databases, the gateway, and both scheduled
-backup processes without a profile flag. Open `http://SERVER-IP:8080` unless
-`GATEWAY_PORT` was changed.
-
-Container packages inherit the repository visibility when first published. If
-they are private, authenticate the Ubuntu host using a GitHub token with
-`read:packages` before `docker compose pull`:
+For the documented host, use:
 
 ```sh
-echo "$GHCR_TOKEN" | docker login ghcr.io -u GITHUB_USERNAME --password-stdin
+./scripts/init-env.sh http://192.168.1.41:8080
 ```
 
-Never copy a development machine's `.env` to another installation. Generate
-new database passwords and backup keys for every installation.
+The initializer creates a mode-`600` `.env`, generates four independent random
+database/backup secrets, and configures the accepted browser origin and host.
+It refuses to overwrite an existing `.env`. Store a recovery copy of the two
+generated `BACKUP_*_ENCRYPTION_KEY` values away from both the repository and
+Docker host; encrypted backups cannot be restored without them.
+
+`docker compose up --detach --wait` starts the two API instances, both isolated
+PostgreSQL databases, the gateway, and both scheduled backup processes. Open
+`http://SERVER-IP:8080` unless a different URL was supplied.
+
+The same `compose.yaml` and environment template are attached to every GitHub
+release for installations that should not clone the repository. Copy
+`cost-review.env.example` to `.env`, replace every placeholder, and run the same
+ordinary `docker compose` commands.
+
+Public GHCR packages require no login. If package visibility is private, sign
+in once with a classic GitHub token that has `read:packages` before starting:
+
+```sh
+printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u GITHUB_USERNAME --password-stdin
+unset GHCR_TOKEN
+```
+
+Never copy a development machine's `.env` to another installation.
 
 ### Build from source for development
 
-Create local configuration from the example. Replace both database passwords
-with different long random values and set two different backup encryption keys
-of at least 32 characters. Store a recovery copy of those keys away from this
-repository and away from the Docker host:
+The source-build stack is deliberately named `compose.dev.yaml`, so ordinary
+`docker compose up` can never select it by accident. Create local configuration
+from the example and replace all four secret placeholders:
 
 ```powershell
 Copy-Item .env.example .env
@@ -103,16 +114,16 @@ For local HTTP, `COOKIE_SECURE=false` is expected. Behind HTTPS or Cloudflare,
 set it to `true` before creating sessions. Configure the exact public origin and
 host in `APP_ALLOWED_ORIGINS` and `APP_ALLOWED_HOSTS`.
 
-Build and start the complete stack:
+Build and start the development stack:
 
 ```sh
-docker compose up --build --detach --wait
+docker compose -f compose.dev.yaml up --build --detach --wait
 ```
 
 Enable scheduled encrypted backups after the keys have been configured:
 
 ```sh
-docker compose --profile backup up --build --detach --wait
+docker compose -f compose.dev.yaml --profile backup up --build --detach --wait
 ```
 
 Open <http://localhost:8080>. Production and Demo/Test are initialized
@@ -269,9 +280,9 @@ Version tags matching `vMAJOR.MINOR.PATCH` also publish provenance and
 SBOM-enabled `linux/amd64` and `linux/arm64` API/frontend images to GitHub
 Container Registry. Release deployments pin `COST_REVIEW_VERSION` rather than
 silently following `latest`. The same workflow creates a GitHub release with
-`compose.yaml`, `cost-review.env.example`, and checksums so an Ubuntu installation does
-not require cloning or building the source repository. The environment asset
-is named `cost-review.env.example` in the release because GitHub rewrites
+`compose.yaml`, `cost-review.env.example`, and checksums so an Ubuntu
+installation does not require cloning or building the source repository. The
+environment asset is named `cost-review.env.example` because GitHub rewrites
 leading-dot asset names.
 
 The isolation scenario creates independent Production/Test users, accounts,
