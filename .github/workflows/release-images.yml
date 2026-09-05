@@ -75,23 +75,27 @@ jobs:
         shell: bash
         run: |
           mkdir release
-          cp compose.yaml release/compose.yaml
-          cp .env.example release/cost-review.env.example
+          cp docker-compose.yml release/docker-compose.yml
+          cp .env.example release/cost-review.env
+          cp .env.example release/.env
           cd release
-          sha256sum compose.yaml cost-review.env.example > SHA256SUMS
+          zip cost-review-docker-compose.zip docker-compose.yml .env
+          sha256sum docker-compose.yml cost-review.env cost-review-docker-compose.zip > SHA256SUMS
       - name: Create GitHub release
         shell: bash
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" \
-              release/compose.yaml \
-              release/cost-review.env.example \
+              release/docker-compose.yml \
+              release/cost-review.env \
+              release/cost-review-docker-compose.zip \
               release/SHA256SUMS \
               --clobber
           else
             gh release create "$GITHUB_REF_NAME" \
-              release/compose.yaml \
-              release/cost-review.env.example \
+              release/docker-compose.yml \
+              release/cost-review.env \
+              release/cost-review-docker-compose.zip \
               release/SHA256SUMS \
               --generate-notes \
               --title "Cost Review $GITHUB_REF_NAME" \

@@ -22,16 +22,19 @@ collapsed merely to simplify installation.
 - A semantic version tag (`vMAJOR.MINOR.PATCH`) publishes API and frontend
   images to GitHub Container Registry for `linux/amd64` and `linux/arm64`.
 - Published images include OCI source metadata, provenance, and an SBOM.
-- The tag workflow creates a GitHub release containing `compose.yaml`, an
-  environment template named `cost-review.env.example`, and SHA-256 checksums.
-- The repository-root `compose.yaml` is the canonical operator entry point and
-  pulls a fixed `COST_REVIEW_VERSION`. Operators upgrade by changing that value
-  deliberately and pulling the new images.
+- The tag workflow creates a GitHub release containing an extractable
+  `cost-review-docker-compose.zip`, individual `docker-compose.yml` and
+  `cost-review.env` files, and SHA-256 checksums. The archive contains exactly
+  the two files required to run the application: `docker-compose.yml` and `.env`.
+- The repository-root `docker-compose.yml` is the canonical operator entry
+  point and pulls a fixed `COST_REVIEW_VERSION`. Operators upgrade by changing
+  that value deliberately and pulling the new images.
 - Source builds use the explicitly selected `compose.dev.yaml`; Docker Compose
   never selects it accidentally during an ordinary installation.
-- `scripts/init-env.sh` creates `.env` with installation-unique database
-  passwords and backup keys, derives trusted host/origin settings from one
-  operator-supplied URL, and refuses to overwrite an existing configuration.
+- `.env.example` is a documented configuration template with six explicitly
+  marked values: two database passwords, two backup encryption keys, the
+  browser origin, and the accepted host. The release archive includes it as
+  `.env`, ready for the operator to edit without running a script.
 - The standalone project preserves two PostgreSQL services, two API services,
   two scheduled backup services, separate credentials, internal data networks,
   volumes, encryption keys, and session namespaces.
@@ -42,11 +45,11 @@ collapsed merely to simplify installation.
 
 ## Consequences
 
-An Ubuntu operator can clone the repository, initialize `.env`, and use ordinary
-Docker Compose commands without knowing which internal file to select. A
-release-asset installation remains available without a Git checkout. The
-application can be upgraded and rolled back without rebuilding it on the server,
-while database, attachment, and backup volumes remain persistent.
+An Ubuntu operator can extract one archive, edit one file, and use ordinary
+Docker Compose commands. A release installation requires neither a Git checkout
+nor an initialization script. The application can be upgraded and rolled back
+without rebuilding it on the server, while database, attachment, and backup
+volumes remain persistent.
 
 Publishing a release now requires version alignment in the backend package,
 frontend package, and deployment environment template. Image visibility and

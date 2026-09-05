@@ -88,19 +88,13 @@ jobs:
       BACKUP_TEST_ENCRYPTION_KEY: ci-test-backup-encryption-key-32-characters
     steps:
       - uses: actions/checkout@v7
-      - name: Verify one-command installer surface
+      - name: Verify two-file installer surface
         run: |
-          trap 'rm -f .env' EXIT
-          sh -n scripts/init-env.sh
-          ./scripts/init-env.sh http://127.0.0.1:8080
-          test "$(stat -c %a .env)" = "600"
-          grep -Fx "APP_ALLOWED_ORIGINS=http://127.0.0.1:8080" .env
-          grep -Fx "APP_ALLOWED_HOSTS=127.0.0.1" .env
-          if grep -F "replace-with" .env; then
-            echo "Initializer left secret placeholders in .env" >&2
-            exit 1
-          fi
-      - run: docker compose -f compose.yaml --env-file .env.example config --quiet
+          test -f docker-compose.yml
+          test -f .env.example
+          test ! -e scripts/init-env.sh
+          test "$(grep -c '^.*=$' .env.example)" = "6"
+      - run: docker compose -f docker-compose.yml --env-file .env.example config --quiet
       - run: docker compose config --quiet
       - run: docker compose up --build --detach --wait
       - run: python backend/tests/compose_isolation.py

@@ -1,3 +1,5 @@
+# Cost Review - standalone Docker Compose installation.
+# Keep this file beside a completed .env file, then run: docker compose up -d
 name: cost-review
 
 x-api-environment: &api-environment
@@ -5,8 +7,8 @@ x-api-environment: &api-environment
   DB_NAME: cost_review
   COOKIE_SECURE: ${COOKIE_SECURE:-false}
   SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
-  APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:-http://localhost:8080}
-  APP_ALLOWED_HOSTS: ${APP_ALLOWED_HOSTS:-localhost,127.0.0.1}
+  APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:?Set APP_ALLOWED_ORIGINS in .env}
+  APP_ALLOWED_HOSTS: ${APP_ALLOWED_HOSTS:?Set APP_ALLOWED_HOSTS in .env}
   APP_TRUSTED_PROXY_IPS: ${EDGE_GATEWAY_IP:-172.30.0.10}
   ATTACHMENT_ROOT: /app/storage/attachments
   BACKUP_ROOT: /app/storage/backups
@@ -62,7 +64,7 @@ services:
     restart: unless-stopped
 
   api-prod:
-    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.4.0}
+    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.4.1}
     pull_policy: always
     environment:
       <<: *api-environment
@@ -87,7 +89,7 @@ services:
     restart: unless-stopped
 
   api-test:
-    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.4.0}
+    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.4.1}
     pull_policy: always
     environment:
       <<: *api-environment
@@ -112,7 +114,7 @@ services:
     restart: unless-stopped
 
   backup-prod:
-    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.4.0}
+    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.4.1}
     pull_policy: always
     command: ["python", "-m", "app.backup_cli", "schedule"]
     environment:
@@ -134,7 +136,7 @@ services:
     restart: unless-stopped
 
   backup-test:
-    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.4.0}
+    image: ghcr.io/greycreations/cost-review-api:${COST_REVIEW_VERSION:-0.4.1}
     pull_policy: always
     command: ["python", "-m", "app.backup_cli", "schedule"]
     environment:
@@ -156,7 +158,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ghcr.io/greycreations/cost-review-frontend:${COST_REVIEW_VERSION:-0.4.0}
+    image: ghcr.io/greycreations/cost-review-frontend:${COST_REVIEW_VERSION:-0.4.1}
     pull_policy: always
     depends_on:
       api-prod:
