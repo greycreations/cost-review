@@ -51,38 +51,49 @@ Requirements:
 
 ### Install on Ubuntu
 
-The repository-root `compose.yaml` is the only standard installation file. It
-pulls published images and does not require local Python, Node.js, backend, or
-frontend build contexts:
+An installation needs exactly two files in one folder:
+
+- `docker-compose.yml` — starts the published application images;
+- `.env` — contains the installation settings and secrets.
+
+No repository clone, initialization script, Python, Node.js, or local image
+build is required. Download the `cost-review-docker-compose.zip` attached to a
+GitHub release and extract it into an empty folder. The archive already contains
+both required files. Open `.env` in a text editor and fill in the six empty
+values below the `CHANGE_ME` comments:
+
+1. two different PostgreSQL passwords;
+2. two different backup encryption keys;
+3. the exact browser URL in `APP_ALLOWED_ORIGINS`;
+4. the hostname or IP address in `APP_ALLOWED_HOSTS`.
+
+Passwords and keys must each contain at least 32 letters and digits. Do not use
+spaces. For an Ubuntu host at `192.168.1.41`, the address settings are:
 
 ```sh
-git clone https://github.com/greycreations/cost-review.git
-cd cost-review
-./scripts/init-env.sh http://SERVER-IP:8080
+APP_ALLOWED_ORIGINS=http://192.168.1.41:8080
+APP_ALLOWED_HOSTS=192.168.1.41
+```
+
+Leave `COOKIE_SECURE=false` for local HTTP. Then start Cost Review from the
+folder containing the two files:
+
+```sh
 docker compose up --detach --wait
 docker compose ps
 ```
 
-For the documented host, use:
-
-```sh
-./scripts/init-env.sh http://192.168.1.41:8080
-```
-
-The initializer creates a mode-`600` `.env`, generates four independent random
-database/backup secrets, and configures the accepted browser origin and host.
-It refuses to overwrite an existing `.env`. Store a recovery copy of the two
-generated `BACKUP_*_ENCRYPTION_KEY` values away from both the repository and
-Docker host; encrypted backups cannot be restored without them.
+Open `http://192.168.1.41:8080`. Store a recovery copy of the completed `.env`,
+especially both `BACKUP_*_ENCRYPTION_KEY` values, away from the Docker host;
+encrypted backups cannot be restored without their original keys.
 
 `docker compose up --detach --wait` starts the two API instances, both isolated
 PostgreSQL databases, the gateway, and both scheduled backup processes. Open
 `http://SERVER-IP:8080` unless a different URL was supplied.
 
-The same `compose.yaml` and environment template are attached to every GitHub
-release for installations that should not clone the repository. Copy
-`cost-review.env.example` to `.env`, replace every placeholder, and run the same
-ordinary `docker compose` commands.
+The two files are also attached individually to every GitHub release as
+`docker-compose.yml` and `cost-review.env`. If downloading them individually,
+rename `cost-review.env` to `.env` before starting.
 
 Public GHCR packages require no login. If package visibility is private, sign
 in once with a classic GitHub token that has `read:packages` before starting:
@@ -286,10 +297,9 @@ Version tags matching `vMAJOR.MINOR.PATCH` also publish provenance and
 SBOM-enabled `linux/amd64` and `linux/arm64` API/frontend images to GitHub
 Container Registry. Release deployments pin `COST_REVIEW_VERSION` rather than
 silently following `latest`. The same workflow creates a GitHub release with
-`compose.yaml`, `cost-review.env.example`, and checksums so an Ubuntu
-installation does not require cloning or building the source repository. The
-environment asset is named `cost-review.env.example` because GitHub rewrites
-leading-dot asset names.
+an immediately extractable `cost-review-docker-compose.zip`, the two individual
+deployment files, and checksums. An Ubuntu installation therefore does not
+require cloning or building the source repository.
 
 The isolation scenario creates independent Production/Test users, accounts,
 transactions, linked transfers, snapshots, and budgets, proves writes cannot
