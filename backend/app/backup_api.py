@@ -1,15 +1,19 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import FileResponse
 
 from app.backup_services import (
     create_backup,
+    import_backup,
     list_backups,
     resolve_backup_path,
     validate_backup,
 )
 from app.dependencies import Auth, CsrfAuth, DatabaseSession, RuntimeSettings
+from app.errors import ApiError
 from app.schemas import BackupRead, BackupValidationRead
 
 router = APIRouter(prefix="/backups", tags=["backup-and-restore"])
@@ -27,6 +31,17 @@ def post_backup(
     settings: RuntimeSettings,
 ) -> dict[str, object]:
     return create_backup(db, settings, kind="manual")
+
+
+@router.post("/import", response_model=BackupValidationRead, status_code=201)
+def post_import_backup(
+    _: CsrfAuth,
+    settings: RuntimeSettings,
+    file: Annotated[UploadFile, File()],
+) -> dict[str, object]:
+    if not file.filename:
+        raise ApiError(422, "backup_filename_invalid", "The uploaded backup needs a filename.")
+    return import_backup(settings, file.filename, file.file)
 
 
 @router.post("/{filename}/validate", response_model=BackupValidationRead)

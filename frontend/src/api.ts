@@ -513,7 +513,7 @@ async function request<T>(
   csrf = false,
 ): Promise<T> {
   const headers = new Headers(init.headers);
-  if (init.body) {
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   if (csrf) {
@@ -680,6 +680,15 @@ export function getBackups(environment: Environment): Promise<Backup[]> {
 
 export function createBackup(environment: Environment): Promise<Backup> {
   return request(environment, "/backups", { method: "POST" }, true);
+}
+
+export function importBackup(
+  environment: Environment,
+  file: File,
+): Promise<BackupValidation> {
+  const body = new FormData();
+  body.append("file", file, file.name);
+  return request(environment, "/backups/import", { method: "POST", body }, true);
 }
 
 export function validateBackup(

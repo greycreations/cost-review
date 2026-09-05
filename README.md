@@ -153,7 +153,13 @@ configuration), the data plane's attachments, a manifest, and checksums. The
 archive is authenticated and encrypted using that data plane's installation
 key. Manual copying of PostgreSQL volume files is not a supported backup method.
 
-Manual backups can be created, validated, and downloaded under **Settings**.
+Manual backups can be created, validated, downloaded, and imported from a local
+`.crbackup` file under **Settings**. Import streams the upload, verifies
+authenticated decryption and every embedded checksum, rejects a backup for the
+other data plane, and only then stores it atomically in the selected backup
+volume. A backup from an earlier installation requires the corresponding
+`BACKUP_PROD_ENCRYPTION_KEY` or `BACKUP_TEST_ENCRYPTION_KEY` from that
+installation; the archive is unrecoverable without its original key.
 Automatic retention is configured with `BACKUP_*_RETENTION_COUNT`; it never
 removes manual or pre-restore safety backups. Keep at least one recently
 validated download on a different machine or storage service.
@@ -170,7 +176,7 @@ docker compose run --rm --no-deps api-prod \
 docker compose run --rm --no-deps api-prod \
   python -m app.backup_cli restore manual-production-YYYYMMDDTHHMMSSZ-ID.crbackup \
   --confirmation "RESTORE PRODUCTION"
-docker compose up --detach --wait api-prod
+docker compose up --detach --wait api-prod backup-prod
 ```
 
 Use `api-test`, `backup-test`, a `test` filename, and confirmation

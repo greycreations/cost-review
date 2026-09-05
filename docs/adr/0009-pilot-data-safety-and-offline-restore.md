@@ -49,8 +49,12 @@ roots, encryption keys, or scheduled backup processes.
   good backups off-host.
 - Restore briefly takes one data plane offline. This is intentional: online
   replacement would allow writes to race with restoration and session state.
-- The browser can create, validate, and download backups, but an operator must
-  use the documented Compose command to restore one.
+- The browser can create, validate, download, and import backups. Import is
+  authenticated and CSRF-protected, streams to a temporary file with a fixed
+  size limit, verifies encryption, checksums, and data-plane identity, and then
+  atomically moves the archive into the selected data plane's backup volume.
+  An operator must still use the documented Compose command to perform the
+  offline database replacement.
 - Password-per-download archives, age-based retention, dependency-aware
   permanent deletion, bulk-edit audit grouping, and attachments UI remain
   explicit follow-up slices rather than being implied by this pilot control.

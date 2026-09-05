@@ -109,6 +109,16 @@ describe("App", () => {
           };
         } else if (/\/accounts\/\d+\/snapshots$/.test(path)) {
           body = [];
+        } else if (path.endsWith("/backups/import") && init?.method === "POST") {
+          body = {
+            filename: "manual-production-20260903T200000Z-a1b2c3d4.crbackup",
+            environment,
+            data_plane_id: `${environment}-plane`,
+            created_at: "2026-09-03T20:00:00Z",
+            schema_revision: "20260903_0011",
+            file_count: 2,
+            valid: true,
+          };
         } else if (path.endsWith("/backups") && init?.method === "POST") {
           body = {
             filename: "manual-production-20260903T200000Z-a1b2c3d4.crbackup",
@@ -241,6 +251,20 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Encrypted backups" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Recycle bin and change history" })).toBeInTheDocument();
     expect(screen.getByText("No backups have been created in this data plane.")).toBeInTheDocument();
+
+    const backup = new File(
+      ["encrypted-backup"],
+      "manual-production-20260903T200000Z-a1b2c3d4.crbackup",
+      { type: "application/octet-stream" },
+    );
+    await user.upload(screen.getByLabelText("Import backup file"), backup);
+
+    expect(await screen.findByText(/The backup was imported and verified/)).toBeInTheDocument();
+    const importCall = vi.mocked(fetch).mock.calls.find(
+      ([input, init]) => input.toString().endsWith("/backups/import") && init?.method === "POST",
+    );
+    expect(importCall?.[1]?.body).toBeInstanceOf(FormData);
+    expect(new Headers(importCall?.[1]?.headers).has("Content-Type")).toBe(false);
   });
 
   it("merges tags only after an explicit confirmation", async () => {
