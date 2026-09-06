@@ -249,6 +249,8 @@ describe("App", () => {
     await user.click(screen.getByRole("link", { name: "Settings" }));
 
     expect(await screen.findByRole("heading", { name: "Encrypted backups" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Restore from backup" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Choose backup file" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Recycle bin and change history" })).toBeInTheDocument();
     expect(screen.getByText("No backups have been created in this data plane.")).toBeInTheDocument();
 
@@ -257,7 +259,7 @@ describe("App", () => {
       "manual-production-20260903T200000Z-a1b2c3d4.crbackup",
       { type: "application/octet-stream" },
     );
-    await user.upload(screen.getByLabelText("Import backup file"), backup);
+    await user.upload(screen.getByTestId("backup-file-input"), backup);
 
     expect(await screen.findByText(/The backup was imported and verified/)).toBeInTheDocument();
     const importCall = vi.mocked(fetch).mock.calls.find(

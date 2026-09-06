@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import {
   ApiError,
@@ -93,11 +93,12 @@ const copy = {
     backupsLead:
       "Databas och bilagor paketeras tillsammans. Kopian är låst till den här datamiljön och kan hämtas för extern förvaring.",
     createBackup: "Skapa säkerhetskopia",
-    importBackup: "Importera backupfil",
+    restoreBackup: "Återställ från säkerhetskopia",
+    importBackup: "Välj säkerhetskopia",
     importBackupLead:
-      "Välj en krypterad .crbackup-fil från datorn. Filen dekrypteras och integritetskontrolleras innan den sparas i den valda datamiljön.",
+      "Välj en krypterad .crbackup-fil från enheten. Filen laddas upp, dekrypteras och integritetskontrolleras innan den sparas i den valda datamiljön.",
     importBackupKeyHint:
-      "En backup från en tidigare installation kräver samma backupnyckel i .env. Själva återställningen körs offline för att skydda databasen från samtidiga ändringar.",
+      "En backup från en tidigare installation kräver samma backupnyckel i .env. Efter uppladdningen visas den i listan och är förberedd för säker offlineåterställning.",
     importComplete: "Backupfilen importerades och verifierades",
     validate: "Validera",
     download: "Hämta",
@@ -152,11 +153,12 @@ const copy = {
     backupsLead:
       "The database and attachments are bundled together. Each backup is bound to this data plane and can be downloaded for off-site storage.",
     createBackup: "Create backup",
-    importBackup: "Import backup file",
+    restoreBackup: "Restore from backup",
+    importBackup: "Choose backup file",
     importBackupLead:
-      "Choose an encrypted .crbackup file from this computer. It is decrypted and integrity-checked before being stored in the selected data environment.",
+      "Choose an encrypted .crbackup file from this device. It is uploaded, decrypted, and integrity-checked before being stored in the selected data environment.",
     importBackupKeyHint:
-      "A backup from an earlier installation requires the same backup key in .env. Restoration itself runs offline to protect the database from concurrent changes.",
+      "A backup from an earlier installation requires the same backup key in .env. After upload it appears in the list, ready for a safe offline restore.",
     importComplete: "The backup was imported and verified",
     validate: "Validate",
     download: "Download",
@@ -745,6 +747,7 @@ function OperationalSafetyPanel({
   const [message, setMessage] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const importInputId = `backup-import-${environment}`;
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = () =>
     Promise.all([getBackups(environment), getRecycleBin(environment), getAuditEvents(environment)])
@@ -781,33 +784,6 @@ function OperationalSafetyPanel({
             <p className="quiet-copy">{labels.backupsLead}</p>
           </div>
           <div className="backup-actions">
-            <label className={`ghost-button button-link${working ? " disabled" : ""}`} htmlFor={importInputId}>
-              {labels.importBackup}
-            </label>
-            <input
-              accept=".crbackup,application/octet-stream"
-              className="sr-only"
-              disabled={working}
-              id={importInputId}
-              onChange={(event) => {
-                const file = event.currentTarget.files?.[0];
-                event.currentTarget.value = "";
-                if (!file) return;
-                setWorking(true);
-                setMessage(null);
-                void importBackup(environment, file)
-                  .then((validation) =>
-                    refresh().then(() =>
-                      setMessage(`${labels.importComplete}: ${validation.filename}`),
-                    ),
-                  )
-                  .catch((error) =>
-                    setMessage(error instanceof Error ? error.message : "Backup import failed."),
-                  )
-                  .finally(() => setWorking(false));
-              }}
-              type="file"
-            />
             <button
               className="primary-button"
               disabled={working}
@@ -825,7 +801,46 @@ function OperationalSafetyPanel({
             </button>
           </div>
         </div>
-        <p className="quiet-copy">{labels.importBackupLead}</p>
+        <div className="backup-import-panel">
+          <div>
+            <h3>{labels.restoreBackup}</h3>
+            <p className="quiet-copy">{labels.importBackupLead}</p>
+          </div>
+          <button
+            className="secondary-button"
+            disabled={working}
+            onClick={() => importInputRef.current?.click()}
+            type="button"
+          >
+            {labels.importBackup}
+          </button>
+          <input
+            accept=".crbackup,application/octet-stream"
+            data-testid="backup-file-input"
+            disabled={working}
+            hidden
+            id={importInputId}
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (!file) return;
+              setWorking(true);
+              setMessage(null);
+              void importBackup(environment, file)
+                .then((validation) =>
+                  refresh().then(() =>
+                    setMessage(`${labels.importComplete}: ${validation.filename}`),
+                  ),
+                )
+                .catch((error) =>
+                  setMessage(error instanceof Error ? error.message : "Backup import failed."),
+                )
+                .finally(() => setWorking(false));
+            }}
+            ref={importInputRef}
+            type="file"
+          />
+        </div>
         <p className="backup-key-hint">{labels.importBackupKeyHint}</p>
         {backups.length === 0 ? <p className="resource-empty">{labels.noBackups}</p> : null}
         <div className="operations-list">
