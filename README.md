@@ -164,8 +164,9 @@ configuration), the data plane's attachments, a manifest, and checksums. The
 archive is authenticated and encrypted using that data plane's installation
 key. Manual copying of PostgreSQL volume files is not a supported backup method.
 
-Manual backups can be created, validated, downloaded, and imported from a local
-`.crbackup` file under **Settings**. Import streams the upload, verifies
+Manual backups can be created, validated, downloaded, and uploaded from a local
+`.crbackup` file under **Settings → Restore from backup → Choose backup file**.
+The upload streams the file, verifies
 authenticated decryption and every embedded checksum, rejects a backup for the
 other data plane, and only then stores it atomically in the selected backup
 volume. A backup from an earlier installation requires the corresponding

@@ -1869,6 +1869,27 @@ input[type="color"] {
   pointer-events: none;
 }
 
+.backup-import-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--background);
+}
+
+.backup-import-panel h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.backup-import-panel .secondary-button {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
 .backup-key-hint {
   padding: 10px 12px;
   border: 1px solid var(--border);
@@ -2314,6 +2335,8 @@ footer {
 
 @media (max-width: 520px) {
   .budget-form-grid, .budget-metrics, .budget-selection label, .budget-row { grid-template-columns: 1fr; }
+  .backup-import-panel { grid-template-columns: 1fr; }
+  .backup-import-panel .secondary-button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
