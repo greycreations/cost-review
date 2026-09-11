@@ -210,6 +210,49 @@ describe("App", () => {
           };
         } else if (path.includes("/transfers?")) {
           body = { items: [], total: 0, limit: 100, offset: 0 };
+        } else if (path.endsWith("/investments/market-data")) {
+          body = {
+            source: "Yahoo Finance",
+            source_url: "https://finance.yahoo.com/quote/%5EOMX/",
+            exchange: "Nasdaq Stockholm (XSTO)",
+            retrieved_at: "2026-09-11T18:00:00Z",
+            data_date: "2026-09-11",
+            is_delayed: true,
+            is_stale: false,
+            estimate_basis: "trailing_12_months",
+            universe_note: "Curated starter universe.",
+            unavailable_symbols: [],
+            stocks: [
+              {
+                ticker: "INVE B",
+                provider_symbol: "INVE-B.ST",
+                name: "Investor B",
+                sector: "investment",
+                currency: "SEK",
+                price: "314.80",
+                price_date: "2026-09-11",
+                changes: {
+                  one_day: "0.60",
+                  one_month: "2.80",
+                  six_months: "11.20",
+                  one_year: "18.40",
+                },
+                annual_dividend_per_share: "5.60",
+                dividend_yield: "1.78",
+                dividend_pattern: [
+                  { month: 5, amount: "1.80", date_basis: "ex_dividend_date" },
+                  { month: 11, amount: "3.80", date_basis: "ex_dividend_date" },
+                ],
+              },
+            ],
+          };
+        } else if (path.endsWith("/investments/portfolio")) {
+          body = {
+            purchase_budget: "10000.0000",
+            currency: "SEK",
+            positions: [{ ticker: "INVE B", shares: 10, target_percentage: "100.0000" }],
+            updated_at: "2026-09-11T18:00:00Z",
+          };
         } else {
           body = session(environment);
         }
@@ -239,6 +282,51 @@ describe("App", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText("DEMO / TEST")).not.toBeInTheDocument();
+  });
+
+  it("opens the single-page investment workspace from the primary navigation", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Investments" }));
+
+    expect(await screen.findByRole("heading", { name: "Investments" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Yahoo Finance · delayed closing prices" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Stockholm exchange" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Holdings & dividends" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Allocate your next investment" })).toBeInTheDocument();
+  });
+
+  it("saves investment holdings and allocations through the protected environment API", async () => {
+    document.cookie = "cost_review_production_csrf=investment-csrf; path=/";
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Investments" }));
+    const heldShares = await screen.findByRole("spinbutton", {
+      name: "Shares held · Investor B",
+    });
+    await user.clear(heldShares);
+    await user.type(heldShares, "12");
+    await user.click(screen.getByRole("button", { name: "Save portfolio" }));
+
+    expect(await screen.findByText("Portfolio saved.")).toBeInTheDocument();
+    const saveCall = vi
+      .mocked(fetch)
+      .mock.calls.find(
+        ([input, init]) =>
+          input.toString().endsWith("/investments/portfolio") && init?.method === "PUT",
+      );
+    expect(saveCall).toBeDefined();
+    expect(JSON.parse(String(saveCall?.[1]?.body))).toEqual({
+      purchase_budget: "10000.00",
+      positions: [{ ticker: "INVE B", shares: 12, target_percentage: "100.00" }],
+    });
+    expect(new Headers(saveCall?.[1]?.headers).get("X-CSRF-Token")).toBe("investment-csrf");
   });
 
   it("shows pilot data safety controls in Settings", async () => {

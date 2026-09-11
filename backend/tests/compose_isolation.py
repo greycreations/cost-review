@@ -290,6 +290,30 @@ def main() -> int:
         },
         test_csrf,
     )
+    call(
+        prod,
+        f"{prod_base}/investments/portfolio",
+        "PUT",
+        {
+            "purchase_budget": "12000.00",
+            "positions": [
+                {"ticker": "INVE B", "shares": 42, "target_percentage": "100"}
+            ],
+        },
+        prod_csrf,
+    )
+    call(
+        test,
+        f"{test_base}/investments/portfolio",
+        "PUT",
+        {
+            "purchase_budget": "5000.00",
+            "positions": [
+                {"ticker": "AXFO", "shares": 8, "target_percentage": "100"}
+            ],
+        },
+        test_csrf,
+    )
     _, prod_accounts_before = call(prod, f"{prod_base}/accounts")
     _, test_accounts_before = call(test, f"{test_base}/accounts")
     assert any(
@@ -372,6 +396,14 @@ def main() -> int:
     _, test_budgets_before = call(test, f"{test_base}/budgets")
     assert [item["name"] for item in prod_budgets_before] == ["Production isolation budget"]
     assert [item["name"] for item in test_budgets_before] == ["Test isolation budget"]
+    _, prod_portfolio_before = call(prod, f"{prod_base}/investments/portfolio")
+    _, test_portfolio_before = call(test, f"{test_base}/investments/portfolio")
+    assert prod_portfolio_before["positions"] == [
+        {"ticker": "INVE B", "shares": 42, "target_percentage": "100.0000"}
+    ]
+    assert test_portfolio_before["positions"] == [
+        {"ticker": "AXFO", "shares": 8, "target_percentage": "100.0000"}
+    ]
     _, prod_before = call(prod, f"{prod_base}/auth/session")
     _, prod_environment_before = call(prod, f"{prod_base}/environment")
 
@@ -392,6 +424,8 @@ def main() -> int:
     _, prod_transfers_after = call(prod, f"{prod_base}/transfers")
     _, test_budgets_after = call(test, f"{test_base}/budgets")
     _, prod_budgets_after = call(prod, f"{prod_base}/budgets")
+    _, test_portfolio_after = call(test, f"{test_base}/investments/portfolio")
+    _, prod_portfolio_after = call(prod, f"{prod_base}/investments/portfolio")
     _, prod_snapshots_after = call(
         prod, f"{prod_base}/accounts/{prod_account['account_id']}/snapshots"
     )
@@ -399,6 +433,8 @@ def main() -> int:
     assert test_transactions_after["total"] == 0
     assert test_transfers_after["total"] == 0
     assert test_budgets_after == []
+    assert test_portfolio_after["positions"] == []
+    assert test_portfolio_after["purchase_budget"] == "0"
     assert any(
         account["name"] == "Production isolation account"
         for account in prod_accounts_after["items"]
@@ -418,6 +454,7 @@ def main() -> int:
     assert len(prod_snapshots_after) == 1
     assert prod_snapshots_after[0]["reported_balance"] == "825.0000"
     assert [item["name"] for item in prod_budgets_after] == ["Production isolation budget"]
+    assert prod_portfolio_after == prod_portfolio_before
 
     _, prod_after = call(prod, f"{prod_base}/auth/session")
     _, prod_environment_after = call(prod, f"{prod_base}/environment")

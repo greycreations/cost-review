@@ -478,6 +478,54 @@ export type LedgerComparison = {
   expense_categories: LedgerCategoryBreakdown[];
 };
 
+export type InvestmentMarketStock = {
+  ticker: string;
+  provider_symbol: string;
+  name: string;
+  sector: string;
+  currency: string;
+  price: string;
+  price_date: string;
+  changes: {
+    one_day: string;
+    one_month: string;
+    six_months: string;
+    one_year: string;
+  };
+  annual_dividend_per_share: string;
+  dividend_yield: string;
+  dividend_pattern: Array<{
+    month: number;
+    amount: string;
+    date_basis: "payment_date" | "ex_dividend_date";
+  }>;
+};
+
+export type InvestmentMarketData = {
+  source: string;
+  source_url: string;
+  exchange: string;
+  retrieved_at: string;
+  data_date: string;
+  is_delayed: boolean;
+  is_stale: boolean;
+  estimate_basis: "trailing_12_months";
+  universe_note: string;
+  stocks: InvestmentMarketStock[];
+  unavailable_symbols: string[];
+};
+
+export type InvestmentPortfolio = {
+  purchase_budget: string;
+  currency: string;
+  positions: Array<{
+    ticker: string;
+    shares: number;
+    target_percentage: string;
+  }>;
+  updated_at: string | null;
+};
+
 export type LedgerFilters = {
   accountId?: number | null;
   providerId?: number | null;
@@ -599,6 +647,35 @@ export function resetTestEnvironment(confirmation: string): Promise<{
     "test",
     "/test/reset",
     { method: "POST", body: JSON.stringify({ confirmation }) },
+    true,
+  );
+}
+
+export function getInvestmentMarketData(
+  environment: Environment,
+): Promise<InvestmentMarketData> {
+  return request(environment, "/investments/market-data");
+}
+
+export function getInvestmentPortfolio(environment: Environment): Promise<InvestmentPortfolio> {
+  return request(environment, "/investments/portfolio");
+}
+
+export function saveInvestmentPortfolio(
+  environment: Environment,
+  payload: {
+    purchase_budget: string;
+    positions: Array<{
+      ticker: string;
+      shares: number;
+      target_percentage: string;
+    }>;
+  },
+): Promise<InvestmentPortfolio> {
+  return request(
+    environment,
+    "/investments/portfolio",
+    { method: "PUT", body: JSON.stringify(payload) },
     true,
   );
 }

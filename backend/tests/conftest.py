@@ -31,7 +31,8 @@ def clean_database(database) -> None:
     with database.engine.begin() as connection:
         connection.execute(
             text(
-                "TRUNCATE TABLE audit_events, budget_providers, budget_accounts, budget_tags, "
+                "TRUNCATE TABLE audit_events, investment_positions, "
+                "investment_portfolio_settings, budget_providers, budget_accounts, budget_tags, "
                 "budget_categories, budgets, analysis_group_providers, "
                 "analysis_group_accounts, analysis_group_tags, analysis_group_categories, "
                 "analysis_groups, "

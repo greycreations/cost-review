@@ -27,6 +27,7 @@ import {
 } from "./api";
 import { LedgerWorkspace } from "./LedgerWorkspace";
 import { BudgetWorkspace } from "./BudgetWorkspace";
+import { InvestmentWorkspace } from "./InvestmentWorkspace";
 import { OverviewWorkspace, type OverviewDrilldown } from "./OverviewWorkspace";
 import {
   TransactionWorkspace,
@@ -71,6 +72,7 @@ const copy = {
     transactions: "Transaktioner",
     accounts: "Konton",
     budget: "Budget",
+    investments: "Investeringar",
     settings: "Inställningar",
     attention: "Uppmärksamhet",
     foundationReady: "Ledger-grunden är aktiv",
@@ -131,6 +133,7 @@ const copy = {
     transactions: "Transactions",
     accounts: "Accounts",
     budget: "Budget",
+    investments: "Investments",
     settings: "Settings",
     attention: "Attention",
     foundationReady: "Ledger foundation is active",
@@ -236,6 +239,28 @@ function App() {
       setEnvironment(next);
     }
   };
+
+  if (import.meta.env.DEV && window.location.hash === "#investments-preview") {
+    return (
+      <div className="app-shell">
+        <div className="test-banner" role="status">
+          <strong>LOKAL FÖRHANDSVISNING</strong>
+          <span>Visar enbart illustrativ marknads- och portföljdata.</span>
+        </div>
+        <header className="topbar">
+          <span className="brand">Cost Review</span>
+          <nav className="primary-nav" aria-label="Primär navigering">
+            <a className="active" href="#investments-preview" aria-current="page">
+              Investeringar
+            </a>
+          </nav>
+        </header>
+        <main>
+          <InvestmentWorkspace language="sv" preview />
+        </main>
+      </div>
+    );
+  }
 
   if (state.kind === "loading") {
     return (
@@ -604,6 +629,13 @@ function ApplicationShell({
             {labels.budget}
           </a>
           <a
+            className={view === "investments" ? "active" : undefined}
+            href="#investments"
+            aria-current={view === "investments" ? "page" : undefined}
+          >
+            {labels.investments}
+          </a>
+          <a
             className={view === "settings" ? "active" : undefined}
             href="#settings"
             aria-current={view === "settings" ? "page" : undefined}
@@ -654,6 +686,13 @@ function ApplicationShell({
             baseCurrency={session.settings.base_currency}
             environment={environment}
             key={`${environment}-budget`}
+            language={session.settings.language}
+          />
+        ) : null}
+        {view === "investments" ? (
+          <InvestmentWorkspace
+            environment={environment}
+            key={`${environment}-investments`}
             language={session.settings.language}
           />
         ) : null}
@@ -911,11 +950,11 @@ function OperationalSafetyPanel({
   );
 }
 
-type AppView = "overview" | "transactions" | "accounts" | "budget" | "settings";
+type AppView = "overview" | "transactions" | "accounts" | "budget" | "investments" | "settings";
 
 function viewFromHash(hash: string): AppView {
   const value = hash.replace("#", "");
-  return value === "transactions" || value === "accounts" || value === "budget" || value === "settings"
+  return value === "transactions" || value === "accounts" || value === "budget" || value === "investments" || value === "settings"
     ? value
     : "overview";
 }

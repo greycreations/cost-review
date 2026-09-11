@@ -1,7 +1,7 @@
 # Cost Review Product & MVP Specification
 
-**Version:** 1.0  
-**Date:** 2026-08-28  
+**Version:** 1.2
+**Date:** 2026-09-11
 **Status:** Requirements baseline / source of truth
 
 ## 1. Product vision
@@ -305,6 +305,12 @@ Future forecasting provides 30-day / 3 / 6 / 12-month cash-flow projections whil
 - Selective Production -> Test config copy previews changes and resolves conflicts explicitly.
 - Application operates safely behind the intended Cloudflare/reverse-proxy deployment.
 - No release blocker depends on OCR, live market data, bank APIs or 2FA.
+- The Investments workspace may use an optional server-side market-data provider. When enabled,
+  the source, observation date, delay and forecast basis must be visible; unavailable live data
+  must never be silently replaced with fictional values.
+- Investment watchlist, whole-share holdings, purchase budget and target allocations are persisted
+  independently in Production and Demo/Test. Market observations remain derived external data and
+  must not be recorded as investment trades or household income.
 
 ## 22. Recommended implementation sequence
 1. **Foundation:** repo structure, Compose, PostgreSQL, migrations, API/backend, frontend shell, auth, setup and environment boundary.
@@ -317,3 +323,29 @@ Future forecasting provides 30-day / 3 / 6 / 12-month cash-flow projections whil
 
 ## 23. Change control
 This document is the implementation requirements baseline. New product behavior should be evaluated as a change against this baseline rather than silently added to Release 1. Material changes should increment the specification version and identify impact on the data model, API, migrations, UX and acceptance criteria.
+
+### Version 1.1 change impact
+
+- **Data model and migration:** adds per-user investment portfolio settings and selected-position
+  planning rows inside each existing data plane.
+- **API:** adds authenticated market-data and portfolio endpoints under `/api/v1/investments`;
+  writes remain CSRF-protected.
+- **UX:** promotes the approved investment concept to a first-class tab with transparent delayed
+  data and a trailing-12-month dividend estimate.
+- **Operations:** adds one optional server-side EODHD token and a bounded cache; the token is never
+  sent to the browser or stored in PostgreSQL.
+- **Boundary:** this opt-in slice does not make external market data a release blocker and does not
+  change ledger, investment-trade, income or valuation-snapshot semantics.
+
+### Version 1.2 change impact
+
+- **Provider:** Yahoo Finance becomes the keyless default for the curated Stockholm market-data
+  adapter. EODHD remains an explicit operator-selected alternative.
+- **Reliability:** provider responses use a bounded in-process cache and conservative retry policy.
+  When a refresh fails after a successful retrieval, the last snapshot remains visible and is
+  explicitly marked stale; fictional values are never substituted.
+- **API and UX:** market-data responses add a stale indicator, while the Investments tab derives its
+  source label dynamically and continues to show market date, retrieval time, delay and the
+  trailing-12-month dividend basis.
+- **Boundary:** external observations remain derived, non-canonical data and never create or modify
+  investment trades, valuation snapshots, dividends received or other economic history.
