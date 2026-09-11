@@ -3,7 +3,7 @@
 
 Cost Review is a private, self-hosted web application for trustworthy personal
 and household economics. Product behavior is defined by
-`docs/PRODUCT_SPECIFICATION.md` v1.0 and delivered in the order described by
+`docs/PRODUCT_SPECIFICATION.md` v1.2 and delivered in the order described by
 `docs/IMPLEMENTATION_BACKLOG.md`.
 
 Sprint 1 established the Platform Foundation: PostgreSQL, migrations, first-run
@@ -20,7 +20,9 @@ refunds and reimbursements. The same perspective controls budget outcome,
 trends, and underlying entries. Overview applies the same filters to totals,
 charts, comparison periods, and transaction drill-down. It also adds
 explicit reconciliation adjustments, an audit-backed Recycle Bin, and encrypted
-database/configuration/attachment backups with offline restore.
+database/configuration/attachment backups with offline restore. Version 0.5.0
+adds the Investments tab with delayed Yahoo Finance market data, persisted
+holdings, dividend estimates, and whole-share purchase planning.
 
 ## Architecture
 
@@ -87,6 +89,24 @@ Open `http://192.168.1.41:8080`. Store a recovery copy of the completed `.env`,
 especially both `BACKUP_*_ENCRYPTION_KEY` values, away from the Docker host;
 encrypted backups cannot be restored without their original keys.
 
+The Investments tab uses delayed Yahoo Finance closing prices and dividend history for its initial
+Nasdaq Stockholm universe. No API key is required. The default configuration is:
+
+```sh
+MARKET_DATA_PROVIDER=yahoo
+MARKET_DATA_CACHE_SECONDS=21600
+```
+
+Yahoo access is unofficial and may be rate-limited or changed without notice. Cost Review therefore
+caches successful snapshots, retries short transient failures conservatively and keeps showing the
+latest successful in-process snapshot with a stale-data warning when a refresh fails. The UI always
+shows the provider, market date and retrieval time; it never substitutes sample prices in the
+authenticated app.
+
+EODHD remains available as an operator-selected alternative. Set `MARKET_DATA_PROVIDER=eodhd` and
+add `EODHD_API_TOKEN=your-token-here`, then restart both API services. Provider credentials stay in
+the backend environment and are never returned to the browser or included in database backups.
+
 `docker compose up --detach --wait` starts the two API instances, both isolated
 PostgreSQL databases, the gateway, and both scheduled backup processes. Open
 `http://SERVER-IP:8080` unless a different URL was supplied.
@@ -104,6 +124,29 @@ unset GHCR_TOKEN
 ```
 
 Never copy a development machine's `.env` to another installation.
+
+### Upgrade an existing installation to 0.5.0
+
+Keep the existing `.env` so database passwords, backup keys, and installation
+identity remain unchanged. Create a current backup, then change only this line:
+
+```sh
+COST_REVIEW_VERSION=0.5.0
+```
+
+Pull and recreate the application containers from the installation folder:
+
+```sh
+docker compose pull
+docker compose up --detach --wait
+docker compose ps
+```
+
+The API containers apply the new investment migration independently to
+Production and Demo/Test before they start. Existing database, attachment, and
+backup volumes are preserved. Yahoo Finance is the default and needs no extra
+setting; the optional `MARKET_DATA_PROVIDER` values above are only needed when
+overriding the defaults.
 
 ### Build from source for development
 
@@ -348,6 +391,8 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET | `/api/v1/budgets/{id}/trend` | Server-derived recent outcomes using the budget's own periods |
 | GET | `/api/v1/recycle-bin` | List recoverable archived Ledger records |
 | GET | `/api/v1/audit-events` | Paginated material Ledger change history |
+| GET | `/api/v1/investments/market-data` | Delayed provider-backed Stockholm prices, development and trailing dividend pattern |
+| GET/PUT | `/api/v1/investments/portfolio` | Read or save the user's selected shares, holdings, budget and target allocation |
 | GET/POST | `/api/v1/backups` | List or create encrypted backups |
 | POST/GET | `/api/v1/backups/{filename}/validate`, `/download` | Validate or download one archive |
 
@@ -408,6 +453,13 @@ changing the opening balance or transaction history. Ordinary accounts compare
 the observation with a posting-date-based calculated Ledger balance. Investment
 and value-based accounts show valuation history without treating market-value
 movement as income or claiming investment-performance attribution.
+
+The Investments view is an optional provider-backed planning surface. It shows the market source,
+latest trading date, retrieval time, delayed-data status and any stale-cache fallback. Annual
+dividend amounts and calendar months are derived from the trailing 12 months of provider dividend
+records and are explicitly not confirmed future payments. Holdings and target allocations are
+persisted inside the active data plane; external quotes remain derived and never become Ledger
+events. See `docs/adr/0013-yahoo-market-data-default.md`.
 
 ## Source of truth
 

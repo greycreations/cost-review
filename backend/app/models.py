@@ -224,6 +224,12 @@ class User(TimestampMixin, Base):
     sessions: Mapped[list[Session]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    investment_portfolio: Mapped[InvestmentPortfolioSettings | None] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
+    )
+    investment_positions: Mapped[list[InvestmentPosition]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class AppSettings(TimestampMixin, Base):
@@ -265,6 +271,49 @@ class AppSettings(TimestampMixin, Base):
     )
 
     user: Mapped[User] = relationship(back_populates="settings")
+
+
+class InvestmentPortfolioSettings(TimestampMixin, Base):
+    __tablename__ = "investment_portfolio_settings"
+    __table_args__ = (
+        CheckConstraint("purchase_budget >= 0", name="purchase_budget_non_negative"),
+        CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency_iso_shape"),
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True
+    )
+    purchase_budget: Mapped[Decimal] = mapped_column(
+        Numeric(20, 4), default=Decimal("0"), server_default="0"
+    )
+    currency: Mapped[str] = mapped_column(String(3), default="SEK", server_default="SEK")
+
+    user: Mapped[User] = relationship(back_populates="investment_portfolio")
+
+
+class InvestmentPosition(TimestampMixin, Base):
+    __tablename__ = "investment_positions"
+    __table_args__ = (
+        CheckConstraint("shares >= 0", name="shares_non_negative"),
+        CheckConstraint(
+            "target_percentage >= 0 AND target_percentage <= 100",
+            name="target_percentage_range",
+        ),
+        Index("uq_investment_positions_user_ticker", "user_id", "ticker", unique=True),
+        Index("ix_investment_positions_user_id", "user_id"),
+    )
+
+    investment_position_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"))
+    ticker: Mapped[str] = mapped_column(String(16))
+    shares: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    target_percentage: Mapped[Decimal] = mapped_column(
+        Numeric(7, 4), default=Decimal("0"), server_default="0"
+    )
+
+    user: Mapped[User] = relationship(back_populates="investment_positions")
 
 
 class Session(Base):

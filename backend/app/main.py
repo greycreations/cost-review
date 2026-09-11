@@ -16,6 +16,8 @@ from app.budget_api import router as budget_router
 from app.config import Settings, get_settings
 from app.database import Database, ensure_environment_identity
 from app.errors import ApiError
+from app.investment_api import router as investment_router
+from app.investment_services import create_market_data_service
 from app.ledger_api import router as ledger_router
 
 
@@ -42,12 +44,13 @@ def create_app(runtime_settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.database = database
+    app.state.market_data_service = create_market_data_service(settings)
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.allowed_origins),
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "X-CSRF-Token"],
     )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.allowed_hosts))
@@ -104,6 +107,7 @@ def create_app(runtime_settings: Settings | None = None) -> FastAPI:
     app.include_router(backup_router, prefix=settings.api_prefix)
     app.include_router(ledger_router, prefix=settings.api_prefix)
     app.include_router(budget_router, prefix=settings.api_prefix)
+    app.include_router(investment_router, prefix=settings.api_prefix)
     if settings.app_environment == "test":
         app.include_router(test_router, prefix=settings.api_prefix)
 

@@ -4,11 +4,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
 EnvironmentKind = Literal["production", "test"]
+MarketDataProvider = Literal["yahoo", "eodhd"]
 
 
 class Settings(BaseSettings):
@@ -44,6 +45,13 @@ class Settings(BaseSettings):
     backup_encryption_key: str = ""
     backup_retention_count: int = Field(default=14, ge=1, le=365)
     backup_interval_hours: int = Field(default=24, ge=1, le=720)
+
+    market_data_provider: MarketDataProvider = "yahoo"
+    yahoo_finance_base_url: str = "https://query1.finance.yahoo.com"
+    eodhd_api_token: SecretStr = SecretStr("")
+    eodhd_base_url: str = "https://eodhd.com/api"
+    market_data_cache_seconds: int = Field(default=21_600, ge=60, le=86_400)
+    market_data_request_timeout_seconds: float = Field(default=15, ge=2, le=60)
 
     @field_validator("session_cookie_name", "csrf_cookie_name")
     @classmethod
