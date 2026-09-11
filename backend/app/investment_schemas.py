@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
-Ticker = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=16)]
+Ticker = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32)]
 Money = Annotated[Decimal, Field(ge=0, max_digits=20, decimal_places=4)]
 Percentage = Annotated[Decimal, Field(ge=0, le=100, max_digits=7, decimal_places=4)]
 
@@ -51,8 +51,8 @@ class InvestmentPortfolioRead(BaseModel):
 
 class MarketChangesRead(BaseModel):
     one_day: Decimal
-    one_month: Decimal
-    six_months: Decimal
+    one_month: Decimal | None
+    six_months: Decimal | None
     one_year: Decimal
 
 
@@ -74,6 +74,7 @@ class InvestmentMarketStockRead(BaseModel):
     annual_dividend_per_share: Decimal
     dividend_yield: Decimal
     dividend_pattern: list[DividendPatternRead]
+    detail_level: Literal["summary", "history"] = "history"
 
 
 class InvestmentMarketDataRead(BaseModel):
@@ -86,5 +87,6 @@ class InvestmentMarketDataRead(BaseModel):
     is_stale: bool
     estimate_basis: Literal["trailing_12_months"]
     universe_note: str
+    stock_count: int = Field(default=0, ge=0)
     stocks: list[InvestmentMarketStockRead]
     unavailable_symbols: list[str]

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ApiError,
@@ -23,17 +23,21 @@ type Stock = {
   sector: string;
   priceOre: number;
   changeToday: number;
-  change1m: number;
-  change6m: number;
+  change1m: number | null;
+  change6m: number | null;
   change1y: number;
+  annualDividendOre?: number;
   dividends: DividendPayment[];
+  detailLevel?: "summary" | "history";
 };
+
+const STOCK_PAGE_SIZE = 50;
 
 const PREVIEW_STOCKS: Stock[] = [
   {
     ticker: "INVE B",
     name: "Investor B",
-    sector: "investment",
+    sector: "financial_services",
     priceOre: 31480,
     changeToday: 0.6,
     change1m: 2.8,
@@ -44,7 +48,7 @@ const PREVIEW_STOCKS: Stock[] = [
   {
     ticker: "VOLV B",
     name: "Volvo B",
-    sector: "industry",
+    sector: "industrials",
     priceOre: 28940,
     changeToday: -0.3,
     change1m: 4.1,
@@ -55,7 +59,7 @@ const PREVIEW_STOCKS: Stock[] = [
   {
     ticker: "SEB A",
     name: "SEB A",
-    sector: "finance",
+    sector: "financial_services",
     priceOre: 18155,
     changeToday: 0.2,
     change1m: 5.5,
@@ -66,7 +70,7 @@ const PREVIEW_STOCKS: Stock[] = [
   {
     ticker: "ATCO A",
     name: "Atlas Copco A",
-    sector: "industry",
+    sector: "industrials",
     priceOre: 17230,
     changeToday: -0.8,
     change1m: -1.9,
@@ -77,7 +81,7 @@ const PREVIEW_STOCKS: Stock[] = [
   {
     ticker: "ASSA B",
     name: "Assa Abloy B",
-    sector: "industry",
+    sector: "industrials",
     priceOre: 34120,
     changeToday: 0.4,
     change1m: 1.3,
@@ -88,7 +92,7 @@ const PREVIEW_STOCKS: Stock[] = [
   {
     ticker: "AXFO",
     name: "Axfood",
-    sector: "consumer",
+    sector: "consumer_defensive",
     priceOre: 25210,
     changeToday: 0.1,
     change1m: -0.6,
@@ -99,7 +103,7 @@ const PREVIEW_STOCKS: Stock[] = [
   {
     ticker: "TEL2 B",
     name: "Tele2 B",
-    sector: "telecom",
+    sector: "communication_services",
     priceOre: 11690,
     changeToday: 0.7,
     change1m: 3.6,
@@ -110,7 +114,7 @@ const PREVIEW_STOCKS: Stock[] = [
   {
     ticker: "EPI A",
     name: "Epiroc A",
-    sector: "industry",
+    sector: "industrials",
     priceOre: 20860,
     changeToday: -0.2,
     change1m: 0.9,
@@ -163,7 +167,9 @@ const copy = {
     marketNotConfigured: "Marknadsdata är inte konfigurerad",
     marketNotConfiguredLead: "Den valda marknadsdatakällan saknar nödvändig konfiguration. Kontrollera installationens .env och starta om API-tjänsterna.",
     marketUnavailable: "Marknadsdata kunde inte hämtas just nu.",
-    limitedUniverse: "Första urvalet omfattar nio välkända aktier på Nasdaq Stockholm.",
+    limitedUniverse: "{count} Stockholm-handlade aktier hittades via Yahoo Finance.",
+    historyHint: "1 mån, 6 mån och utdelningsmånader hämtas när du väljer en aktie.",
+    showMore: "Visa 50 fler",
     selectedShares: "Valda aktier",
     portfolioValue: "Portföljvärde",
     expectedDividend: "Beräknad utdelning",
@@ -229,7 +235,19 @@ const copy = {
     remainingCash: "Kvar efter köp",
     allocatedBudget: "Fördelad budget",
     noSelected: "Välj minst en aktie i screenern för att skapa en portfölj och köpplan.",
-    sectors: { investment: "Investmentbolag", industry: "Industri", finance: "Finans", consumer: "Dagligvaror", telecom: "Telekom", technology: "Teknik" },
+    sectors: {
+      basic_materials: "Råvaror",
+      communication_services: "Kommunikation",
+      consumer_cyclical: "Sällanköp",
+      consumer_defensive: "Dagligvaror",
+      energy: "Energi",
+      financial_services: "Finans",
+      healthcare: "Hälsovård",
+      industrials: "Industri",
+      real_estate: "Fastigheter",
+      technology: "Teknik",
+      utilities: "Samhällsnytta",
+    },
   },
   en: {
     eyebrow: "Portfolio workspace",
@@ -253,7 +271,9 @@ const copy = {
     marketNotConfigured: "Market data is not configured",
     marketNotConfiguredLead: "The selected market-data source is missing required configuration. Check the installation .env and restart the API services.",
     marketUnavailable: "Market data could not be loaded right now.",
-    limitedUniverse: "The starter universe contains nine well-known Nasdaq Stockholm shares.",
+    limitedUniverse: "Yahoo Finance found {count} Stockholm-traded shares.",
+    historyHint: "1-month, 6-month and dividend-month history is loaded when you select a share.",
+    showMore: "Show 50 more",
     selectedShares: "Selected shares",
     portfolioValue: "Portfolio value",
     expectedDividend: "Estimated dividend",
@@ -319,7 +339,19 @@ const copy = {
     remainingCash: "Cash remaining",
     allocatedBudget: "Allocated budget",
     noSelected: "Select at least one share in the screener to create a portfolio and purchase plan.",
-    sectors: { investment: "Investment company", industry: "Industrials", finance: "Financials", consumer: "Consumer staples", telecom: "Telecom", technology: "Technology" },
+    sectors: {
+      basic_materials: "Basic materials",
+      communication_services: "Communication services",
+      consumer_cyclical: "Consumer cyclical",
+      consumer_defensive: "Consumer defensive",
+      energy: "Energy",
+      financial_services: "Financial services",
+      healthcare: "Healthcare",
+      industrials: "Industrials",
+      real_estate: "Real estate",
+      technology: "Technology",
+      utilities: "Utilities",
+    },
   },
 } as const;
 
@@ -344,7 +376,7 @@ function readStoredSelection(): string[] {
 }
 
 function dividendPerShare(stock: Stock): number {
-  return stock.dividends.reduce((sum, payment) => sum + payment.amountOre, 0);
+  return stock.annualDividendOre ?? stock.dividends.reduce((sum, payment) => sum + payment.amountOre, 0);
 }
 
 function parsePositiveInteger(value: string): number {
@@ -388,14 +420,16 @@ function apiStockToStock(stock: InvestmentMarketStock): Stock {
     sector: stock.sector,
     priceOre: decimalStringToOre(stock.price),
     changeToday: Number(stock.changes.one_day),
-    change1m: Number(stock.changes.one_month),
-    change6m: Number(stock.changes.six_months),
+    change1m: stock.changes.one_month === null ? null : Number(stock.changes.one_month),
+    change6m: stock.changes.six_months === null ? null : Number(stock.changes.six_months),
     change1y: Number(stock.changes.one_year),
+    annualDividendOre: decimalStringToOre(stock.annual_dividend_per_share),
     dividends: stock.dividend_pattern.map((payment) => ({
       month: payment.month,
       amountOre: decimalStringToOre(payment.amount),
       dateBasis: payment.date_basis,
     })),
+    detailLevel: stock.detail_level ?? "history",
   };
 }
 
@@ -423,7 +457,8 @@ function monthName(month: number, language: Language, short = false): string {
   return new Intl.DateTimeFormat(language === "sv" ? "sv-SE" : "en-GB", { month: short ? "short" : "long" }).format(new Date(2026, month - 1, 1)).replace(".", "");
 }
 
-function TrendValue({ value, language }: { value: number; language: Language }) {
+function TrendValue({ value, language }: { value: number | null; language: Language }) {
+  if (value === null) return <span aria-label={language === "sv" ? "Hämtas när aktien väljs" : "Loaded when selected"}>—</span>;
   return <span className={value >= 0 ? "stock-trend positive" : "stock-trend negative"}>{formatPercent(value, language)}</span>;
 }
 
@@ -442,6 +477,7 @@ export function InvestmentWorkspace({
   const [dividendFilter, setDividendFilter] = useState("all");
   const [performanceFilter, setPerformanceFilter] = useState("all");
   const [maxPrice, setMaxPrice] = useState("");
+  const [visibleCount, setVisibleCount] = useState(STOCK_PAGE_SIZE);
   const [stocks, setStocks] = useState<Stock[]>(preview ? PREVIEW_STOCKS : []);
   const [marketSnapshot, setMarketSnapshot] = useState<InvestmentMarketData | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "not-configured" | "error">(
@@ -462,6 +498,7 @@ export function InvestmentWorkspace({
   const [dirty, setDirty] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
+  const detailRequested = useRef(new Set<string>());
 
   useEffect(() => {
     if (preview) localStorage.setItem("cost-review-selected-stocks", JSON.stringify(selected));
@@ -484,6 +521,7 @@ export function InvestmentWorkspace({
         if (!active) return;
         setMarketSnapshot(market);
         setStocks(market.stocks.map(apiStockToStock));
+        detailRequested.current.clear();
         setSelected(portfolio.positions.map((position) => position.ticker));
         setHoldings(
           Object.fromEntries(
@@ -520,6 +558,27 @@ export function InvestmentWorkspace({
     };
   }, [environment, labels.marketUnavailable, preview, reloadKey]);
 
+  useEffect(() => {
+    if (preview || loadState !== "ready") return;
+    const pending = selected.filter((ticker) => {
+      const stock = stocks.find((item) => item.ticker === ticker);
+      return stock?.detailLevel !== "history" && !detailRequested.current.has(ticker);
+    });
+    if (pending.length === 0) return;
+    pending.forEach((ticker) => detailRequested.current.add(ticker));
+    let active = true;
+    void getInvestmentMarketData(environment, pending)
+      .then((market) => {
+        if (!active) return;
+        const details = new Map(market.stocks.map((stock) => [stock.ticker, apiStockToStock(stock)]));
+        setStocks((current) => current.map((stock) => details.get(stock.ticker) ?? stock));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [environment, loadState, preview, selected, stocks]);
+
   const markDirty = () => {
     if (!preview) {
       setDirty(true);
@@ -532,7 +591,7 @@ export function InvestmentWorkspace({
     () => stocks.filter((stock) => selected.includes(stock.ticker)),
     [selected, stocks],
   );
-  const visibleStocks = useMemo(() => {
+  const filteredStocks = useMemo(() => {
     const maximumOre = maxPrice ? parseMoneyToOre(maxPrice) : Number.POSITIVE_INFINITY;
     const normalizedQuery = query.trim().toLocaleLowerCase(language === "sv" ? "sv-SE" : "en-GB");
     return stocks.filter((stock) => {
@@ -544,6 +603,7 @@ export function InvestmentWorkspace({
       return matchesQuery && matchesSector && matchesDividend && matchesPerformance && stock.priceOre <= maximumOre;
     });
   }, [dividendFilter, language, maxPrice, performanceFilter, query, sector, stocks]);
+  const visibleStocks = filteredStocks.slice(0, visibleCount);
 
   const portfolioValueOre = selectedStocks.reduce((sum, stock) => sum + stock.priceOre * parsePositiveInteger(holdings[stock.ticker] ?? "0"), 0);
   const annualDividendOre = selectedStocks.reduce((sum, stock) => sum + dividendPerShare(stock) * parsePositiveInteger(holdings[stock.ticker] ?? "0"), 0);
@@ -589,6 +649,7 @@ export function InvestmentWorkspace({
     setDividendFilter("all");
     setPerformanceFilter("all");
     setMaxPrice("");
+    setVisibleCount(STOCK_PAGE_SIZE);
   };
 
   const savePortfolio = async () => {
@@ -695,7 +756,10 @@ export function InvestmentWorkspace({
                 { dateStyle: "short", timeStyle: "short" },
               )}
               <br />
-              {labels.limitedUniverse}
+              {labels.limitedUniverse.replace(
+                "{count}",
+                String(marketSnapshot.stock_count || marketSnapshot.stocks.length),
+              )}
             </small>
           ) : null}
           {!preview ? (
@@ -751,6 +815,7 @@ export function InvestmentWorkspace({
             <p className="panel-label">{labels.screener}</p>
             <h2 id="stock-list-title">{labels.exchange}</h2>
             <p>{labels.exchangeLead}</p>
+            {!preview ? <p className="investment-history-hint">{labels.historyHint}</p> : null}
           </div>
           <button className="quiet-button" type="button" onClick={resetFilters}>{labels.clear}</button>
         </div>
@@ -760,19 +825,19 @@ export function InvestmentWorkspace({
             <span>{labels.search}</span>
             <div className="input-with-icon">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={language === "sv" ? "t.ex. Investor" : "e.g. Investor"} />
+              <input value={query} onChange={(event) => { setQuery(event.target.value); setVisibleCount(STOCK_PAGE_SIZE); }} placeholder={language === "sv" ? "t.ex. Investor" : "e.g. Investor"} />
             </div>
           </label>
           <label>
             <span>{labels.sector}</span>
-            <select value={sector} onChange={(event) => setSector(event.target.value)}>
+            <select value={sector} onChange={(event) => { setSector(event.target.value); setVisibleCount(STOCK_PAGE_SIZE); }}>
               <option value="all">{labels.allSectors}</option>
               {Object.entries(labels.sectors).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
           <label>
             <span>{labels.dividend}</span>
-            <select value={dividendFilter} onChange={(event) => setDividendFilter(event.target.value)}>
+            <select value={dividendFilter} onChange={(event) => { setDividendFilter(event.target.value); setVisibleCount(STOCK_PAGE_SIZE); }}>
               <option value="all">{labels.all}</option>
               <option value="yes">{labels.paysDividend}</option>
               <option value="no">{labels.noDividend}</option>
@@ -780,7 +845,7 @@ export function InvestmentWorkspace({
           </label>
           <label>
             <span>{labels.oneYear}</span>
-            <select value={performanceFilter} onChange={(event) => setPerformanceFilter(event.target.value)}>
+            <select value={performanceFilter} onChange={(event) => { setPerformanceFilter(event.target.value); setVisibleCount(STOCK_PAGE_SIZE); }}>
               <option value="all">{labels.anyDevelopment}</option>
               <option value="positive">{labels.positive}</option>
               <option value="ten">{labels.overTen}</option>
@@ -788,11 +853,11 @@ export function InvestmentWorkspace({
           </label>
           <label>
             <span>{labels.maxPrice}</span>
-            <div className="money-input"><input inputMode="decimal" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} placeholder={labels.maxPricePlaceholder} /><span>kr</span></div>
+            <div className="money-input"><input inputMode="decimal" value={maxPrice} onChange={(event) => { setMaxPrice(event.target.value); setVisibleCount(STOCK_PAGE_SIZE); }} placeholder={labels.maxPricePlaceholder} /><span>kr</span></div>
           </label>
         </div>
 
-        <div className="table-meta"><span>{visibleStocks.length} {labels.matches}</span><span>{selectedStocks.length} {language === "sv" ? "valda" : "selected"}</span></div>
+        <div className="table-meta"><span>{filteredStocks.length} {labels.matches}</span><span>{selectedStocks.length} {language === "sv" ? "valda" : "selected"}</span></div>
         <div className="investment-table-scroll">
           <table className="investment-table" aria-label={labels.exchange}>
             <thead>
@@ -821,6 +886,18 @@ export function InvestmentWorkspace({
           </table>
           {visibleStocks.length === 0 ? <p className="investment-empty">{labels.noMatches}</p> : null}
         </div>
+        {visibleStocks.length < filteredStocks.length ? (
+          <div className="investment-load-more">
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => setVisibleCount((current) => current + STOCK_PAGE_SIZE)}
+            >
+              {labels.showMore}
+            </button>
+            <span>{visibleStocks.length} / {filteredStocks.length}</span>
+          </div>
+        ) : null}
       </section>
 
       {selectedStocks.length === 0 ? <div className="investment-empty large">{labels.noSelected}</div> : (

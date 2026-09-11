@@ -1,6 +1,6 @@
 # ADR 0013: Yahoo Finance as the default market-data adapter
 
-**Status:** Accepted
+**Status:** Superseded by ADR 0014
 **Date:** 2026-09-11
 
 ## Context

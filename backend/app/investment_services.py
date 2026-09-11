@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -51,6 +52,23 @@ STOCK_UNIVERSE = (
     StockDefinition("SINCH", "SINCH.ST", "Sinch", "technology"),
 )
 STOCKS_BY_TICKER = {stock.ticker: stock for stock in STOCK_UNIVERSE}
+YAHOO_SECTORS = {
+    "Basic Materials": "basic_materials",
+    "Communication Services": "communication_services",
+    "Consumer Cyclical": "consumer_cyclical",
+    "Consumer Defensive": "consumer_defensive",
+    "Energy": "energy",
+    "Financial Services": "financial_services",
+    "Healthcare": "healthcare",
+    "Industrials": "industrials",
+    "Real Estate": "real_estate",
+    "Technology": "technology",
+    "Utilities": "utilities",
+}
+NON_SHARE_SYMBOL_PATTERN = re.compile(
+    r"(?:^|-)(?:BTA|BTU|UR|UNIT|TR|TO\d*[A-Z]*)(?:-|$)",
+    re.IGNORECASE,
+)
 MONEY_QUANTUM = Decimal("0.01")
 PERCENT_QUANTUM = Decimal("0.01")
 PORTFOLIO_MONEY_QUANTUM = Decimal("0.0001")
@@ -83,9 +101,11 @@ def save_investment_portfolio(
     db: DbSession,
     user_id: int,
     payload: InvestmentPortfolioWrite,
+    supported_tickers: frozenset[str] | set[str] | None = None,
 ) -> InvestmentPortfolioRead:
+    supported = supported_tickers if supported_tickers is not None else STOCKS_BY_TICKER.keys()
     unknown_tickers = sorted(
-        {position.ticker for position in payload.positions} - STOCKS_BY_TICKER.keys()
+        {position.ticker for position in payload.positions} - supported
     )
     if unknown_tickers:
         raise ApiError(
@@ -145,7 +165,12 @@ def save_investment_portfolio(
 
 
 class MarketDataService(Protocol):
-    async def get_snapshot(self) -> InvestmentMarketDataRead: ...
+    async def get_snapshot(
+        self,
+        tickers: tuple[str, ...] = (),
+    ) -> InvestmentMarketDataRead: ...
+
+    async def get_supported_tickers(self) -> frozenset[str]: ...
 
 
 class CachedMarketDataService:
@@ -156,32 +181,66 @@ class CachedMarketDataService:
         self._cache_lock = asyncio.Lock()
         self._retry_not_before: datetime | None = None
 
-    async def get_snapshot(self) -> InvestmentMarketDataRead:
+    async def get_snapshot(
+        self,
+        tickers: tuple[str, ...] = (),
+    ) -> InvestmentMarketDataRead:
         now = datetime.now(UTC)
         if self._cache_is_fresh(now):
-            return self._cached  # type: ignore[return-value]
+            return self._select_tickers(self._cached, tickers)  # type: ignore[arg-type]
         if self._cached and self._retry_not_before and now < self._retry_not_before:
-            return self._cached
+            return self._select_tickers(self._cached, tickers)
 
         async with self._cache_lock:
             now = datetime.now(UTC)
             if self._cache_is_fresh(now):
-                return self._cached  # type: ignore[return-value]
+                return self._select_tickers(self._cached, tickers)  # type: ignore[arg-type]
             if self._cached and self._retry_not_before and now < self._retry_not_before:
-                return self._cached
+                return self._select_tickers(self._cached, tickers)
             try:
                 snapshot = await self._fetch_snapshot(now)
-            except ApiError:
+            except (ApiError, httpx.HTTPError, ValueError) as error:
                 if self._cached is None:
-                    raise
+                    if isinstance(error, ApiError):
+                        raise
+                    raise ApiError(
+                        502,
+                        "market_data_unavailable",
+                        "The configured market-data provider could not be reached.",
+                    ) from error
                 self._cached = self._cached.model_copy(update={"is_stale": True})
                 self._retry_not_before = now + timedelta(
                     seconds=min(self._cache_seconds, 900)
                 )
-                return self._cached
+                return self._select_tickers(self._cached, tickers)
             self._cached = snapshot
             self._retry_not_before = None
+            return self._select_tickers(snapshot, tickers)
+
+    async def get_supported_tickers(self) -> frozenset[str]:
+        snapshot = await self.get_snapshot()
+        return frozenset(stock.ticker for stock in snapshot.stocks)
+
+    @staticmethod
+    def _select_tickers(
+        snapshot: InvestmentMarketDataRead,
+        tickers: tuple[str, ...],
+    ) -> InvestmentMarketDataRead:
+        if not tickers:
             return snapshot
+        requested = set(tickers)
+        known = {stock.ticker for stock in snapshot.stocks}
+        unknown = sorted(requested - known)
+        if unknown:
+            raise ApiError(
+                422,
+                "unsupported_investment_ticker",
+                "One or more investment tickers are not in the supported Stockholm universe.",
+                [{"ticker": ticker} for ticker in unknown],
+            )
+        return snapshot.model_copy(
+            update={"stocks": [stock for stock in snapshot.stocks if stock.ticker in requested]}
+        )
 
     def _cache_is_fresh(self, now: datetime) -> bool:
         return bool(
@@ -198,13 +257,53 @@ class YahooMarketDataService(CachedMarketDataService):
     def __init__(self, settings: Settings) -> None:
         super().__init__(settings)
         self._base_url = f"{settings.yahoo_finance_base_url.rstrip('/')}/"
+        self._detail_cache: dict[str, tuple[datetime, InvestmentMarketStockRead]] = {}
+        self._detail_lock = asyncio.Lock()
+
+    async def get_snapshot(
+        self,
+        tickers: tuple[str, ...] = (),
+    ) -> InvestmentMarketDataRead:
+        catalog = await super().get_snapshot()
+        if not tickers:
+            return catalog
+
+        requested = tuple(dict.fromkeys(tickers))
+        by_ticker = {stock.ticker: stock for stock in catalog.stocks}
+        unknown = sorted(set(requested) - by_ticker.keys())
+        if unknown:
+            raise ApiError(
+                422,
+                "unsupported_investment_ticker",
+                "One or more investment tickers are not in the Yahoo Stockholm universe.",
+                [{"ticker": ticker} for ticker in unknown],
+            )
+
+        definitions = [
+            StockDefinition(
+                ticker=ticker,
+                provider_symbol=by_ticker[ticker].provider_symbol,
+                name=by_ticker[ticker].name,
+                sector=by_ticker[ticker].sector,
+            )
+            for ticker in requested
+        ]
+        detailed, unavailable = await self._get_detailed_stocks(definitions)
+        detailed_by_ticker = {stock.ticker: stock for stock in detailed}
+        stocks = [detailed_by_ticker.get(ticker, by_ticker[ticker]) for ticker in requested]
+        return catalog.model_copy(
+            update={
+                "stocks": stocks,
+                "unavailable_symbols": unavailable,
+            }
+        )
 
     async def _fetch_snapshot(self, retrieved_at: datetime) -> InvestmentMarketDataRead:
-        stockholm_today = datetime.now(ZoneInfo("Europe/Stockholm")).date()
         semaphore = asyncio.Semaphore(3)
         async with httpx.AsyncClient(
             base_url=self._base_url,
             timeout=self._timeout_seconds,
+            follow_redirects=True,
             headers={
                 "Accept": "application/json, text/plain, */*",
                 "User-Agent": (
@@ -214,43 +313,194 @@ class YahooMarketDataService(CachedMarketDataService):
                 ),
             },
         ) as client:
-            results = await asyncio.gather(
+            crumb = await self._create_screener_session(client)
+            sector_results = await asyncio.gather(
                 *(
-                    self._fetch_stock(client, semaphore, stock, stockholm_today)
-                    for stock in STOCK_UNIVERSE
+                    self._fetch_sector_quotes(client, semaphore, crumb, sector_name)
+                    for sector_name in YAHOO_SECTORS
                 ),
                 return_exceptions=True,
             )
 
-        stocks: list[InvestmentMarketStockRead] = []
-        unavailable: list[str] = []
-        for definition, result in zip(STOCK_UNIVERSE, results, strict=True):
-            if isinstance(result, BaseException):
-                unavailable.append(definition.ticker)
-            else:
-                stocks.append(result)
-
-        if unavailable:
+        failed_sectors = [
+            sector_name
+            for sector_name, result in zip(YAHOO_SECTORS, sector_results, strict=True)
+            if isinstance(result, BaseException)
+        ]
+        if failed_sectors:
             raise ApiError(
                 502,
                 "market_data_unavailable",
-                "Yahoo Finance did not return a complete Stockholm snapshot.",
-                [{"ticker": ticker} for ticker in unavailable],
+                "Yahoo Finance did not return a complete Stockholm share catalog.",
+                [{"sector": sector} for sector in failed_sectors],
+            )
+
+        stocks_by_symbol: dict[str, InvestmentMarketStockRead] = {}
+        for sector_name, result in zip(YAHOO_SECTORS, sector_results, strict=True):
+            assert isinstance(result, list)
+            for quote in result:
+                stock = _build_yahoo_catalog_stock(
+                    quote,
+                    YAHOO_SECTORS[sector_name],
+                )
+                if stock is not None:
+                    stocks_by_symbol[stock.provider_symbol] = stock
+
+        stocks = sorted(
+            stocks_by_symbol.values(),
+            key=lambda stock: (stock.name.casefold(), stock.ticker),
+        )
+        if not stocks:
+            raise ApiError(
+                502,
+                "market_data_unavailable",
+                "Yahoo Finance returned an empty Stockholm share catalog.",
             )
 
         return InvestmentMarketDataRead(
             source="Yahoo Finance",
-            source_url="https://finance.yahoo.com/quote/%5EOMX/",
+            source_url="https://finance.yahoo.com/research-hub/screener/",
             exchange="Nasdaq Stockholm (XSTO)",
             retrieved_at=retrieved_at,
             data_date=max(stock.price_date for stock in stocks),
             is_delayed=True,
             is_stale=False,
             estimate_basis="trailing_12_months",
-            universe_note="Curated starter universe of nine Nasdaq Stockholm shares.",
+            universe_note=(
+                "Yahoo-discovered Stockholm equities with sector metadata; temporary rights, "
+                "subscription instruments and structured products are excluded."
+            ),
+            stock_count=len(stocks),
             stocks=stocks,
             unavailable_symbols=[],
         )
+
+    async def _create_screener_session(self, client: httpx.AsyncClient) -> str:
+        await client.get("https://fc.yahoo.com/")
+        response = await client.get("v1/test/getcrumb")
+        response.raise_for_status()
+        crumb = response.text.strip()
+        if not crumb or "<" in crumb:
+            raise ValueError("Yahoo Finance returned an invalid screener crumb")
+        return crumb
+
+    async def _fetch_sector_quotes(
+        self,
+        client: httpx.AsyncClient,
+        semaphore: asyncio.Semaphore,
+        crumb: str,
+        sector_name: str,
+    ) -> list[dict[str, object]]:
+        quotes: list[dict[str, object]] = []
+        offset = 0
+        while True:
+            body = {
+                "offset": offset,
+                "size": 250,
+                "sortField": "ticker",
+                "sortType": "ASC",
+                "quoteType": "EQUITY",
+                "query": {
+                    "operator": "AND",
+                    "operands": [
+                        {"operator": "EQ", "operands": ["region", "se"]},
+                        {"operator": "EQ", "operands": ["exchange", "STO"]},
+                        {"operator": "EQ", "operands": ["sector", sector_name]},
+                    ],
+                },
+                "userId": "",
+                "userIdType": "guid",
+            }
+            payload = await self._post_screener(client, semaphore, crumb, body)
+            page, total = _parse_yahoo_screener(payload)
+            quotes.extend(page)
+            offset += len(page)
+            if not page or offset >= total:
+                return quotes
+
+    async def _post_screener(
+        self,
+        client: httpx.AsyncClient,
+        semaphore: asyncio.Semaphore,
+        crumb: str,
+        body: dict[str, object],
+    ) -> object:
+        retryable_statuses = {429, 500, 502, 503, 504}
+        for attempt in range(3):
+            try:
+                async with semaphore:
+                    response = await client.post(
+                        "v1/finance/screener",
+                        params={
+                            "crumb": crumb,
+                            "corsDomain": "finance.yahoo.com",
+                            "formatted": "false",
+                            "lang": "en-US",
+                            "region": "US",
+                        },
+                        json=body,
+                    )
+                if response.status_code in retryable_statuses and attempt < 2:
+                    await asyncio.sleep(0.25 * 2**attempt)
+                    continue
+                response.raise_for_status()
+                return response.json()
+            except (httpx.RequestError, ValueError):
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(0.25 * 2**attempt)
+        raise RuntimeError("Yahoo Finance screener request failed")
+
+    async def _get_detailed_stocks(
+        self,
+        definitions: list[StockDefinition],
+    ) -> tuple[list[InvestmentMarketStockRead], list[str]]:
+        now = datetime.now(UTC)
+        fresh: dict[str, InvestmentMarketStockRead] = {}
+        missing: list[StockDefinition] = []
+        for definition in definitions:
+            cached = self._detail_cache.get(definition.ticker)
+            if cached and (now - cached[0]).total_seconds() < self._cache_seconds:
+                fresh[definition.ticker] = cached[1]
+            else:
+                missing.append(definition)
+
+        if missing:
+            async with self._detail_lock:
+                now = datetime.now(UTC)
+                to_fetch = []
+                for definition in missing:
+                    cached = self._detail_cache.get(definition.ticker)
+                    if cached and (now - cached[0]).total_seconds() < self._cache_seconds:
+                        fresh[definition.ticker] = cached[1]
+                    else:
+                        to_fetch.append(definition)
+                if to_fetch:
+                    stockholm_today = datetime.now(ZoneInfo("Europe/Stockholm")).date()
+                    semaphore = asyncio.Semaphore(3)
+                    async with httpx.AsyncClient(
+                        base_url=self._base_url,
+                        timeout=self._timeout_seconds,
+                        headers={"Accept": "application/json", "User-Agent": "Cost-Review/0.6"},
+                    ) as client:
+                        results = await asyncio.gather(
+                            *(
+                                self._fetch_stock(client, semaphore, definition, stockholm_today)
+                                for definition in to_fetch
+                            ),
+                            return_exceptions=True,
+                        )
+                    for definition, result in zip(to_fetch, results, strict=True):
+                        if not isinstance(result, BaseException):
+                            self._detail_cache[definition.ticker] = (now, result)
+                            fresh[definition.ticker] = result
+
+        unavailable = [
+            definition.provider_symbol
+            for definition in definitions
+            if definition.ticker not in fresh
+        ]
+        return [fresh[item.ticker] for item in definitions if item.ticker in fresh], unavailable
 
     async def _fetch_stock(
         self,
@@ -360,6 +610,7 @@ class EodhdMarketDataService(CachedMarketDataService):
             is_stale=False,
             estimate_basis="trailing_12_months",
             universe_note="Curated starter universe of nine Nasdaq Stockholm shares.",
+            stock_count=len(stocks),
             stocks=stocks,
             unavailable_symbols=[],
         )
@@ -412,6 +663,96 @@ def create_market_data_service(settings: Settings) -> MarketDataService:
     if settings.market_data_provider == "eodhd":
         return EodhdMarketDataService(settings)
     return YahooMarketDataService(settings)
+
+
+def _parse_yahoo_screener(
+    payload: object,
+) -> tuple[list[dict[str, object]], int]:
+    if not isinstance(payload, dict) or not isinstance(payload.get("finance"), dict):
+        raise ValueError("invalid Yahoo Finance screener response")
+    finance = payload["finance"]
+    if finance.get("error"):
+        raise ValueError("Yahoo Finance returned a screener error")
+    results = finance.get("result")
+    if not isinstance(results, list) or not results or not isinstance(results[0], dict):
+        raise ValueError("Yahoo Finance returned no screener result")
+    result = results[0]
+    raw_quotes = result.get("quotes")
+    if not isinstance(raw_quotes, list):
+        raise ValueError("Yahoo Finance returned no screener quotes")
+    quotes = [quote for quote in raw_quotes if isinstance(quote, dict)]
+    raw_total = result.get("total")
+    total = raw_total if isinstance(raw_total, int) and raw_total >= 0 else len(quotes)
+    return quotes, total
+
+
+def _build_yahoo_catalog_stock(
+    quote: dict[str, object],
+    sector: str,
+) -> InvestmentMarketStockRead | None:
+    provider_symbol = quote.get("symbol")
+    if not isinstance(provider_symbol, str) or not provider_symbol.endswith(".ST"):
+        return None
+    symbol_root = provider_symbol[:-3]
+    if NON_SHARE_SYMBOL_PATTERN.search(symbol_root):
+        return None
+    if not quote.get("longName") and not quote.get("shortName"):
+        return None
+    if not any(
+        quote.get(field) is not None
+        for field in ("bookValue", "epsTrailingTwelveMonths", "sharesOutstanding")
+    ):
+        return None
+
+    price = _decimal(quote.get("regularMarketPrice"))
+    if price is None or price <= 0 or quote.get("currency") != "SEK":
+        return None
+    timestamp = quote.get("regularMarketTime")
+    if isinstance(timestamp, bool) or not isinstance(timestamp, (int, float)):
+        return None
+    price_date = datetime.fromtimestamp(
+        timestamp,
+        ZoneInfo("Europe/Stockholm"),
+    ).date()
+    annual_dividend = _decimal(quote.get("trailingAnnualDividendRate")) or Decimal("0")
+    if annual_dividend < 0:
+        annual_dividend = Decimal("0")
+    annual_dividend = annual_dividend.quantize(MONEY_QUANTUM, rounding=ROUND_HALF_UP)
+    dividend_yield = (
+        (annual_dividend / price * Decimal("100")).quantize(
+            PERCENT_QUANTUM,
+            rounding=ROUND_HALF_UP,
+        )
+        if annual_dividend
+        else Decimal("0")
+    )
+    name = quote.get("shortName") or quote.get("longName")
+    assert isinstance(name, str)
+    return InvestmentMarketStockRead(
+        ticker=symbol_root.replace("-", " "),
+        provider_symbol=provider_symbol,
+        name=name,
+        sector=sector,
+        currency="SEK",
+        price=price.quantize(MONEY_QUANTUM, rounding=ROUND_HALF_UP),
+        price_date=price_date,
+        changes=MarketChangesRead(
+            one_day=(_decimal(quote.get("regularMarketChangePercent")) or Decimal("0")).quantize(
+                PERCENT_QUANTUM,
+                rounding=ROUND_HALF_UP,
+            ),
+            one_month=None,
+            six_months=None,
+            one_year=(_decimal(quote.get("fiftyTwoWeekChangePercent")) or Decimal("0")).quantize(
+                PERCENT_QUANTUM,
+                rounding=ROUND_HALF_UP,
+            ),
+        ),
+        annual_dividend_per_share=annual_dividend,
+        dividend_yield=dividend_yield,
+        dividend_pattern=[],
+        detail_level="summary",
+    )
 
 
 def _parse_yahoo_chart(payload: object) -> tuple[list[object], list[object]]:

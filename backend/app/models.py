@@ -307,7 +307,7 @@ class InvestmentPosition(TimestampMixin, Base):
         BigInteger, primary_key=True, autoincrement=True
     )
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"))
-    ticker: Mapped[str] = mapped_column(String(16))
+    ticker: Mapped[str] = mapped_column(String(32))
     shares: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     target_percentage: Mapped[Decimal] = mapped_column(
         Numeric(7, 4), default=Decimal("0"), server_default="0"

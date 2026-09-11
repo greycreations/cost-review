@@ -2554,6 +2554,12 @@ footer {
   font-size: 21px;
 }
 
+.investment-history-hint {
+  margin-top: 7px !important;
+  color: var(--accent-strong) !important;
+  font-size: 12px !important;
+}
+
 .quiet-button,
 .ghost-button {
   min-height: 40px;
@@ -2652,6 +2658,22 @@ footer {
   overflow-x: auto;
   border-radius: 0 0 14px 14px;
   scrollbar-color: var(--border) transparent;
+}
+
+.screener-panel .investment-table-scroll {
+  margin-bottom: 0;
+  border-radius: 0;
+}
+
+.investment-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding-top: 18px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .investment-table {

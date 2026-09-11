@@ -14,6 +14,8 @@ from app.investment_services import (
     STOCKS_BY_TICKER,
     EodhdMarketDataService,
     YahooMarketDataService,
+    _build_yahoo_catalog_stock,
+    _parse_yahoo_screener,
     build_market_stock,
     create_market_data_service,
 )
@@ -33,11 +35,20 @@ SETUP = {
 }
 
 
+class SupportedMarketDataStub:
+    async def get_supported_tickers(self) -> frozenset[str]:
+        return frozenset(STOCKS_BY_TICKER)
+
+    async def get_snapshot(self, tickers: tuple[str, ...] = ()) -> InvestmentMarketDataRead:
+        raise AssertionError(f"unexpected market snapshot request: {tickers}")
+
+
 def authenticate(client: TestClient, settings: Settings) -> dict[str, str]:
     response = client.post("/api/v1/setup", json=SETUP)
     assert response.status_code == 201
     csrf = client.cookies.get(settings.csrf_cookie_name)
     assert csrf
+    client.app.state.market_data_service = SupportedMarketDataStub()
     return {"X-CSRF-Token": csrf}
 
 
@@ -186,6 +197,52 @@ def test_yahoo_is_default_and_parses_one_chart_request_per_stock() -> None:
     assert "/v8/finance/chart/INVE-B.ST" in requested_urls[0]
     assert "events=div%2Csplits" in requested_urls[0]
     assert "api_token" not in requested_urls[0]
+
+
+def test_yahoo_screener_builds_summary_stocks_and_rejects_temporary_instruments() -> None:
+    payload = {
+        "finance": {
+            "error": None,
+            "result": [
+                {
+                    "total": 2,
+                    "quotes": [
+                        {"symbol": "INVE-B.ST"},
+                        {"symbol": "BIOSGN-BTA.ST"},
+                    ],
+                }
+            ],
+        }
+    }
+    quotes, total = _parse_yahoo_screener(payload)
+    assert total == 2
+    assert len(quotes) == 2
+
+    common = {
+        "shortName": "Investor AB ser. B",
+        "currency": "SEK",
+        "regularMarketPrice": "402.55",
+        "regularMarketTime": int(datetime(2026, 9, 11, 15, tzinfo=UTC).timestamp()),
+        "regularMarketChangePercent": "0.42",
+        "fiftyTwoWeekChangePercent": "14.25",
+        "trailingAnnualDividendRate": "5.60",
+        "bookValue": "354.448",
+    }
+    stock = _build_yahoo_catalog_stock(
+        {**common, "symbol": "INVE-B.ST"},
+        "financial_services",
+    )
+    assert stock is not None
+    assert stock.ticker == "INVE B"
+    assert stock.detail_level == "summary"
+    assert stock.changes.one_month is None
+    assert stock.annual_dividend_per_share == Decimal("5.60")
+
+    temporary = _build_yahoo_catalog_stock(
+        {**common, "symbol": "BIOSGN-BTA.ST"},
+        "healthcare",
+    )
+    assert temporary is None
 
 
 def test_expired_snapshot_is_returned_as_stale_when_refresh_fails() -> None:

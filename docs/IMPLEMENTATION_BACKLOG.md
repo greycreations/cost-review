@@ -127,12 +127,13 @@ Derived from Product Specification v1.0. This backlog deliberately prioritizes d
 - CR-115 Data export CSV/Excel, chart image/PDF and printable report view.
 - CR-116 Configurable proactive in-app economic alerts through Attention.
 - CR-117 Optional provider-backed Stockholm investment screener, with Yahoo Finance as the
-  keyless default and EODHD as a configurable alternative, plus persisted holdings and
-  purchase-plan allocations with visible source, delay, freshness and trailing-dividend basis.
+  keyless default and EODHD as a configurable alternative, dynamic Yahoo discovery of the
+  Stockholm equity universe, plus persisted holdings and purchase-plan allocations with visible
+  source, coverage, delay, freshness and trailing-dividend basis.
 
 ## Post-MVP backlog
 - OCR/receipt interpretation.
-- Broader exchange-wide market coverage, multiple providers and lot-level security accounting.
+- Additional exchanges, official reference-data providers and lot-level security accounting.
 - Direct bank/open-banking integrations.
 - Advanced cash-flow forecast/scenario engine.
 - External push/email notifications.
