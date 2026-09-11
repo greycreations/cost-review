@@ -488,8 +488,8 @@ export type InvestmentMarketStock = {
   price_date: string;
   changes: {
     one_day: string;
-    one_month: string;
-    six_months: string;
+    one_month: string | null;
+    six_months: string | null;
     one_year: string;
   };
   annual_dividend_per_share: string;
@@ -499,6 +499,7 @@ export type InvestmentMarketStock = {
     amount: string;
     date_basis: "payment_date" | "ex_dividend_date";
   }>;
+  detail_level: "summary" | "history";
 };
 
 export type InvestmentMarketData = {
@@ -511,6 +512,7 @@ export type InvestmentMarketData = {
   is_stale: boolean;
   estimate_basis: "trailing_12_months";
   universe_note: string;
+  stock_count: number;
   stocks: InvestmentMarketStock[];
   unavailable_symbols: string[];
 };
@@ -653,8 +655,12 @@ export function resetTestEnvironment(confirmation: string): Promise<{
 
 export function getInvestmentMarketData(
   environment: Environment,
+  tickers: string[] = [],
 ): Promise<InvestmentMarketData> {
-  return request(environment, "/investments/market-data");
+  const query = new URLSearchParams();
+  tickers.forEach((ticker) => query.append("ticker", ticker));
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return request(environment, `/investments/market-data${suffix}`);
 }
 
 export function getInvestmentPortfolio(environment: Environment): Promise<InvestmentPortfolio> {

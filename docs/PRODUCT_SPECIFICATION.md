@@ -1,6 +1,6 @@
 # Cost Review Product & MVP Specification
 
-**Version:** 1.2
+**Version:** 1.3
 **Date:** 2026-09-11
 **Status:** Requirements baseline / source of truth
 
@@ -349,3 +349,19 @@ This document is the implementation requirements baseline. New product behavior 
   trailing-12-month dividend basis.
 - **Boundary:** external observations remain derived, non-canonical data and never create or modify
   investment trades, valuation snapshots, dividends received or other economic history.
+
+### Version 1.3 change impact
+
+- **Provider and coverage:** the Yahoo adapter discovers Stockholm equities dynamically through
+  exchange and sector queries instead of a maintained nine-share list. Temporary subscription
+  instruments, rights and structured products are excluded.
+- **API:** the market-data endpoint returns the cached exchange catalog by default and accepts up to
+  50 repeated `ticker` parameters for detailed one-year history and dividend-month enrichment.
+  Portfolio writes are validated against the current discovered catalog.
+- **Data model and migration:** investment ticker capacity increases from 16 to 32 characters so
+  the wider universe can be persisted without changing existing position identities.
+- **UX and performance:** the Investments tab searches and filters the full cached catalog, renders
+  it in batches of 50 and loads heavier 1-month, 6-month and dividend-event history only for selected
+  shares. Source, count, freshness and the historical estimate basis remain visible.
+- **Boundary:** catalog and history observations remain derived external data. They never create or
+  alter investment trades, valuation snapshots, dividend-income events or ledger history.

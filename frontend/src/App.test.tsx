@@ -220,14 +220,15 @@ describe("App", () => {
             is_delayed: true,
             is_stale: false,
             estimate_basis: "trailing_12_months",
-            universe_note: "Curated starter universe.",
+            universe_note: "Yahoo-discovered Stockholm equities.",
+            stock_count: 863,
             unavailable_symbols: [],
             stocks: [
               {
                 ticker: "INVE B",
                 provider_symbol: "INVE-B.ST",
                 name: "Investor B",
-                sector: "investment",
+                sector: "financial_services",
                 currency: "SEK",
                 price: "314.80",
                 price_date: "2026-09-11",
@@ -243,6 +244,7 @@ describe("App", () => {
                   { month: 5, amount: "1.80", date_basis: "ex_dividend_date" },
                   { month: 11, amount: "3.80", date_basis: "ex_dividend_date" },
                 ],
+                detail_level: "history",
               },
             ],
           };

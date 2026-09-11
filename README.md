@@ -3,7 +3,7 @@
 
 Cost Review is a private, self-hosted web application for trustworthy personal
 and household economics. Product behavior is defined by
-`docs/PRODUCT_SPECIFICATION.md` v1.2 and delivered in the order described by
+`docs/PRODUCT_SPECIFICATION.md` v1.3 and delivered in the order described by
 `docs/IMPLEMENTATION_BACKLOG.md`.
 
 Sprint 1 established the Platform Foundation: PostgreSQL, migrations, first-run
@@ -20,9 +20,10 @@ refunds and reimbursements. The same perspective controls budget outcome,
 trends, and underlying entries. Overview applies the same filters to totals,
 charts, comparison periods, and transaction drill-down. It also adds
 explicit reconciliation adjustments, an audit-backed Recycle Bin, and encrypted
-database/configuration/attachment backups with offline restore. Version 0.5.0
-adds the Investments tab with delayed Yahoo Finance market data, persisted
-holdings, dividend estimates, and whole-share purchase planning.
+database/configuration/attachment backups with offline restore. Version 0.6.0
+adds a dynamically discovered Yahoo Finance universe of Stockholm-traded shares
+to the Investments tab, with persisted holdings, dividend estimates, and
+whole-share purchase planning.
 
 ## Architecture
 
@@ -125,13 +126,13 @@ unset GHCR_TOKEN
 
 Never copy a development machine's `.env` to another installation.
 
-### Upgrade an existing installation to 0.5.0
+### Upgrade an existing installation to 0.6.0
 
 Keep the existing `.env` so database passwords, backup keys, and installation
 identity remain unchanged. Create a current backup, then change only this line:
 
 ```sh
-COST_REVIEW_VERSION=0.5.0
+COST_REVIEW_VERSION=0.6.0
 ```
 
 Pull and recreate the application containers from the installation folder:
@@ -142,11 +143,11 @@ docker compose up --detach --wait
 docker compose ps
 ```
 
-The API containers apply the new investment migration independently to
-Production and Demo/Test before they start. Existing database, attachment, and
-backup volumes are preserved. Yahoo Finance is the default and needs no extra
-setting; the optional `MARKET_DATA_PROVIDER` values above are only needed when
-overriding the defaults.
+The API containers apply the investment ticker-width migration independently to
+Production and Demo/Test before they start. Existing positions and database,
+attachment, and backup volumes are preserved. Yahoo Finance is the default and
+needs no extra setting; the optional `MARKET_DATA_PROVIDER` values above are
+only needed when overriding the defaults.
 
 ### Build from source for development
 
@@ -391,7 +392,7 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET | `/api/v1/budgets/{id}/trend` | Server-derived recent outcomes using the budget's own periods |
 | GET | `/api/v1/recycle-bin` | List recoverable archived Ledger records |
 | GET | `/api/v1/audit-events` | Paginated material Ledger change history |
-| GET | `/api/v1/investments/market-data` | Delayed provider-backed Stockholm prices, development and trailing dividend pattern |
+| GET | `/api/v1/investments/market-data` | Cached Yahoo-discovered Stockholm equity catalog; repeat `ticker` for selected-share history and dividend pattern |
 | GET/PUT | `/api/v1/investments/portfolio` | Read or save the user's selected shares, holdings, budget and target allocation |
 | GET/POST | `/api/v1/backups` | List or create encrypted backups |
 | POST/GET | `/api/v1/backups/{filename}/validate`, `/download` | Validate or download one archive |
