@@ -53,6 +53,8 @@ STOCK_UNIVERSE = (
 STOCKS_BY_TICKER = {stock.ticker: stock for stock in STOCK_UNIVERSE}
 MONEY_QUANTUM = Decimal("0.01")
 PERCENT_QUANTUM = Decimal("0.01")
+PORTFOLIO_MONEY_QUANTUM = Decimal("0.0001")
+PORTFOLIO_PERCENT_QUANTUM = Decimal("0.0001")
 
 
 def read_investment_portfolio(db: DbSession, user_id: int) -> InvestmentPortfolioRead:
@@ -98,7 +100,10 @@ def save_investment_portfolio(
     if settings is None:
         settings = InvestmentPortfolioSettings(user_id=user_id, currency="SEK")
         db.add(settings)
-    settings.purchase_budget = payload.purchase_budget
+    settings.purchase_budget = payload.purchase_budget.quantize(
+        PORTFOLIO_MONEY_QUANTUM,
+        rounding=ROUND_HALF_UP,
+    )
     settings.updated_at = datetime.now(UTC)
 
     db.execute(delete(InvestmentPosition).where(InvestmentPosition.user_id == user_id))
@@ -107,7 +112,10 @@ def save_investment_portfolio(
             user_id=user_id,
             ticker=position.ticker,
             shares=position.shares,
-            target_percentage=position.target_percentage,
+            target_percentage=position.target_percentage.quantize(
+                PORTFOLIO_PERCENT_QUANTUM,
+                rounding=ROUND_HALF_UP,
+            ),
         )
         for position in payload.positions
     )
@@ -118,7 +126,7 @@ def save_investment_portfolio(
             action=action,
             change_source="user",
             changes={
-                "purchase_budget": str(payload.purchase_budget),
+                "purchase_budget": str(settings.purchase_budget),
                 "currency": "SEK",
                 "positions": len(payload.positions),
             },
