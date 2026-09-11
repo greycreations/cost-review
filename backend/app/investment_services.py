@@ -558,14 +558,17 @@ class EodhdMarketDataService(CachedMarketDataService):
         self._token = settings.eodhd_api_token.get_secret_value()
         self._base_url = f"{settings.eodhd_base_url.rstrip('/')}/"
 
-    async def get_snapshot(self) -> InvestmentMarketDataRead:
+    async def get_snapshot(
+        self,
+        tickers: tuple[str, ...] = (),
+    ) -> InvestmentMarketDataRead:
         if not self._token:
             raise ApiError(
                 503,
                 "market_data_not_configured",
                 "Market data is configured for EODHD, but EODHD_API_TOKEN is missing.",
             )
-        return await super().get_snapshot()
+        return await super().get_snapshot(tickers)
 
     async def _fetch_snapshot(self, retrieved_at: datetime) -> InvestmentMarketDataRead:
         stockholm_today = datetime.now(ZoneInfo("Europe/Stockholm")).date()
