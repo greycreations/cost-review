@@ -28,7 +28,7 @@ def upgrade() -> None:
         ),
     )
     op.drop_constraint(
-        "ck_investment_positions_shares_non_negative",
+        op.f("ck_investment_positions_shares_non_negative"),
         "investment_positions",
         type_="check",
     )
@@ -41,17 +41,17 @@ def upgrade() -> None:
         postgresql_using="shares::numeric(24, 8)",
     )
     op.create_check_constraint(
-        "ck_investment_positions_shares_non_negative",
+        op.f("ck_investment_positions_shares_non_negative"),
         "investment_positions",
         "shares >= 0",
     )
     op.create_check_constraint(
-        "ck_investment_positions_instrument_type_allowed",
+        op.f("ck_investment_positions_instrument_type_allowed"),
         "investment_positions",
         "instrument_type IN ('stock', 'fund')",
     )
     op.create_check_constraint(
-        "ck_investment_positions_stock_shares_whole",
+        op.f("ck_investment_positions_stock_shares_whole"),
         "investment_positions",
         "instrument_type = 'fund' OR shares = trunc(shares)",
     )
@@ -77,17 +77,17 @@ def downgrade() -> None:
         unique=True,
     )
     op.drop_constraint(
-        "ck_investment_positions_stock_shares_whole",
+        op.f("ck_investment_positions_stock_shares_whole"),
         "investment_positions",
         type_="check",
     )
     op.drop_constraint(
-        "ck_investment_positions_instrument_type_allowed",
+        op.f("ck_investment_positions_instrument_type_allowed"),
         "investment_positions",
         type_="check",
     )
     op.drop_constraint(
-        "ck_investment_positions_shares_non_negative",
+        op.f("ck_investment_positions_shares_non_negative"),
         "investment_positions",
         type_="check",
     )
@@ -100,7 +100,7 @@ def downgrade() -> None:
         postgresql_using="shares::bigint",
     )
     op.create_check_constraint(
-        "ck_investment_positions_shares_non_negative",
+        op.f("ck_investment_positions_shares_non_negative"),
         "investment_positions",
         "shares >= 0",
     )
