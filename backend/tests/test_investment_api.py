@@ -10,7 +10,11 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.errors import ApiError
 from app.fund_services import AvanzaFundDataService
-from app.investment_schemas import InvestmentMarketDataRead
+from app.investment_schemas import (
+    DividendOpportunitiesRead,
+    DividendOpportunityRead,
+    InvestmentMarketDataRead,
+)
 from app.investment_services import (
     STOCKS_BY_TICKER,
     EodhdMarketDataService,
@@ -503,6 +507,73 @@ def test_market_data_never_falls_back_to_samples_when_unconfigured(
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "market_data_not_configured"
+
+
+def test_dividend_opportunities_are_authenticated_and_return_separate_validation(
+    client: TestClient,
+    settings: Settings,
+) -> None:
+    authenticate(client, settings)
+    market_stock = build_market_stock(
+        STOCKS_BY_TICKER["INVE B"],
+        [{"date": "2026-09-11", "close": "314.80"}],
+        [],
+        date(2026, 9, 11),
+    )
+
+    class MarketStub:
+        async def get_snapshot(self, tickers: tuple[str, ...] = ()) -> InvestmentMarketDataRead:
+            assert tickers == ()
+            return InvestmentMarketDataRead(
+                source="Yahoo Finance",
+                source_url="https://finance.yahoo.com/",
+                exchange="Nasdaq Stockholm (XSTO)",
+                retrieved_at=datetime(2026, 9, 12, tzinfo=UTC),
+                data_date=date(2026, 9, 11),
+                is_delayed=True,
+                is_stale=False,
+                estimate_basis="trailing_12_months",
+                universe_note="Test universe",
+                stocks=[market_stock],
+                unavailable_symbols=[],
+            )
+
+    class ValidationStub:
+        async def get_opportunities(self, stocks):
+            assert [stock.ticker for stock in stocks] == ["INVE B"]
+            return DividendOpportunitiesRead(
+                source="Avanza",
+                source_url="https://www.avanza.se/aktier/lista.html",
+                retrieved_at=datetime(2026, 9, 12, tzinfo=UTC),
+                is_delayed=True,
+                is_stale=False,
+                candidate_count=1,
+                qualified_count=1,
+                excluded_count=0,
+                unavailable_count=0,
+                opportunities=[
+                    DividendOpportunityRead(
+                        ticker="INVE B",
+                        name="Investor B",
+                        sector="financial_services",
+                        currency="SEK",
+                        price=Decimal("314.80"),
+                        annual_dividend_per_share=Decimal("5.60"),
+                        dividend_yield=Decimal("1.78"),
+                        payments_per_year=2,
+                        compared_cycles=2,
+                    )
+                ],
+            )
+
+    client.app.state.market_data_service = MarketStub()
+    client.app.state.dividend_opportunity_service = ValidationStub()
+
+    response = client.get("/api/v1/investments/dividend-opportunities")
+
+    assert response.status_code == 200
+    assert response.json()["qualified_count"] == 1
+    assert response.json()["opportunities"][0]["annual_dividend_per_share"] == "5.60"
 
 
 def test_demo_reset_removes_investment_planning_state(

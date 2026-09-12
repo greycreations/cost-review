@@ -1,6 +1,7 @@
 :root {
-  color: #202522;
-  background: #f5f6f4;
+  color: var(--text-primary);
+  background: var(--background);
+  color-scheme: light;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
@@ -11,6 +12,8 @@
   --surface-quiet: #fafbfa;
   --surface-hover: #fbfcfb;
   --surface-overlay: rgb(255 255 255 / 60%);
+  --surface-muted: #eef2ef;
+  --surface-raised: #ffffff;
   --text-primary: #202522;
   --text-secondary: #68716c;
   --accent: #477568;
@@ -18,6 +21,10 @@
   --accent-soft: #e8f0ed;
   --accent-highlight: #f9fcfb;
   --accent-bar-light: #b8cec7;
+  --accent-button: #477568;
+  --accent-button-hover: #365f54;
+  --accent-primary: #477568;
+  --on-accent: #ffffff;
   --analysis-blue: #587a92;
   --analysis-sand: #c49a67;
   --chart-1: #477568;
@@ -27,6 +34,9 @@
   --chart-5: #78908a;
   --chart-6: #a6aca8;
   --border: #dfe5e1;
+  --border-subtle: #e8ece9;
+  --color-border: #dfe5e1;
+  --color-surface-subtle: #f8faf8;
   --warning: #c5823b;
   --warning-soft: #fbf3e7;
   --warning-text: #6b4d26;
@@ -37,6 +47,61 @@
   --focus: #587a92;
   --test-surface: #f2eee6;
   --test-border: #c8aa7c;
+  --test-accent: #ddc69f;
+  --test-text: #5c4727;
+  --font-display: inherit;
+  --radius-md: 9px;
+  --radius-medium: 12px;
+  --radius-large: 14px;
+  --shadow-soft: 0 14px 40px rgb(32 37 34 / 7%);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #111714;
+  --surface: #18211d;
+  --surface-subtle: #1d2823;
+  --surface-quiet: #151d19;
+  --surface-hover: #202c27;
+  --surface-overlay: rgb(24 33 29 / 76%);
+  --surface-muted: #25312c;
+  --surface-raised: #1b2521;
+  --text-primary: #e7eee9;
+  --text-secondary: #aebbb4;
+  --accent: #76aa9b;
+  --accent-strong: #9bc9bb;
+  --accent-soft: #223a32;
+  --accent-highlight: #1d2d27;
+  --accent-bar-light: #52796d;
+  --accent-button: #477d6d;
+  --accent-button-hover: #568e7e;
+  --accent-primary: #76aa9b;
+  --on-accent: #ffffff;
+  --analysis-blue: #86aec8;
+  --analysis-sand: #d7ad76;
+  --chart-1: #76aa9b;
+  --chart-2: #86aec8;
+  --chart-3: #d7ad76;
+  --chart-4: #aaa0c1;
+  --chart-5: #91aaa3;
+  --chart-6: #7f8b85;
+  --border: #34423b;
+  --border-subtle: #2b3832;
+  --color-border: #34423b;
+  --color-surface-subtle: #1d2823;
+  --warning: #d9a25e;
+  --warning-soft: #362b1f;
+  --warning-text: #f1d1a0;
+  --destructive: #df8b86;
+  --destructive-soft: #3b2525;
+  --negative-muted: #d4aaa6;
+  --progress-track: #293630;
+  --focus: #8ab7d0;
+  --test-surface: #2d281f;
+  --test-border: #8f754b;
+  --test-accent: #80683f;
+  --test-text: #f1d59d;
+  --shadow-soft: 0 14px 40px rgb(0 0 0 / 24%);
 }
 
 * {
@@ -53,7 +118,11 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
-    radial-gradient(circle at 75% 0%, rgb(71 117 104 / 7%), transparent 30rem),
+    radial-gradient(
+      circle at 75% 0%,
+      color-mix(in srgb, var(--accent) 7%, transparent),
+      transparent 30rem
+    ),
     var(--background);
   overflow-x: clip;
 }
@@ -103,7 +172,11 @@ button:disabled {
 
 .page-frame.environment-test,
 .app-shell.environment-test {
-  background: linear-gradient(180deg, rgb(242 238 230 / 64%), transparent 25rem);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--test-surface) 64%, transparent),
+    transparent 25rem
+  );
 }
 
 .minimal-header,
@@ -125,12 +198,50 @@ button:disabled {
   white-space: nowrap;
 }
 
+.topbar-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  background: var(--surface-overlay);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.theme-toggle:hover {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+  color: var(--accent-strong);
+  background: var(--surface);
+}
+
+.theme-toggle svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
 .environment-switcher {
   display: inline-flex;
   padding: 4px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgb(255 255 255 / 72%);
+  background: var(--surface-overlay);
 }
 
 .environment-switcher button {
@@ -145,13 +256,13 @@ button:disabled {
 }
 
 .environment-switcher button.active {
-  color: #fff;
-  background: var(--accent);
+  color: var(--on-accent);
+  background: var(--accent-button);
 }
 
 .environment-test .environment-switcher button.active {
   color: var(--text-primary);
-  background: #ddc69f;
+  background: var(--test-accent);
 }
 
 .auth-main {
@@ -260,7 +371,7 @@ select {
   border: 1px solid var(--border);
   border-radius: 9px;
   color: var(--text-primary);
-  background: #fff;
+  background: var(--surface);
   font-size: 14px;
 }
 
@@ -372,14 +483,14 @@ select:hover {
   padding: 0 18px;
   border: 0;
   border-radius: 9px;
-  color: #fff;
-  background: var(--accent);
+  color: var(--on-accent);
+  background: var(--accent-button);
   font-size: 13px;
   font-weight: 720;
 }
 
 .primary-button:hover {
-  background: var(--accent-strong);
+  background: var(--accent-button-hover);
 }
 
 .destructive-button {
@@ -420,8 +531,8 @@ select:hover {
   min-height: 38px;
   margin: 0 -32px;
   border-bottom: 1px solid var(--test-border);
-  color: #5c4727;
-  background: #e8d8ba;
+  color: var(--test-text);
+  background: color-mix(in srgb, var(--test-accent) 72%, var(--test-surface));
   font-size: 12px;
 }
 
@@ -523,7 +634,7 @@ select:hover {
 
 .environment-badge.test {
   border-color: var(--test-border);
-  color: #5c4727;
+  color: var(--test-text);
   background: var(--test-surface);
 }
 
@@ -768,7 +879,7 @@ select:hover {
   padding: 9px 11px;
   border: 1px solid color-mix(in srgb, var(--warning) 36%, var(--border));
   border-radius: 9px;
-  color: #765025;
+  color: var(--warning-text);
   background: var(--warning-soft);
   font-size: 11px;
   font-weight: 650;
@@ -1512,7 +1623,7 @@ button.distribution-legend-row:focus-visible {
 
 .transaction-main em {
   justify-self: start;
-  color: #765025;
+  color: var(--warning-text);
   font-size: 10px;
   font-style: normal;
   font-weight: 700;
@@ -2231,6 +2342,10 @@ footer {
     padding: 20px 0;
   }
 
+  .topbar-controls {
+    margin-left: auto;
+  }
+
   .primary-nav {
     order: 3;
     width: 100%;
@@ -2306,6 +2421,22 @@ footer {
     flex-direction: column;
     gap: 12px;
     padding: 20px 0;
+  }
+
+  .topbar .topbar-controls,
+  .minimal-header .topbar-controls {
+    order: 2;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .topbar-controls .environment-switcher {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  .topbar-controls .theme-toggle {
+    flex: 0 0 auto;
   }
 
   .environment-switcher {
@@ -2913,6 +3044,61 @@ footer {
   letter-spacing: 0.02em;
 }
 
+.sortable-header-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  width: auto;
+  min-height: 44px;
+  margin: -8px -9px;
+  padding: 0 10px 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: inherit;
+  background: color-mix(in srgb, var(--surface-subtle) 76%, transparent);
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  white-space: nowrap;
+}
+
+.sortable-header-button.left {
+  justify-content: flex-start;
+}
+
+.sortable-header-button:hover {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface));
+}
+
+.sortable-header-button.active {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.sort-indicator {
+  display: inline-grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  color: var(--accent-strong);
+  background: var(--surface-muted);
+  font-size: 12px;
+  font-weight: 780;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+.sortable-header-button.active .sort-indicator {
+  color: var(--on-accent);
+  background: var(--accent-button);
+  opacity: 1;
+}
+
 .investment-table th:first-child:not(.select-column),
 .investment-table td:first-child:not(.select-column),
 .investment-table .select-column + th,
@@ -3055,6 +3241,27 @@ footer {
   min-width: 980px;
 }
 
+.optimizer-source-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 26px 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.optimizer-source-row a {
+  color: var(--accent-strong);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.optimizer-source-row a:hover {
+  text-decoration: underline;
+}
+
 .optimizer-rank {
   color: var(--text-secondary);
   font-weight: 760;
@@ -3090,6 +3297,40 @@ footer {
 
 .holdings-table {
   min-width: 1580px;
+}
+
+.holdings-table .holding-identity-cell {
+  min-width: 230px;
+}
+
+.holding-row-remove {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--destructive) 32%, var(--border));
+  border-radius: 8px;
+  color: var(--destructive);
+  background: var(--destructive-soft);
+  font-size: 11px;
+  font-weight: 730;
+}
+
+.holding-row-remove:hover {
+  border-color: color-mix(in srgb, var(--destructive) 62%, var(--border));
+  background: color-mix(in srgb, var(--destructive-soft) 82%, var(--surface));
+}
+
+.holding-row-remove svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
 }
 
 .fund-table {
@@ -3375,6 +3616,13 @@ footer {
   .holdings-heading-actions {
     align-items: flex-start;
     flex-direction: column;
+    width: 100%;
+  }
+
+  .optimizer-source-row {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-inline: 0;
   }
 
   .investment-summary {

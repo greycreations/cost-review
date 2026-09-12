@@ -66,6 +66,8 @@ const account = (
 describe("App", () => {
   beforeEach(() => {
     localStorage.clear();
+    document.documentElement.dataset.theme = "light";
+    document.documentElement.style.colorScheme = "light";
     window.location.hash = "";
     accountItems = [];
     transactionItems = [];
@@ -240,6 +242,31 @@ describe("App", () => {
           };
         } else if (path.includes("/transfers?")) {
           body = { items: [], total: 0, limit: 100, offset: 0 };
+        } else if (path.endsWith("/investments/dividend-opportunities")) {
+          body = {
+            source: "Avanza",
+            source_url: "https://www.avanza.se/aktier/lista.html",
+            retrieved_at: "2026-09-12T10:00:00Z",
+            is_delayed: true,
+            is_stale: false,
+            candidate_count: 2,
+            qualified_count: 1,
+            excluded_count: 1,
+            unavailable_count: 0,
+            opportunities: [
+              {
+                ticker: "AXFO",
+                name: "Axfood",
+                sector: "consumer_defensive",
+                currency: "SEK",
+                price: "252.10",
+                annual_dividend_per_share: "8.75",
+                dividend_yield: "3.47",
+                payments_per_year: 2,
+                compared_cycles: 2,
+              },
+            ],
+          };
         } else if (path.endsWith("/investments/market-data")) {
           body = {
             source: "Yahoo Finance",
@@ -471,6 +498,93 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Allocate your next investment" })).toBeInTheDocument();
   });
 
+  it("sorts investment columns descending first and ascending on the next click", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Investments" }));
+
+    const screener = await screen.findByRole("table", { name: "Stockholm exchange" });
+    const yieldHeader = within(screener).getByRole("columnheader", { name: "Yield" });
+    const yieldButton = within(yieldHeader).getByRole("button", { name: "Yield" });
+
+    await user.click(yieldButton);
+    expect(yieldHeader).toHaveAttribute("aria-sort", "descending");
+    let rows = within(screener).getAllByRole("row").slice(1);
+    expect(within(rows[0]).getByText("Axfood")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Investor B")).toBeInTheDocument();
+
+    await user.click(yieldButton);
+    expect(yieldHeader).toHaveAttribute("aria-sort", "ascending");
+    rows = within(screener).getAllByRole("row").slice(1);
+    expect(within(rows[0]).getByText("Investor B")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Axfood")).toBeInTheDocument();
+  });
+
+  it("provides sortable controls for every named investment table column", async () => {
+    investmentPositions = [
+      { instrument_type: "stock", ticker: "INVE B", shares: "10", target_percentage: "60.0000" },
+      { instrument_type: "fund", ticker: "SE0001718388", shares: "12.5", target_percentage: "40.0000" },
+    ];
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Investments" }));
+
+    const expectSortableHeaders = (table: HTMLElement, expected: number) => {
+      const header = table.querySelector("thead");
+      expect(header).not.toBeNull();
+      expect(within(header as HTMLElement).getAllByRole("button")).toHaveLength(expected);
+    };
+
+    expectSortableHeaders(
+      await screen.findByRole("table", { name: "Stockholm exchange" }),
+      9,
+    );
+    expectSortableHeaders(
+      screen.getByRole("table", { name: "Highest verified ordinary dividend per krona" }),
+      8,
+    );
+    expectSortableHeaders(
+      await screen.findByRole("table", { name: "Holdings & dividends" }),
+      12,
+    );
+    expectSortableHeaders(
+      await screen.findByRole("table", { name: "Fund holdings" }),
+      9,
+    );
+    expectSortableHeaders(
+      screen.getByRole("table", { name: "Allocate your next investment" }),
+      7,
+    );
+
+    await user.click(screen.getByRole("tab", { name: "Funds" }));
+    await user.type(screen.getByRole("textbox", { name: "Search fund or ISIN" }), "Avanza Zero");
+    expectSortableHeaders(
+      await screen.findByRole("table", { name: "Funds on the Swedish fund market" }),
+      9,
+    );
+  });
+
+  it("switches theme globally and persists the choice for the next visit", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("button", { name: "Switch to dark theme" }));
+
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+    expect(localStorage.getItem("cost-review-theme")).toBe("dark");
+    expect(screen.getByRole("button", { name: "Switch to light theme" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+  });
+
   it("saves investment holdings and allocations through the protected environment API", async () => {
     document.cookie = "cost_review_production_csrf=investment-csrf; path=/";
     const user = userEvent.setup();
@@ -540,9 +654,8 @@ describe("App", () => {
     expect(within(calendar).getAllByText("21 kr")).toHaveLength(2);
 
     await user.click(
-      within(holdingsTable).getByRole("checkbox", { name: "Select holding Axfood" }),
+      within(holdingsTable).getByRole("button", { name: "Remove Axfood from holdings" }),
     );
-    await user.click(screen.getByRole("button", { name: "Remove from holdings" }));
 
     await waitFor(() => {
       const latestSave = vi
@@ -590,7 +703,7 @@ describe("App", () => {
     });
   });
 
-  it("shows the dividend ranking as a historical comparison, not a recommendation", async () => {
+  it("shows only the separately validated dividend comparison, not a recommendation", async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -599,16 +712,20 @@ describe("App", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "Highest historical dividend per invested krona",
+        name: "Highest verified ordinary dividend per krona",
       }),
     ).toBeInTheDocument();
     expect(screen.getByText(/mechanical comparison, not a recommendation/i)).toBeInTheDocument();
     const optimizer = screen.getByRole("table", {
-      name: "Highest historical dividend per invested krona",
+      name: "Highest verified ordinary dividend per krona",
     });
     const rows = within(optimizer).getAllByRole("row");
     expect(within(rows[1]).getByText("Axfood")).toBeInTheDocument();
     expect(within(rows[1]).getByText("3.47 %")).toBeInTheDocument();
+    expect(screen.getByText(/1 qualified out of 2 checked/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /Open validation source/i }),
+    ).toHaveAttribute("href", "https://www.avanza.se/aktier/lista.html");
   });
 
   it("shows pilot data safety controls in Settings", async () => {

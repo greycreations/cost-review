@@ -10,7 +10,9 @@ Specification v1.0, the Product Specification takes precedence.
 
 Cost Review should feel like a calm modern analysis tool, not an accounting package and not a brightly gamified fintech app. The visual language combines Scandinavian restraint, generous whitespace, soft surface contrast, and precise financial typography.
 
-The interface is light-mode first. Design tokens must make a future dark theme possible without redesigning components.
+The calm light theme is the default. Users can switch to an equally restrained dark theme from the
+application chrome; that device-local choice also applies to setup and sign-in. Components must use
+semantic tokens so both themes preserve the same hierarchy and interaction meaning.
 
 ## 2. Color system
 
@@ -32,6 +34,14 @@ A large amount is data, not an error. Never use red merely because a cost is hig
 
 Default charts should not assign a saturated color to every category. Use the primary accent, quiet tonal variations, or neutrals; introduce blue and sand when comparison gives color a clear semantic role.
 
+### Dark theme
+
+The dark theme uses a deep green-black canvas, slightly raised green-grey surfaces, warm off-white
+text and muted teal accents. It is intended to reduce glare in low light without becoming pure black
+or increasing saturation. Warning, destructive, chart and Demo/Test tokens have dark-theme values;
+components must not introduce light-only backgrounds or rely on inverted color meaning. Native form
+controls use the active color scheme. The browser theme color follows the selected theme.
+
 ## 3. Typography
 
 Use Inter when available, with the system sans-serif stack as fallback. Text should feel crisp and understated.
@@ -52,7 +62,7 @@ Surfaces use 10–14 px corner radii, a subtle #DFE5E1 border, and little or no 
 
 Do not build a dashboard full of small KPI cards. Give the single most important value—normalized recurring cost—space in a hero area, then use a limited number of larger analytical panels.
 
-Tables use weak horizontal dividers, comfortable row height, aligned numeric columns, and sticky headers only when they materially help scanning.
+Tables use weak horizontal dividers, comfortable row height, aligned numeric columns, and sticky headers only when they materially help scanning. Sortable headers expose a full touch-sized button, a quiet bidirectional affordance and an explicit up/down indicator for the active direction. First activation is descending, then ascending; `aria-sort` mirrors the visible state.
 
 ## 5. Navigation
 
@@ -115,6 +125,9 @@ Forms place visible labels above controls, explanatory text below only when nece
 Every data region defines loading, empty, error, and populated states. Empty states should explain what will appear and offer the most relevant next action. Avoid fake skeleton content that can be mistaken for real financial data.
 
 Destructive operations require explicit confirmation and clearly describe affected records. Success and error feedback must not rely on color alone.
+
+Removing an item from a reversible planning list may be immediate when the action is clearly named,
+scoped to one visible row and persisted with visible feedback. Bulk removal remains selection-based.
 
 ## 9. Motion and accessibility
 

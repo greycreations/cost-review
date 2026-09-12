@@ -5,9 +5,11 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Request
 
 from app.dependencies import Auth, CsrfAuth, DatabaseSession
+from app.dividend_services import AvanzaDividendOpportunityService
 from app.errors import ApiError
 from app.fund_services import AvanzaFundDataService
 from app.investment_schemas import (
+    DividendOpportunitiesRead,
     InvestmentFundDataRead,
     InvestmentMarketDataRead,
     InvestmentPortfolioRead,
@@ -55,6 +57,19 @@ async def get_fund_data(
             "At most 50 valid fund ISINs can be enriched in one request.",
         )
     return await service.get_funds(query=query, isins=requested)
+
+
+@router.get("/dividend-opportunities", response_model=DividendOpportunitiesRead)
+async def get_dividend_opportunities(
+    _: Auth,
+    request: Request,
+) -> DividendOpportunitiesRead:
+    market_service: MarketDataService = request.app.state.market_data_service
+    validation_service: AvanzaDividendOpportunityService = (
+        request.app.state.dividend_opportunity_service
+    )
+    market = await market_service.get_snapshot()
+    return await validation_service.get_opportunities(market.stocks)
 
 
 @router.get("/portfolio", response_model=InvestmentPortfolioRead)

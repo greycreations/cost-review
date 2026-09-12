@@ -527,6 +527,31 @@ export type InvestmentMarketData = {
   unavailable_symbols: string[];
 };
 
+export type InvestmentDividendOpportunity = {
+  ticker: string;
+  name: string;
+  sector: string;
+  currency: string;
+  price: string;
+  annual_dividend_per_share: string;
+  dividend_yield: string;
+  payments_per_year: number;
+  compared_cycles: number;
+};
+
+export type InvestmentDividendOpportunities = {
+  source: string;
+  source_url: string;
+  retrieved_at: string;
+  is_delayed: boolean;
+  is_stale: boolean;
+  candidate_count: number;
+  qualified_count: number;
+  excluded_count: number;
+  unavailable_count: number;
+  opportunities: InvestmentDividendOpportunity[];
+};
+
 export type InvestmentFund = {
   isin: string;
   provider_id: string;
@@ -801,6 +826,12 @@ export function getInvestmentMarketData(
 
 export function getInvestmentPortfolio(environment: Environment): Promise<InvestmentPortfolio> {
   return request(environment, "/investments/portfolio");
+}
+
+export function getInvestmentDividendOpportunities(
+  environment: Environment,
+): Promise<InvestmentDividendOpportunities> {
+  return request(environment, "/investments/dividend-opportunities");
 }
 
 export function getInvestmentFundData(

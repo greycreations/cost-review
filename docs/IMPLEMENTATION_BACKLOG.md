@@ -134,7 +134,13 @@ Derived from Product Specification v1.0. This backlog deliberately prioritizes d
   holdings-based dividend calendar, purchase-plan allocations and a read-only historical
   dividend-yield comparison with visible source, coverage, delay, freshness and
   trailing-dividend basis. Version 0.7.0 adds searchable public fund information, decimal fund
-  units, ISIN-based persistence, mixed stock/fund planning and mobile-responsive controls.
+  units, ISIN-based persistence, mixed stock/fund planning and mobile-responsive controls. The
+  following UI refinement makes single-holding removal directly visible alongside bulk selection
+  and adds a persistent light/dark theme across authenticated and unauthenticated surfaces. Every
+  named investment-table column also gains accessible descending/ascending header sorting. The
+  dividend comparison now preselects a bounded Yahoo candidate set but ranks only exact-ticker
+  matches with a current ordinary dividend and two comparable payout cycles verified from Avanza;
+  unstable, contradictory, insufficient and unavailable observations are never shown as candidates.
 
 ## Post-MVP backlog
 - OCR/receipt interpretation.

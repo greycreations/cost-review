@@ -102,6 +102,31 @@ class InvestmentMarketDataRead(BaseModel):
     unavailable_symbols: list[str]
 
 
+class DividendOpportunityRead(BaseModel):
+    ticker: str
+    name: str
+    sector: str
+    currency: str
+    price: Decimal
+    annual_dividend_per_share: Decimal
+    dividend_yield: Decimal
+    payments_per_year: int = Field(ge=1, le=12)
+    compared_cycles: int = Field(ge=2)
+
+
+class DividendOpportunitiesRead(BaseModel):
+    source: str
+    source_url: str
+    retrieved_at: datetime
+    is_delayed: bool
+    is_stale: bool
+    candidate_count: int = Field(ge=0)
+    qualified_count: int = Field(ge=0)
+    excluded_count: int = Field(ge=0)
+    unavailable_count: int = Field(ge=0)
+    opportunities: list[DividendOpportunityRead]
+
+
 class InvestmentFundRead(BaseModel):
     isin: str
     provider_id: str

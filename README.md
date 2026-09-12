@@ -3,7 +3,7 @@
 
 Cost Review is a private, self-hosted web application for trustworthy personal
 and household economics. Product behavior is defined by
-`docs/PRODUCT_SPECIFICATION.md` v1.6 and delivered in the order described by
+`docs/PRODUCT_SPECIFICATION.md` v1.8 and delivered in the order described by
 `docs/IMPLEMENTATION_BACKLOG.md`.
 
 Sprint 1 established the Platform Foundation: PostgreSQL, migrations, first-run
@@ -32,7 +32,12 @@ dividend-yield comparison.
 It also adds searchable Swedish fund-market data through Avanza's public, read-only fund
 information, decimal fund units and a combined stock/fund purchase plan. The full application has
 been tightened for narrow mobile screens; dense financial tables remain horizontally swipeable
-without widening the surrounding page.
+without widening the surrounding page. Every saved holding now has a direct remove action in
+addition to bulk selection, the application offers a device-persistent light/dark theme, and every
+named column in the Investments tables can be sorted descending or ascending from its header.
+Version 0.8.0 consolidates those portfolio and appearance refinements and replaces the preliminary
+Yahoo-only dividend ranking with a separately validated ordinary-dividend comparison. Exact ticker,
+current payout and two comparable payout cycles are checked against Avanza before a share may rank.
 
 ## Architecture
 
@@ -150,13 +155,13 @@ unset GHCR_TOKEN
 
 Never copy a development machine's `.env` to another installation.
 
-### Upgrade an existing installation to 0.7.0
+### Upgrade an existing installation to 0.8.0
 
 Keep the existing `.env` so database passwords, backup keys, and installation
 identity remain unchanged. Create a current backup, then change only this line:
 
 ```sh
-COST_REVIEW_VERSION=0.7.0
+COST_REVIEW_VERSION=0.8.0
 ```
 
 Pull and recreate the application containers from the installation folder:
@@ -167,7 +172,8 @@ docker compose up --detach --wait
 docker compose ps
 ```
 
-The API containers apply the user-role and typed investment-position migrations independently to
+No new database migration is required when upgrading from 0.7.0. The API containers still apply all
+available migrations independently to
 Production and Demo/Test before they start. The oldest existing account in each data plane becomes
 administrator automatically. Existing stock positions are preserved and marked as stocks; database,
 attachment and backup volumes are unchanged. Add `ALLOW_SELF_REGISTRATION=false` to the existing
@@ -419,6 +425,7 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET | `/api/v1/audit-events` | Paginated material Ledger change history |
 | GET | `/api/v1/investments/market-data` | Cached Yahoo-discovered Stockholm equity catalog; repeat `ticker` for selected-share history and dividend pattern |
 | GET | `/api/v1/investments/fund-data` | Search public fund information by name/ISIN or enrich saved fund ISINs |
+| GET | `/api/v1/investments/dividend-opportunities` | Cached, separately validated ordinary-dividend comparison for a bounded set of Stockholm candidates |
 | GET/PUT | `/api/v1/investments/portfolio` | Read or save typed stock/fund holdings, decimal quantities, budget and target allocation |
 | GET/POST | `/api/v1/backups` | List or create encrypted backups |
 | POST/GET | `/api/v1/backups/{filename}/validate`, `/download` | Validate or download one archive |
@@ -486,15 +493,21 @@ latest trading date, retrieval time, delayed-data status and any stale-cache fal
 dividend amounts and calendar months are derived from the trailing 12 months of provider dividend
 records and are explicitly not confirmed future payments. Screener selections become durable only
 when the user chooses **Add holdings**; the saved holdings then drive the holdings table, dividend
-calendar and purchase allocation. The dividend comparison ranks trailing dividend per share against
-the latest close and does not add holdings or place trades. Holdings and target allocations are
-persisted per user inside the active data plane; external quotes remain derived and never become
+calendar and purchase allocation. The dividend comparison uses Yahoo's trailing values only to
+preselect at most 40 candidates. It ranks a maximum of ten only after exact-ticker matching and
+validation of a positive current ordinary dividend plus two comparable payout cycles against
+Avanza's public stock information. Special payouts, zero payouts, insufficient history and
+more-than-twofold cycle increases are excluded; if validation is unavailable, no unverified ranking
+is substituted. The comparison does not add holdings or place trades. Holdings and target allocations are
+persisted per user inside the active data plane. Each holding row can be removed directly, while
+checkbox selection remains available for bulk removal. External quotes remain derived and never become
 Ledger events. Funds are searched from Avanza's public fund information without account
 credentials, saved by ISIN and valued from delayed NAV. Version 0.7.0 accepts SEK-denominated funds;
 fund units may contain up to eight decimal places while stocks remain whole-share positions. See
 `docs/adr/0013-yahoo-market-data-default.md`,
 `docs/adr/0016-persistent-investment-holdings-and-dividend-comparison.md` and
-`docs/adr/0017-public-fund-search-and-decimal-holdings.md`.
+`docs/adr/0017-public-fund-search-and-decimal-holdings.md` and
+`docs/adr/0018-validated-dividend-opportunities.md`.
 
 ## Source of truth
 
