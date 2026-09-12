@@ -1,6 +1,6 @@
 # Cost Review Product & MVP Specification
 
-**Version:** 1.7
+**Version:** 1.8
 **Date:** 2026-09-12
 **Status:** Requirements baseline / source of truth
 
@@ -326,10 +326,13 @@ Future forecasting provides 30-day / 3 / 6 / 12-month cash-flow projections whil
   holdings. Whole-share holdings, purchase budget and target allocations are then persisted per user
   and independently in Production and Demo/Test. The holdings table and dividend calendar derive
   solely from that saved list and support explicit removal.
-- A dividend comparison may rank the current catalog by trailing-12-month dividend per share divided
-  by the latest closing price and show a whole-share scenario for the entered purchase budget. It
-  must be labelled as historical and mechanical, must not mutate holdings, and must not be presented
-  as a recommendation or a guarantee of future distributions.
+- A dividend comparison may use trailing provider data only to preselect a bounded candidate set.
+  Every ranked result must then match the exact Stockholm ticker against a separate current public
+  source, have a positive ordinary dividend and contain at least two comparable payout cycles.
+  Extra distributions, current zero distributions, insufficient history and a more-than-twofold
+  cycle increase are excluded. Provider failure must show honest unavailability rather than the
+  unverified preliminary ranking. The whole-share scenario remains mechanical, does not mutate
+  holdings and is never presented as a recommendation or future guarantee.
 - Market observations remain derived external data and must not be recorded as investment trades or
   household income.
 - Every saved stock or fund holding exposes a visible direct remove action. Checkbox selection may
@@ -440,9 +443,9 @@ This document is the implementation requirements baseline. New product behavior 
   screener market fields, adds owned shares, position value, annual dividend and dividend months,
   and supports checkbox-based removal. Navigating away or closing the page no longer loses saved
   holdings or their calendar.
-- **Analysis:** a read-only top-ten comparison ranks catalog shares by historical trailing dividend
-  yield and shows the whole shares, invested amount and historical annual dividend obtainable with
-  the current purchase budget.
+- **Analysis:** a read-only top-ten comparison ranks separately validated ordinary dividend yield
+  and shows the whole shares, invested amount and annual ordinary dividend obtainable with the
+  current purchase budget.
 - **Boundary:** the comparison is explanatory planning output only. It does not consider future
   board decisions, special-dividend recurrence, diversification, company risk, tax or fees and does
   not create orders, holdings, trades, valuation snapshots or income events.
@@ -461,3 +464,19 @@ This document is the implementation requirements baseline. New product behavior 
 - **Accessibility and mobile:** both themes retain semantic state labels, keyboard focus and contrast.
   The theme control and row actions keep touch-sized targets and remain visible without widening the
   page at 320 px; wide financial tables continue to use their intentional horizontal swipe region.
+
+### Version 1.8 change impact
+
+- **Data model and migrations:** no change. The comparison remains derived, read-only planning data.
+- **Provider and API:** `/api/v1/investments/dividend-opportunities` preselects at most 40 shares from
+  the Yahoo catalog, then verifies exact ticker identity, current ordinary yield and payout history
+  against Avanza's public stock information. Calls are server-side, concurrency-bounded and cached.
+- **Validation:** a candidate needs a positive current ordinary dividend and two complete comparable
+  ordinary payout cycles. Special payouts, zero payouts, insufficient history and a more-than-twofold
+  increase between the compared cycles are excluded as unstable. The API exposes checked, qualified,
+  excluded and unavailable counts and never falls back to unverified Yahoo values.
+- **UX:** the comparison is renamed to verified ordinary dividend per invested krona, links its
+  validation source and has explicit loading, stale, empty and unavailable states. A maximum of ten
+  qualified rows is shown with the existing whole-share budget scenario.
+- **Boundary:** validation improves the comparison only. It does not forecast board decisions,
+  recommend securities, create orders or holdings, or write market observations into the Ledger.

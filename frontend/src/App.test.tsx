@@ -242,6 +242,31 @@ describe("App", () => {
           };
         } else if (path.includes("/transfers?")) {
           body = { items: [], total: 0, limit: 100, offset: 0 };
+        } else if (path.endsWith("/investments/dividend-opportunities")) {
+          body = {
+            source: "Avanza",
+            source_url: "https://www.avanza.se/aktier/lista.html",
+            retrieved_at: "2026-09-12T10:00:00Z",
+            is_delayed: true,
+            is_stale: false,
+            candidate_count: 2,
+            qualified_count: 1,
+            excluded_count: 1,
+            unavailable_count: 0,
+            opportunities: [
+              {
+                ticker: "AXFO",
+                name: "Axfood",
+                sector: "consumer_defensive",
+                currency: "SEK",
+                price: "252.10",
+                annual_dividend_per_share: "8.75",
+                dividend_yield: "3.47",
+                payments_per_year: 2,
+                compared_cycles: 2,
+              },
+            ],
+          };
         } else if (path.endsWith("/investments/market-data")) {
           body = {
             source: "Yahoo Finance",
@@ -519,7 +544,7 @@ describe("App", () => {
       9,
     );
     expectSortableHeaders(
-      screen.getByRole("table", { name: "Highest historical dividend per invested krona" }),
+      screen.getByRole("table", { name: "Highest verified ordinary dividend per krona" }),
       8,
     );
     expectSortableHeaders(
@@ -678,7 +703,7 @@ describe("App", () => {
     });
   });
 
-  it("shows the dividend ranking as a historical comparison, not a recommendation", async () => {
+  it("shows only the separately validated dividend comparison, not a recommendation", async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -687,16 +712,20 @@ describe("App", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "Highest historical dividend per invested krona",
+        name: "Highest verified ordinary dividend per krona",
       }),
     ).toBeInTheDocument();
     expect(screen.getByText(/mechanical comparison, not a recommendation/i)).toBeInTheDocument();
     const optimizer = screen.getByRole("table", {
-      name: "Highest historical dividend per invested krona",
+      name: "Highest verified ordinary dividend per krona",
     });
     const rows = within(optimizer).getAllByRole("row");
     expect(within(rows[1]).getByText("Axfood")).toBeInTheDocument();
     expect(within(rows[1]).getByText("3.47 %")).toBeInTheDocument();
+    expect(screen.getByText(/1 qualified out of 2 checked/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /Open validation source/i }),
+    ).toHaveAttribute("href", "https://www.avanza.se/aktier/lista.html");
   });
 
   it("shows pilot data safety controls in Settings", async () => {

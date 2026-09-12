@@ -421,6 +421,7 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET | `/api/v1/audit-events` | Paginated material Ledger change history |
 | GET | `/api/v1/investments/market-data` | Cached Yahoo-discovered Stockholm equity catalog; repeat `ticker` for selected-share history and dividend pattern |
 | GET | `/api/v1/investments/fund-data` | Search public fund information by name/ISIN or enrich saved fund ISINs |
+| GET | `/api/v1/investments/dividend-opportunities` | Cached, separately validated ordinary-dividend comparison for a bounded set of Stockholm candidates |
 | GET/PUT | `/api/v1/investments/portfolio` | Read or save typed stock/fund holdings, decimal quantities, budget and target allocation |
 | GET/POST | `/api/v1/backups` | List or create encrypted backups |
 | POST/GET | `/api/v1/backups/{filename}/validate`, `/download` | Validate or download one archive |
@@ -488,8 +489,12 @@ latest trading date, retrieval time, delayed-data status and any stale-cache fal
 dividend amounts and calendar months are derived from the trailing 12 months of provider dividend
 records and are explicitly not confirmed future payments. Screener selections become durable only
 when the user chooses **Add holdings**; the saved holdings then drive the holdings table, dividend
-calendar and purchase allocation. The dividend comparison ranks trailing dividend per share against
-the latest close and does not add holdings or place trades. Holdings and target allocations are
+calendar and purchase allocation. The dividend comparison uses Yahoo's trailing values only to
+preselect at most 40 candidates. It ranks a maximum of ten only after exact-ticker matching and
+validation of a positive current ordinary dividend plus two comparable payout cycles against
+Avanza's public stock information. Special payouts, zero payouts, insufficient history and
+more-than-twofold cycle increases are excluded; if validation is unavailable, no unverified ranking
+is substituted. The comparison does not add holdings or place trades. Holdings and target allocations are
 persisted per user inside the active data plane. Each holding row can be removed directly, while
 checkbox selection remains available for bulk removal. External quotes remain derived and never become
 Ledger events. Funds are searched from Avanza's public fund information without account
@@ -497,7 +502,8 @@ credentials, saved by ISIN and valued from delayed NAV. Version 0.7.0 accepts SE
 fund units may contain up to eight decimal places while stocks remain whole-share positions. See
 `docs/adr/0013-yahoo-market-data-default.md`,
 `docs/adr/0016-persistent-investment-holdings-and-dividend-comparison.md` and
-`docs/adr/0017-public-fund-search-and-decimal-holdings.md`.
+`docs/adr/0017-public-fund-search-and-decimal-holdings.md` and
+`docs/adr/0018-validated-dividend-opportunities.md`.
 
 ## Source of truth
 

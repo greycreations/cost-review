@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ApiError,
+  getInvestmentDividendOpportunities,
   getInvestmentFundData,
   getInvestmentMarketData,
   getInvestmentPortfolio,
@@ -9,6 +10,7 @@ import {
   type Environment,
   type InvestmentMarketData,
   type InvestmentMarketStock,
+  type InvestmentDividendOpportunities,
   type InvestmentFund,
   type Language,
 } from "./api";
@@ -329,17 +331,22 @@ const copy = {
     allocatedBudget: "Fördelad budget",
     noSelected: "Markera aktier eller fonder i sökningen och välj Lägg till innehav.",
     optimizer: "Utdelningsoptimerare",
-    optimizerTitle: "Mest historisk utdelning per investerad krona",
+    optimizerTitle: "Högst verifierad ordinarie utdelning per krona",
     optimizerLead:
-      "Rangordningen jämför utdelning under de senaste 12 månaderna med den senaste slutkursen.",
+      "Aktier med hög preliminär direktavkastning kontrolleras mot aktuell ordinarie utdelning och två jämförbara utdelningscykler hos Avanza.",
     optimizerWarning:
-      "Detta är ett mekaniskt jämförelseunderlag, inte en rekommendation. Det bedömer inte framtida utdelningsbeslut, extrautdelningar, bolagsrisk, kurstapp, skatt eller avgifter.",
+      "Detta är ett mekaniskt jämförelseunderlag, inte en rekommendation eller garanti. Extrautdelningar, nollad aktuell utdelning, extrema engångshopp och otillräcklig historik tas bort, men framtida bolagsbeslut, risk, kurstapp, skatt och avgifter bedöms inte.",
     optimizerRank: "Plats",
     optimizerCapital: "Med köpbudgeten",
     optimizerShares: "Hela aktier",
     optimizerCost: "Investerat",
-    optimizerDividend: "Historisk utdelning / år",
-    optimizerEmpty: "Inga aktier med registrerad utdelning finns i den aktuella datan.",
+    optimizerDividend: "Ordinarie utdelning / år",
+    optimizerLoading: "Verifierar aktuella utdelningar…",
+    optimizerError: "Den verifierade jämförelsen kunde inte hämtas. Ingen overifierad lista visas.",
+    optimizerEmpty: "Ingen aktie uppfyller just nu kraven på aktuell ordinarie utdelning och jämförbar historik.",
+    optimizerCoverage: "{qualified} kvalificerade av {count} kontrollerade · {excluded} uteslutna · {unavailable} kunde inte kontrolleras",
+    optimizerStale: "Kontrollkällan kunde inte nås. Senast verifierade lista visas.",
+    optimizerSource: "Öppna kontrollkällan",
     sectors: {
       basic_materials: "Råvaror",
       communication_services: "Kommunikation",
@@ -486,17 +493,22 @@ const copy = {
     allocatedBudget: "Allocated budget",
     noSelected: "Select shares or funds in search and choose Add holdings.",
     optimizer: "Dividend optimizer",
-    optimizerTitle: "Highest historical dividend per invested krona",
+    optimizerTitle: "Highest verified ordinary dividend per krona",
     optimizerLead:
-      "The ranking compares dividends during the trailing 12 months with the latest closing price.",
+      "Shares with a high preliminary yield are checked against Avanza's current ordinary dividend and two comparable dividend cycles.",
     optimizerWarning:
-      "This is a mechanical comparison, not a recommendation. It does not assess future dividend decisions, special dividends, company risk, price losses, tax, or fees.",
+      "This is a mechanical comparison, not a recommendation or guarantee. Special dividends, a current zero dividend, extreme one-off jumps and insufficient history are excluded, but future company decisions, risk, price losses, tax and fees are not assessed.",
     optimizerRank: "Rank",
     optimizerCapital: "Using the purchase budget",
     optimizerShares: "Whole shares",
     optimizerCost: "Invested",
-    optimizerDividend: "Historical dividend / year",
-    optimizerEmpty: "No stocks with a recorded dividend are available in the current data.",
+    optimizerDividend: "Ordinary dividend / year",
+    optimizerLoading: "Validating current dividends…",
+    optimizerError: "The validated comparison could not be loaded. No unverified ranking is shown.",
+    optimizerEmpty: "No shares currently meet the requirements for a current ordinary dividend and comparable history.",
+    optimizerCoverage: "{qualified} qualified out of {count} checked · {excluded} excluded · {unavailable} could not be checked",
+    optimizerStale: "The validation source could not be reached. Showing the latest validated ranking.",
+    optimizerSource: "Open validation source",
     sectors: {
       basic_materials: "Basic materials",
       communication_services: "Communication services",
@@ -780,6 +792,10 @@ export function InvestmentWorkspace({
   const [fundSearchState, setFundSearchState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [fundHoldingState, setFundHoldingState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [marketSnapshot, setMarketSnapshot] = useState<InvestmentMarketData | null>(null);
+  const [optimizerSnapshot, setOptimizerSnapshot] = useState<InvestmentDividendOpportunities | null>(null);
+  const [optimizerState, setOptimizerState] = useState<"loading" | "ready" | "error">(
+    preview ? "ready" : "loading",
+  );
   const [loadState, setLoadState] = useState<"loading" | "ready" | "not-configured" | "error">(
     preview ? "ready" : "loading",
   );
@@ -840,6 +856,17 @@ export function InvestmentWorkspace({
   useEffect(() => {
     if (preview) return;
     let active = true;
+    void getInvestmentDividendOpportunities(environment)
+      .then((snapshot) => {
+        if (!active) return;
+        setOptimizerSnapshot(snapshot);
+        setOptimizerState("ready");
+      })
+      .catch(() => {
+        if (!active) return;
+        setOptimizerSnapshot(null);
+        setOptimizerState("error");
+      });
     void Promise.all([getInvestmentMarketData(environment), getInvestmentPortfolio(environment)])
       .then(([market, portfolio]) => {
         if (!active) return;
@@ -1125,11 +1152,31 @@ export function InvestmentWorkspace({
   const maxMonthlyDividend = Math.max(...monthlyDividends, 1);
 
   const budgetOre = parseMoneyToOre(budget);
-  const optimizerBaseRows = stocks
-    .filter((stock) => stock.priceOre > 0 && dividendPerShare(stock) > 0)
-    .map((stock) => {
-      const annualPerShareOre = dividendPerShare(stock);
-      const yieldPercent = (annualPerShareOre / stock.priceOre) * 100;
+  const optimizerCandidates = preview
+    ? stocks
+        .filter((stock) => stock.priceOre > 0 && dividendPerShare(stock) > 0)
+        .map((stock) => ({
+          stock,
+          annualPerShareOre: dividendPerShare(stock),
+          yieldPercent: (dividendPerShare(stock) / stock.priceOre) * 100,
+        }))
+    : (optimizerSnapshot?.opportunities ?? []).map((opportunity) => ({
+        stock: {
+          ticker: opportunity.ticker,
+          name: opportunity.name,
+          sector: opportunity.sector,
+          priceOre: decimalStringToOre(opportunity.price),
+          changeToday: 0,
+          change1m: null,
+          change6m: null,
+          change1y: 0,
+          dividends: [],
+        } satisfies Stock,
+        annualPerShareOre: decimalStringToOre(opportunity.annual_dividend_per_share),
+        yieldPercent: Number(opportunity.dividend_yield),
+      }));
+  const optimizerBaseRows = optimizerCandidates
+    .map(({ stock, annualPerShareOre, yieldPercent }) => {
       const shares = Math.floor(budgetOre / stock.priceOre);
       return {
         stock,
@@ -1752,9 +1799,27 @@ export function InvestmentWorkspace({
               </tbody>
             </table>
           </div>
+        ) : optimizerState === "loading" ? (
+          <p className="investment-empty" role="status">{labels.optimizerLoading}</p>
+        ) : optimizerState === "error" ? (
+          <p className="investment-empty" role="alert">{labels.optimizerError}</p>
         ) : (
           <p className="investment-empty">{labels.optimizerEmpty}</p>
         )}
+        {!preview && optimizerSnapshot ? (
+          <div className="optimizer-source-row">
+            <span className={optimizerSnapshot.is_stale ? "stale-data-note" : undefined}>
+              {optimizerSnapshot.is_stale ? labels.optimizerStale : labels.optimizerCoverage
+                .replace("{qualified}", String(optimizerSnapshot.qualified_count))
+                .replace("{count}", String(optimizerSnapshot.candidate_count))
+                .replace("{excluded}", String(optimizerSnapshot.excluded_count))
+                .replace("{unavailable}", String(optimizerSnapshot.unavailable_count))}
+            </span>
+            <a href={optimizerSnapshot.source_url} rel="noreferrer" target="_blank">
+              {labels.optimizerSource} · {optimizerSnapshot.source}
+            </a>
+          </div>
+        ) : null}
       </section>
 
       <section className="investment-panel holdings-panel" aria-labelledby="holdings-title">

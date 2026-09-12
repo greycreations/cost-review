@@ -3241,6 +3241,27 @@ footer {
   min-width: 980px;
 }
 
+.optimizer-source-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 26px 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.optimizer-source-row a {
+  color: var(--accent-strong);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.optimizer-source-row a:hover {
+  text-decoration: underline;
+}
+
 .optimizer-rank {
   color: var(--text-secondary);
   font-weight: 760;
@@ -3596,6 +3617,12 @@ footer {
     align-items: flex-start;
     flex-direction: column;
     width: 100%;
+  }
+
+  .optimizer-source-row {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-inline: 0;
   }
 
   .investment-summary {
