@@ -4,8 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 
+let sessionIsAdmin = false;
+let sessionUnavailable = false;
+let userAccounts: object[] = [];
+
 const session = (environment: "production" | "test") => ({
   username: `${environment}-owner`,
+  is_admin: sessionIsAdmin,
   environment,
   environment_label: environment === "production" ? "Production" : "Demo/Test",
   data_plane_id: environment === "production" ? "prod-plane" : "test-plane",
@@ -29,6 +34,12 @@ let providerItems: object[] = [];
 let sharingPartyItems: object[] = [];
 let tagItems: object[] = [];
 let analysisData: object;
+let investmentPositions: Array<{
+  instrument_type: "stock" | "fund";
+  ticker: string;
+  shares: string;
+  target_percentage: string;
+}> = [];
 
 const account = (
   accountId: number,
@@ -62,6 +73,12 @@ describe("App", () => {
     providerItems = [];
     sharingPartyItems = [];
     tagItems = [];
+    sessionIsAdmin = false;
+    sessionUnavailable = false;
+    userAccounts = [];
+    investmentPositions = [
+      { instrument_type: "stock", ticker: "INVE B", shares: "10", target_percentage: "100.0000" },
+    ];
     analysisData = {
       date_from: "2026-08-01",
       date_to: "2026-08-31",
@@ -76,6 +93,16 @@ describe("App", () => {
       vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
         const path = input.toString();
         const environment = path.includes("/test/") ? "test" : "production";
+        if (path.endsWith("/auth/session") && sessionUnavailable) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                error: { code: "authentication_required", message: "Authentication required." },
+              }),
+              { status: 401, headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        }
         let body: object;
         if (path.endsWith("/setup/status")) {
           body = {
@@ -84,6 +111,7 @@ describe("App", () => {
             data_plane_id: `${environment}-plane`,
             reset_generation: 0,
             setup_required: false,
+            registration_allowed: true,
           };
         } else if (path.includes("/accounts?")) {
           body = { items: accountItems, total: accountItems.length, limit: 50, offset: 0 };
@@ -131,6 +159,8 @@ describe("App", () => {
           body = [];
         } else if (path.endsWith("/recycle-bin")) {
           body = [];
+        } else if (path.endsWith("/users") && !init?.method) {
+          body = userAccounts;
         } else if (path.includes("/audit-events?")) {
           body = { items: [], total: 0, limit: 10, offset: 0 };
         } else if (path.endsWith("/budgets") && init?.method === "POST") {
@@ -246,15 +276,80 @@ describe("App", () => {
                 ],
                 detail_level: "history",
               },
+              {
+                ticker: "AXFO",
+                provider_symbol: "AXFO.ST",
+                name: "Axfood",
+                sector: "consumer_defensive",
+                currency: "SEK",
+                price: "252.10",
+                price_date: "2026-09-11",
+                changes: {
+                  one_day: "0.10",
+                  one_month: "-0.60",
+                  six_months: "5.80",
+                  one_year: "9.60",
+                },
+                annual_dividend_per_share: "8.75",
+                dividend_yield: "3.47",
+                dividend_pattern: [
+                  { month: 3, amount: "4.38", date_basis: "payment_date" },
+                  { month: 9, amount: "4.37", date_basis: "payment_date" },
+                ],
+                detail_level: "history",
+              },
             ],
           };
+        } else if (path.includes("/investments/fund-data?")) {
+          body = {
+            source: "Avanza · public fund information",
+            source_url: "https://www.avanza.se/fonder/lista.html",
+            retrieved_at: "2026-09-12T10:00:00Z",
+            data_date: "2026-09-10",
+            is_delayed: true,
+            is_stale: false,
+            query: "Avanza Zero",
+            result_count: 1,
+            unavailable_isins: [],
+            funds: [{
+              isin: "SE0001718388",
+              provider_id: "41567",
+              name: "Avanza Zero",
+              category: "Sweden",
+              fund_type: "Equity fund",
+              fund_company: "Avanza",
+              currency: "SEK",
+              nav: "561.6100",
+              nav_date: "2026-09-10",
+              changes: { one_day: "-0.45", one_month: "-1.97", six_months: "7.91", one_year: "25.53" },
+              product_fee: "0.00",
+              management_fee: "0.00",
+              risk: 4,
+              rating: 5,
+              index_fund: true,
+            }],
+          };
         } else if (path.endsWith("/investments/portfolio")) {
+          if (init?.method === "PUT") {
+            const submitted = JSON.parse(String(init.body)) as {
+              purchase_budget: string;
+              positions: typeof investmentPositions;
+            };
+            investmentPositions = submitted.positions;
+            body = {
+              purchase_budget: submitted.purchase_budget,
+              currency: "SEK",
+              positions: investmentPositions,
+              updated_at: "2026-09-11T18:05:00Z",
+            };
+          } else {
           body = {
             purchase_budget: "10000.0000",
             currency: "SEK",
-            positions: [{ ticker: "INVE B", shares: 10, target_percentage: "100.0000" }],
+            positions: investmentPositions,
             updated_at: "2026-09-11T18:00:00Z",
           };
+          }
         } else {
           body = session(environment);
         }
@@ -286,6 +381,80 @@ describe("App", () => {
     expect(screen.queryByText("DEMO / TEST")).not.toBeInTheDocument();
   });
 
+  it("lets a network visitor create a personal account from the sign-in screen", async () => {
+    sessionUnavailable = true;
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create a new account" }));
+    await user.type(screen.getByLabelText("Username"), "new-member");
+    await user.type(screen.getByLabelText("Password"), "a sufficiently long password");
+    await user.click(screen.getByRole("button", { name: "Create account" }));
+
+    await waitFor(() => {
+      const registerCall = vi.mocked(fetch).mock.calls.find(
+        ([input, init]) =>
+          input.toString().endsWith("/auth/register") && init?.method === "POST",
+      );
+      expect(registerCall).toBeDefined();
+      expect(JSON.parse(String(registerCall?.[1]?.body))).toMatchObject({
+        username: "new-member",
+        password: "a sufficiently long password",
+        settings: { language: "en", base_currency: "SEK" },
+      });
+    });
+  });
+
+  it("changes the signed-in user's password and shows admin-only account controls", async () => {
+    sessionIsAdmin = true;
+    userAccounts = [
+      {
+        user_id: 1,
+        username: "production-owner",
+        is_admin: true,
+        created_at: "2026-09-12T08:00:00Z",
+        updated_at: "2026-09-12T08:00:00Z",
+      },
+      {
+        user_id: 2,
+        username: "household-member",
+        is_admin: false,
+        created_at: "2026-09-12T09:00:00Z",
+        updated_at: "2026-09-12T09:00:00Z",
+      },
+    ];
+    document.cookie = "cost_review_production_csrf=security-csrf; path=/";
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Users" })).toBeInTheDocument();
+    expect(await screen.findByText("household-member")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Current password"), "old account password");
+    const newPasswordFields = screen.getAllByLabelText("New password");
+    await user.type(newPasswordFields[0], "new account password");
+    await user.type(screen.getByLabelText("Confirm new password"), "new account password");
+    await user.click(screen.getByRole("button", { name: "Change password" }));
+
+    await waitFor(() => {
+      const passwordCall = vi.mocked(fetch).mock.calls.find(
+        ([input, init]) =>
+          input.toString().endsWith("/auth/password") && init?.method === "PATCH",
+      );
+      expect(passwordCall).toBeDefined();
+      expect(JSON.parse(String(passwordCall?.[1]?.body))).toEqual({
+        current_password: "old account password",
+        new_password: "new account password",
+      });
+      expect(new Headers(passwordCall?.[1]?.headers).get("X-CSRF-Token")).toBe(
+        "security-csrf",
+      );
+    });
+  });
+
   it("opens the single-page investment workspace from the primary navigation", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -314,7 +483,7 @@ describe("App", () => {
     });
     await user.clear(heldShares);
     await user.type(heldShares, "12");
-    await user.click(screen.getByRole("button", { name: "Save portfolio" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(await screen.findByText("Portfolio saved.")).toBeInTheDocument();
     const saveCall = vi
@@ -326,9 +495,120 @@ describe("App", () => {
     expect(saveCall).toBeDefined();
     expect(JSON.parse(String(saveCall?.[1]?.body))).toEqual({
       purchase_budget: "10000.00",
-      positions: [{ ticker: "INVE B", shares: 12, target_percentage: "100.00" }],
+      positions: [{ instrument_type: "stock", ticker: "INVE B", shares: "12", target_percentage: "100.00" }],
     });
     expect(new Headers(saveCall?.[1]?.headers).get("X-CSRF-Token")).toBe("investment-csrf");
+  });
+
+  it("persists added holdings, dividend months, and removal across investment visits", async () => {
+    document.cookie = "cost_review_production_csrf=investment-csrf; path=/";
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Investments" }));
+
+    const screener = await screen.findByRole("table", { name: "Stockholm exchange" });
+    await user.click(within(screener).getByRole("checkbox", { name: "Select Axfood" }));
+    await user.click(screen.getByRole("button", { name: "Add 1 holdings" }));
+
+    let holdingsTable = await screen.findByRole("table", { name: "Holdings & dividends" });
+    expect(within(holdingsTable).getByText("Axfood")).toBeInTheDocument();
+    expect(within(holdingsTable).getByRole("columnheader", { name: "Today" })).toBeInTheDocument();
+    expect(within(holdingsTable).getByRole("columnheader", { name: "1 mo" })).toBeInTheDocument();
+    expect(within(holdingsTable).getByRole("columnheader", { name: "6 mo" })).toBeInTheDocument();
+    expect(within(holdingsTable).getByRole("columnheader", { name: "1 yr" })).toBeInTheDocument();
+    expect(within(holdingsTable).getByRole("columnheader", { name: "Yield" })).toBeInTheDocument();
+    expect(
+      within(holdingsTable).getByRole("columnheader", { name: "Dividend months" }),
+    ).toBeInTheDocument();
+
+    const axfoodShares = within(holdingsTable).getByRole("spinbutton", {
+      name: "Shares held · Axfood",
+    });
+    await user.type(axfoodShares, "5");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await user.click(screen.getByRole("link", { name: "Overview" }));
+    await user.click(screen.getByRole("link", { name: "Investments" }));
+
+    holdingsTable = await screen.findByRole("table", { name: "Holdings & dividends" });
+    expect(within(holdingsTable).getByText("Axfood")).toBeInTheDocument();
+    expect(within(holdingsTable).getByDisplayValue("5")).toBeInTheDocument();
+    expect(within(holdingsTable).getByText("Mar + Sept")).toBeInTheDocument();
+    const calendar = screen.getByLabelText("Dividend calendar");
+    expect(within(calendar).getAllByText("21 kr")).toHaveLength(2);
+
+    await user.click(
+      within(holdingsTable).getByRole("checkbox", { name: "Select holding Axfood" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Remove from holdings" }));
+
+    await waitFor(() => {
+      const latestSave = vi
+        .mocked(fetch)
+        .mock.calls.filter(
+          ([input, init]) =>
+            input.toString().endsWith("/investments/portfolio") && init?.method === "PUT",
+        )
+        .at(-1);
+      expect(JSON.parse(String(latestSave?.[1]?.body)).positions).toEqual([
+        { instrument_type: "stock", ticker: "INVE B", shares: "10", target_percentage: "100.00" },
+      ]);
+    });
+  });
+
+  it("searches the public fund range and persists decimal fund units by ISIN", async () => {
+    document.cookie = "cost_review_production_csrf=investment-csrf; path=/";
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Investments" }));
+    await user.click(await screen.findByRole("tab", { name: "Funds" }));
+    await user.type(screen.getByRole("textbox", { name: "Search fund or ISIN" }), "Avanza Zero");
+
+    const fundTable = await screen.findByRole("table", { name: "Funds on the Swedish fund market" });
+    await user.click(await within(fundTable).findByRole("checkbox", { name: "Select Avanza Zero" }));
+    await user.click(screen.getByRole("button", { name: "Add 1 holdings" }));
+
+    const fundHoldings = await screen.findByRole("table", { name: "Fund holdings" });
+    const units = within(fundHoldings).getByRole("textbox", { name: "Fund units · Avanza Zero" });
+    await user.type(units, "12.3456789");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      const latestSave = vi.mocked(fetch).mock.calls.filter(
+        ([input, init]) => input.toString().endsWith("/investments/portfolio") && init?.method === "PUT",
+      ).at(-1);
+      expect(JSON.parse(String(latestSave?.[1]?.body)).positions).toContainEqual({
+        instrument_type: "fund",
+        ticker: "SE0001718388",
+        shares: "12.34567890",
+        target_percentage: "0.00",
+      });
+    });
+  });
+
+  it("shows the dividend ranking as a historical comparison, not a recommendation", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Investments" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Highest historical dividend per invested krona",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/mechanical comparison, not a recommendation/i)).toBeInTheDocument();
+    const optimizer = screen.getByRole("table", {
+      name: "Highest historical dividend per invested krona",
+    });
+    const rows = within(optimizer).getAllByRole("row");
+    expect(within(rows[1]).getByText("Axfood")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("3.47 %")).toBeInTheDocument();
   });
 
   it("shows pilot data safety controls in Settings", async () => {

@@ -13,6 +13,8 @@ Derived from Product Specification v1.0. This backlog deliberately prioritizes d
 - CR-006 Independent language, region, base currency and timezone settings.
 - CR-007 Reverse-proxy/Cloudflare-safe trusted host/origin/proxy configuration.
 - CR-008 Establish hard Production vs Demo/Test data boundary and automated isolation tests.
+- CR-009 Multi-user self-registration, own-password change, and administrator-only account
+  creation, credential reset, role management and deletion with final-admin safeguards.
 
 **Exit gate:** recreate containers without data loss; authenticate; switch to persistent test environment; destructive test operation cannot mutate production.
 
@@ -128,8 +130,11 @@ Derived from Product Specification v1.0. This backlog deliberately prioritizes d
 - CR-116 Configurable proactive in-app economic alerts through Attention.
 - CR-117 Optional provider-backed Stockholm investment screener, with Yahoo Finance as the
   keyless default and EODHD as a configurable alternative, dynamic Yahoo discovery of the
-  Stockholm equity universe, plus persisted holdings and purchase-plan allocations with visible
-  source, coverage, delay, freshness and trailing-dividend basis.
+  Stockholm equity universe, explicit screener-to-holdings add/remove actions, persisted holdings,
+  holdings-based dividend calendar, purchase-plan allocations and a read-only historical
+  dividend-yield comparison with visible source, coverage, delay, freshness and
+  trailing-dividend basis. Version 0.7.0 adds searchable public fund information, decimal fund
+  units, ISIN-based persistence, mixed stock/fund planning and mobile-responsive controls.
 
 ## Post-MVP backlog
 - OCR/receipt interpretation.

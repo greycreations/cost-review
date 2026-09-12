@@ -3,7 +3,7 @@
 
 Cost Review is a private, self-hosted web application for trustworthy personal
 and household economics. Product behavior is defined by
-`docs/PRODUCT_SPECIFICATION.md` v1.3 and delivered in the order described by
+`docs/PRODUCT_SPECIFICATION.md` v1.6 and delivered in the order described by
 `docs/IMPLEMENTATION_BACKLOG.md`.
 
 Sprint 1 established the Platform Foundation: PostgreSQL, migrations, first-run
@@ -23,7 +23,16 @@ explicit reconciliation adjustments, an audit-backed Recycle Bin, and encrypted
 database/configuration/attachment backups with offline restore. Version 0.6.0
 adds a dynamically discovered Yahoo Finance universe of Stockholm-traded shares
 to the Investments tab, with persisted holdings, dividend estimates, and
-whole-share purchase planning.
+whole-share purchase planning. Version 0.7.0 adds network self-registration,
+self-service password changes, and administrator-controlled user creation,
+renaming, role assignment, password reset and deletion. The same release also
+separates temporary screener selection from durable investment holdings, expands
+the holdings table and calendar, and adds a clearly labelled historical
+dividend-yield comparison.
+It also adds searchable Swedish fund-market data through Avanza's public, read-only fund
+information, decimal fund units and a combined stock/fund purchase plan. The full application has
+been tightened for narrow mobile screens; dense financial tables remain horizontally swipeable
+without widening the surrounding page.
 
 ## Architecture
 
@@ -90,6 +99,13 @@ Open `http://192.168.1.41:8080`. Store a recovery copy of the completed `.env`,
 especially both `BACKUP_*_ENCRYPTION_KEY` values, away from the Docker host;
 encrypted backups cannot be restored without their original keys.
 
+The first account created in each data environment is its administrator. With
+`ALLOW_SELF_REGISTRATION=true` (the default), anyone who can reach the sign-in
+page can create a regular account. Set it to `false` and recreate the API
+containers if accounts should only be created by an administrator. Disable it
+or enforce authentication at the reverse proxy before exposing an installation
+beyond a trusted network.
+
 The Investments tab uses delayed Yahoo Finance closing prices and dividend history for its initial
 Nasdaq Stockholm universe. No API key is required. The default configuration is:
 
@@ -103,6 +119,14 @@ caches successful snapshots, retries short transient failures conservatively and
 latest successful in-process snapshot with a stale-data warning when a refresh fails. The UI always
 shows the provider, market date and retrieval time; it never substitutes sample prices in the
 authenticated app.
+
+Ordinary funds use a separate read-only adapter for Avanza's public fund search and fund-guide
+information. It requires no Avanza account or API key. Search results and NAV details use the same
+bounded backend cache; if the public endpoint changes or is unavailable, Cost Review reports that
+honestly instead of replacing it with a local shortlist. `AVANZA_FUND_BASE_URL` may be overridden
+for testing, but normally stays at `https://www.avanza.se`. Version 0.7.0 limits the planner to
+SEK-denominated funds so a foreign-currency NAV is never presented as a SEK portfolio value without
+a historical FX observation.
 
 EODHD remains available as an operator-selected alternative. Set `MARKET_DATA_PROVIDER=eodhd` and
 add `EODHD_API_TOKEN=your-token-here`, then restart both API services. Provider credentials stay in
@@ -126,13 +150,13 @@ unset GHCR_TOKEN
 
 Never copy a development machine's `.env` to another installation.
 
-### Upgrade an existing installation to 0.6.0
+### Upgrade an existing installation to 0.7.0
 
 Keep the existing `.env` so database passwords, backup keys, and installation
 identity remain unchanged. Create a current backup, then change only this line:
 
 ```sh
-COST_REVIEW_VERSION=0.6.0
+COST_REVIEW_VERSION=0.7.0
 ```
 
 Pull and recreate the application containers from the installation folder:
@@ -143,11 +167,12 @@ docker compose up --detach --wait
 docker compose ps
 ```
 
-The API containers apply the investment ticker-width migration independently to
-Production and Demo/Test before they start. Existing positions and database,
-attachment, and backup volumes are preserved. Yahoo Finance is the default and
-needs no extra setting; the optional `MARKET_DATA_PROVIDER` values above are
-only needed when overriding the defaults.
+The API containers apply the user-role and typed investment-position migrations independently to
+Production and Demo/Test before they start. The oldest existing account in each data plane becomes
+administrator automatically. Existing stock positions are preserved and marked as stocks; database,
+attachment and backup volumes are unchanged. Add `ALLOW_SELF_REGISTRATION=false` to the existing
+`.env` only if administrator-created accounts are preferred; omission keeps the trusted-network
+default enabled.
 
 ### Build from source for development
 
@@ -393,7 +418,8 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET | `/api/v1/recycle-bin` | List recoverable archived Ledger records |
 | GET | `/api/v1/audit-events` | Paginated material Ledger change history |
 | GET | `/api/v1/investments/market-data` | Cached Yahoo-discovered Stockholm equity catalog; repeat `ticker` for selected-share history and dividend pattern |
-| GET/PUT | `/api/v1/investments/portfolio` | Read or save the user's selected shares, holdings, budget and target allocation |
+| GET | `/api/v1/investments/fund-data` | Search public fund information by name/ISIN or enrich saved fund ISINs |
+| GET/PUT | `/api/v1/investments/portfolio` | Read or save typed stock/fund holdings, decimal quantities, budget and target allocation |
 | GET/POST | `/api/v1/backups` | List or create encrypted backups |
 | POST/GET | `/api/v1/backups/{filename}/validate`, `/download` | Validate or download one archive |
 
@@ -458,9 +484,17 @@ movement as income or claiming investment-performance attribution.
 The Investments view is an optional provider-backed planning surface. It shows the market source,
 latest trading date, retrieval time, delayed-data status and any stale-cache fallback. Annual
 dividend amounts and calendar months are derived from the trailing 12 months of provider dividend
-records and are explicitly not confirmed future payments. Holdings and target allocations are
-persisted inside the active data plane; external quotes remain derived and never become Ledger
-events. See `docs/adr/0013-yahoo-market-data-default.md`.
+records and are explicitly not confirmed future payments. Screener selections become durable only
+when the user chooses **Add holdings**; the saved holdings then drive the holdings table, dividend
+calendar and purchase allocation. The dividend comparison ranks trailing dividend per share against
+the latest close and does not add holdings or place trades. Holdings and target allocations are
+persisted per user inside the active data plane; external quotes remain derived and never become
+Ledger events. Funds are searched from Avanza's public fund information without account
+credentials, saved by ISIN and valued from delayed NAV. Version 0.7.0 accepts SEK-denominated funds;
+fund units may contain up to eight decimal places while stocks remain whole-share positions. See
+`docs/adr/0013-yahoo-market-data-default.md`,
+`docs/adr/0016-persistent-investment-holdings-and-dividend-comparison.md` and
+`docs/adr/0017-public-fund-search-and-decimal-holdings.md`.
 
 ## Source of truth
 

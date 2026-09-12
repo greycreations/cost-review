@@ -1,7 +1,7 @@
 # Cost Review Product & MVP Specification
 
-**Version:** 1.3
-**Date:** 2026-09-11
+**Version:** 1.6
+**Date:** 2026-09-12
 **Status:** Requirements baseline / source of truth
 
 ## 1. Product vision
@@ -23,12 +23,20 @@ Cost Review is a self-hosted web application for understanding personal and hous
 - Frontend -> versionable backend/API -> PostgreSQL; frontend never connects directly to the database.
 - Schema migrations from the first release.
 - Designed to operate behind Cloudflare/reverse proxy with explicit trusted-proxy, host/origin and secure-cookie configuration.
-- Local username/password authentication in MVP with secure password hashing and session management.
+- Local multi-user username/password authentication in MVP with secure password hashing,
+  environment-scoped roles and session management.
 - No secrets hardcoded in repository or images.
 - 2FA/TOTP is post-MVP but the authentication architecture must permit it later.
 
 ## 3. First-run setup and localization
-Fresh installation enters setup mode when no user exists. The wizard creates the initial user, selects base currency, language/region, timezone and optionally initial accounts, then locks setup mode.
+Fresh installation enters setup mode when no user exists. The wizard creates the initial
+administrator, selects base currency, language/region, timezone and optionally initial accounts,
+then locks setup mode. After setup, any person who can reach the installation may create a regular
+account when operator-controlled self-registration is enabled. Every user can change their own
+password; doing so revokes their other sessions. Administrators can create, rename, reset the
+password of and delete other accounts, and may delegate or remove administrator access. The active
+account cannot delete itself and the final administrator cannot be demoted or deleted. Production
+and Demo/Test keep independent users, roles, password hashes and sessions.
 
 Release 1 supports Swedish and English. Language, region, base currency, date/number formats, week start and timezone are independent settings.
 
@@ -139,7 +147,10 @@ Savings and debt goals support target value, optional target date and flexible s
 - Buys/sells inside the account are not household expenses.
 - Unrealized value change is not income; dividends are investment income; realized gains/losses are tracked on sale.
 - Release 1 baseline uses manual value updates/snapshots.
-- Post-MVP: exact holdings, market prices, dividend feeds and richer analytics through modular provider adapters.
+- The optional provider-backed planning workspace keeps user-selected whole-share holdings and
+  purchase allocations separate from canonical investment transactions and valuation snapshots.
+- Market prices, trailing dividends, payout-month history and comparative analytics are derived
+  external observations supplied through modular provider adapters.
 
 ## 10. Import, staging and rules
 ### Import provider profiles
@@ -269,7 +280,8 @@ Future forecasting provides 30-day / 3 / 6 / 12-month cash-flow projections whil
 - Provider/category links and Analysis Groups replace destructive merging for analytical purposes.
 - Hierarchy expresses taxonomy; links/groups express analytical relationships.
 - Historical transactions may retain frozen account identity after permanent master-record deletion.
-- Single login is compatible with household economics because sharing parties are metadata, not users.
+- Login accounts control application access. Sharing parties remain separate economic metadata and
+  are not inferred from login identities.
 - Manual transactions save directly; imported/automated data goes through staging.
 - Confidence scores and previews are advisory; uncertain actions remain user-confirmed.
 - Demo/Test uses a real data boundary rather than flags alone.
@@ -286,7 +298,9 @@ Future forecasting provides 30-day / 3 / 6 / 12-month cash-flow projections whil
 
 ## 21. Release 1 acceptance criteria
 - Fresh Ubuntu host can start the application with documented Docker Compose steps and persistent data survives container recreation.
-- Setup creates the initial local user and independent locale/currency/timezone settings.
+- Setup creates the initial local administrator and independent locale/currency/timezone settings;
+  self-registration, password change and administrator-controlled account lifecycle work per data
+  plane without weakening Production/Test isolation.
 - Account/master-data CRUD, soft delete/restore and dependency-safe deletion work.
 - Expense, income, transfer, refund/reimbursement, adjustment and split semantics do not double-count economics.
 - Credit-card purchase and repayment behavior is correct.
@@ -308,9 +322,16 @@ Future forecasting provides 30-day / 3 / 6 / 12-month cash-flow projections whil
 - The Investments workspace may use an optional server-side market-data provider. When enabled,
   the source, observation date, delay and forecast basis must be visible; unavailable live data
   must never be silently replaced with fictional values.
-- Investment watchlist, whole-share holdings, purchase budget and target allocations are persisted
-  independently in Production and Demo/Test. Market observations remain derived external data and
-  must not be recorded as investment trades or household income.
+- Screener checkbox selection remains temporary until the user explicitly adds shares to their
+  holdings. Whole-share holdings, purchase budget and target allocations are then persisted per user
+  and independently in Production and Demo/Test. The holdings table and dividend calendar derive
+  solely from that saved list and support explicit removal.
+- A dividend comparison may rank the current catalog by trailing-12-month dividend per share divided
+  by the latest closing price and show a whole-share scenario for the entered purchase budget. It
+  must be labelled as historical and mechanical, must not mutate holdings, and must not be presented
+  as a recommendation or a guarantee of future distributions.
+- Market observations remain derived external data and must not be recorded as investment trades or
+  household income.
 
 ## 22. Recommended implementation sequence
 1. **Foundation:** repo structure, Compose, PostgreSQL, migrations, API/backend, frontend shell, auth, setup and environment boundary.
@@ -365,3 +386,53 @@ This document is the implementation requirements baseline. New product behavior 
   shares. Source, count, freshness and the historical estimate basis remain visible.
 - **Boundary:** catalog and history observations remain derived external data. They never create or
   alter investment trades, valuation snapshots, dividend-income events or ledger history.
+
+### Version 1.4 change impact
+
+- **Data model and migration:** users gain an administrator flag. Existing data planes promote the
+  oldest user so upgrades retain an administrator without manual database intervention.
+- **API and security:** operator-controlled self-registration, self-service password change and
+  CSRF-protected administrator account-management routes are added. Password changes and resets
+  revoke other affected sessions, while deletion cannot target the active or final administrator.
+- **UX:** the sign-in surface can expose account creation and Settings adds personal password change
+  plus administrator-only account creation, rename, role, password-reset and deletion controls.
+- **Boundary:** accounts, roles, password hashes and sessions remain independent in Production and
+  Demo/Test. Login users do not implicitly become economic sharing parties.
+
+### Version 1.5 change impact
+
+- **Data model and migration:** no schema change. Existing environment- and user-scoped portfolio
+  positions become the sole source for the durable holdings list and its dividend calendar.
+
+### Version 1.6 change impact
+
+- **Data model and migration:** investment positions gain an explicit stock/fund type. Quantity is
+  widened to a decimal-safe eight-decimal value so ordinary fund units can be persisted while
+  PostgreSQL continues to require whole quantities for stocks. Existing positions migrate as stock.
+- **Provider and API:** Yahoo remains the Stockholm equity source. A separate unauthenticated,
+  read-only Avanza adapter adds bounded fund-name/ISIN search and fund-detail enrichment under
+  `/api/v1/investments/fund-data`, with the same cache, stale-data and honest-unavailability rules.
+  Version 0.7.0 accepts SEK-denominated funds only; foreign-currency funds require dated FX-aware
+  valuation before they can be admitted without misrepresenting portfolio value.
+- **UX:** the single Investments page adds Stocks/Funds tabs, live fund search, category/index/fee/
+  risk filters, fund holdings with NAV/performance/fee/risk, and mixed stock/fund purchase planning.
+  Fund identity is persisted by ISIN; dividend estimates and the dividend calendar continue to use
+  only saved stocks with provider dividend history.
+- **Mobile:** primary navigation, forms, summaries, account administration and investment controls
+  stack at narrow widths. Dense financial tables stay in bounded horizontal swipe regions with
+  persistent instrument identity rather than widening the page.
+- **Boundary:** fund NAV and metadata are derived planning observations. They never create trades,
+  valuation snapshots, dividend income or other Ledger events, and the integration uses no Avanza
+  credentials or trading endpoints.
+- **API:** no new endpoint. Explicit add and remove actions replace the complete portfolio through
+  the existing authenticated, CSRF-protected portfolio write contract.
+- **UX:** screener selection is temporary until “Add holdings” is used. The holdings table repeats
+  screener market fields, adds owned shares, position value, annual dividend and dividend months,
+  and supports checkbox-based removal. Navigating away or closing the page no longer loses saved
+  holdings or their calendar.
+- **Analysis:** a read-only top-ten comparison ranks catalog shares by historical trailing dividend
+  yield and shows the whole shares, invested amount and historical annual dividend obtainable with
+  the current purchase budget.
+- **Boundary:** the comparison is explanatory planning output only. It does not consider future
+  board decisions, special-dividend recurrence, diversification, company risk, tax or fees and does
+  not create orders, holdings, trades, valuation snapshots or income events.

@@ -21,7 +21,14 @@ describe("InvestmentWorkspace", () => {
 
     await user.click(screen.getByRole("button", { name: "Clear filters" }));
     await user.click(screen.getByRole("checkbox", { name: "Select Atlas Copco A" }));
-    expect(screen.getAllByText("6 selected").length).toBeGreaterThan(0);
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add 1 holdings" }));
+
+    const holdings = screen.getByRole("table", { name: "Holdings & dividends" });
+    expect(within(holdings).getByText("Atlas Copco A")).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("cost-review-selected-stocks") ?? "[]")).toContain(
+      "ATCO A",
+    );
   });
 
   it("calculates portfolio value and annual dividends from whole shares", async () => {

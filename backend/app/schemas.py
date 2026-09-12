@@ -5,7 +5,14 @@ from typing import Annotated
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from app.models import DateFormat, Language, NumberFormat, WeekStart
 
@@ -33,6 +40,7 @@ class HealthRead(EnvironmentRead):
 
 class SetupStatusRead(EnvironmentRead):
     setup_required: bool
+    registration_allowed: bool
 
 
 class SettingsInput(BaseModel):
@@ -106,8 +114,54 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=1024)
 
 
+class RegistrationRequest(BaseModel):
+    username: Username
+    password: Password
+    settings: SettingsInput = Field(default_factory=SettingsInput)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=1024)
+    new_password: Password
+
+
+class UserCreateRequest(BaseModel):
+    username: Username
+    password: Password
+    is_admin: bool = False
+    settings: SettingsInput = Field(default_factory=SettingsInput)
+
+
+class UserUpdateRequest(BaseModel):
+    username: Username | None = None
+    is_admin: bool | None = None
+
+    @model_validator(mode="after")
+    def require_change(self) -> UserUpdateRequest:
+        if self.username is None and self.is_admin is None:
+            raise ValueError("at least one account field must be supplied")
+        return self
+
+
+class PasswordResetRequest(BaseModel):
+    new_password: Password
+
+
+class UserDeleteRequest(BaseModel):
+    confirmation: str = Field(min_length=1, max_length=128)
+
+
+class UserRead(ApiModel):
+    user_id: int
+    username: str
+    is_admin: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 class SessionRead(BaseModel):
     username: str
+    is_admin: bool
     environment: str
     environment_label: str
     data_plane_id: UUID

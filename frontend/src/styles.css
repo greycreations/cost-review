@@ -55,6 +55,12 @@ body {
   background:
     radial-gradient(circle at 75% 0%, rgb(71 117 104 / 7%), transparent 30rem),
     var(--background);
+  overflow-x: clip;
+}
+
+#root {
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 button,
@@ -215,6 +221,23 @@ button:disabled {
   line-height: 1.08;
 }
 
+.auth-mode-button {
+  min-height: auto;
+  justify-self: start;
+  padding: 2px 0;
+  border: 0;
+  color: var(--accent-strong);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-registration-note {
+  margin: 0;
+}
+
 .lead,
 .hero-lead {
   margin: -7px 0 6px;
@@ -251,6 +274,96 @@ select:hover {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+
+.security-section,
+.user-administration-section {
+  display: grid;
+  gap: 18px;
+}
+
+.security-section .section-heading,
+.user-administration-section .section-heading {
+  margin-bottom: 0;
+}
+
+.password-form,
+.user-create-form,
+.user-account-fields,
+.user-account-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 14px;
+}
+
+.user-create-form {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-subtle);
+}
+
+.admin-checkbox {
+  min-height: 44px;
+  padding-bottom: 3px;
+}
+
+.user-account-list {
+  display: grid;
+  gap: 12px;
+}
+
+.user-account-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.user-account-heading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.user-account-heading strong {
+  font-size: 14px;
+}
+
+.user-account-heading span {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.user-account-fields {
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, 0.6fr) auto;
+}
+
+.user-account-actions {
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.user-delete-confirmation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--destructive) 35%, var(--border));
+  border-radius: 10px;
+  background: var(--destructive-soft);
+}
+
+.user-delete-confirmation code {
+  color: var(--destructive);
+}
+
+.user-delete-confirmation .row-actions {
+  gap: 8px;
 }
 
 .primary-button,
@@ -2067,6 +2180,11 @@ footer {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .password-form,
+  .user-create-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .danger-section {
     grid-template-columns: 1fr;
   }
@@ -2220,6 +2338,20 @@ footer {
     grid-template-columns: 1fr;
   }
 
+  .password-form,
+  .user-create-form,
+  .user-account-fields,
+  .user-account-actions,
+  .user-delete-confirmation {
+    grid-template-columns: 1fr;
+  }
+
+  .user-account-actions .secondary-button,
+  .user-account-actions .destructive-button,
+  .user-delete-confirmation button {
+    width: 100%;
+  }
+
   .overview-metrics,
   .transaction-form-grid,
   .transaction-filters,
@@ -2365,7 +2497,43 @@ footer {
 .investment-workspace {
   display: grid;
   gap: 22px;
+  min-width: 0;
+  max-width: 100%;
   padding-bottom: 28px;
+}
+
+.investment-workspace > *,
+.investment-heading > *,
+.investment-panel-heading > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.instrument-tabs {
+  display: inline-flex;
+  justify-self: start;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.instrument-tabs button {
+  min-width: 112px;
+  min-height: 40px;
+  padding: 0 17px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.instrument-tabs button.active {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
 }
 
 .investment-heading,
@@ -2560,6 +2728,11 @@ footer {
   font-size: 12px !important;
 }
 
+.investment-history-hint a {
+  color: inherit;
+  font-weight: 750;
+}
+
 .quiet-button,
 .ghost-button {
   min-height: 40px;
@@ -2605,6 +2778,27 @@ footer {
   font-size: 12px;
 }
 
+.checkbox-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 620;
+}
+
+.checkbox-line input {
+  width: 18px;
+  min-height: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .input-with-icon,
 .money-input,
 .percent-input {
@@ -2646,11 +2840,25 @@ footer {
 
 .table-meta {
   display: flex;
+  align-items: center;
   justify-content: space-between;
+  gap: 14px;
   margin: 18px 2px -3px;
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 650;
+}
+
+.screener-table-meta > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.screener-table-meta .primary-button {
+  min-height: 40px;
+  padding: 0 14px;
+  white-space: nowrap;
 }
 
 .investment-table-scroll {
@@ -2658,6 +2866,10 @@ footer {
   overflow-x: auto;
   border-radius: 0 0 14px 14px;
   scrollbar-color: var(--border) transparent;
+}
+
+.mobile-scroll-hint {
+  display: none;
 }
 
 .screener-panel .investment-table-scroll {
@@ -2792,6 +3004,81 @@ footer {
   font-size: 11px;
 }
 
+.optimizer-heading {
+  align-items: flex-start;
+}
+
+.optimizer-budget {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: end;
+  gap: 6px;
+  padding: 12px 15px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+}
+
+.optimizer-budget span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.optimizer-budget strong {
+  color: var(--text-primary);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.optimizer-warning {
+  max-width: 72rem;
+  margin: 19px 0 0;
+  padding: 13px 15px;
+  border: 1px solid color-mix(in srgb, var(--analysis-sand) 42%, var(--border));
+  border-radius: 9px;
+  color: var(--warning-text);
+  background: var(--warning-soft);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.optimizer-table-scroll {
+  margin-top: 20px;
+  margin-bottom: 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.optimizer-table {
+  min-width: 980px;
+}
+
+.optimizer-rank {
+  color: var(--text-secondary);
+  font-weight: 760;
+}
+
+.holdings-heading-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+}
+
+.holdings-remove-button {
+  min-height: 40px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+.holdings-empty {
+  margin-top: 23px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+}
+
 .holdings-table-scroll,
 .purchase-table-scroll {
   margin-top: 23px;
@@ -2802,7 +3089,15 @@ footer {
 }
 
 .holdings-table {
-  min-width: 810px;
+  min-width: 1580px;
+}
+
+.fund-table {
+  min-width: 1120px;
+}
+
+.fund-holdings-table {
+  min-width: 1340px;
 }
 
 .holdings-table th,
@@ -2812,8 +3107,10 @@ footer {
   padding: 13px 26px;
 }
 
-.holdings-table th:first-child,
-.holdings-table td:first-child,
+.holdings-table th:first-child:not(.select-column),
+.holdings-table td:first-child:not(.select-column),
+.holdings-table .select-column + th,
+.holdings-table .select-column + td,
 .purchase-table th:first-child,
 .purchase-table td:first-child {
   text-align: left;
@@ -3063,10 +3360,21 @@ footer {
   }
 
   .investment-data-note,
-  .yield-callout {
+  .yield-callout,
+  .optimizer-budget {
     justify-items: start;
     max-width: none;
     text-align: left;
+  }
+
+  .investment-heading > div,
+  .investment-data-note {
+    width: 100%;
+  }
+
+  .holdings-heading-actions {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .investment-summary {
@@ -3099,6 +3407,51 @@ footer {
   .investment-table-scroll {
     margin-right: -21px;
     margin-left: -21px;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+  }
+
+  .mobile-scroll-hint {
+    display: block;
+    margin: 15px 0 -3px;
+    color: var(--text-secondary);
+    font-size: 11px;
+  }
+
+  .investment-table .select-column {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    background: var(--surface);
+  }
+
+  .investment-table th.select-column {
+    background: var(--surface-quiet);
+  }
+
+  .investment-table .select-column + th,
+  .investment-table .select-column + td {
+    position: sticky;
+    left: 48px;
+    z-index: 2;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    box-shadow: 8px 0 12px rgb(32 37 34 / 4%);
+  }
+
+  .investment-table .select-column + th {
+    background: var(--surface-quiet);
+  }
+
+  .investment-table tr.selected-row .select-column,
+  .investment-table tr.selected-row .select-column + td {
+    background: var(--accent-soft);
+  }
+
+  .table-meta,
+  .screener-table-meta > div {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .holdings-table-scroll,
@@ -3138,6 +3491,50 @@ footer {
 
   .investment-filter-grid .search-filter {
     grid-column: auto;
+  }
+
+  .investment-panel {
+    padding: 17px;
+  }
+
+  .investment-table-scroll,
+  .holdings-table-scroll,
+  .purchase-table-scroll {
+    margin-right: -17px;
+    margin-left: -17px;
+  }
+
+  .instrument-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+
+  .instrument-tabs button {
+    min-width: 0;
+  }
+
+  .investment-save-row,
+  .screener-table-meta > div,
+  .investment-load-more {
+    width: 100%;
+  }
+
+  .investment-save-row,
+  .investment-load-more {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .investment-save-row .primary-button,
+  .screener-table-meta .primary-button,
+  .holdings-remove-button,
+  .investment-load-more .secondary-button {
+    width: 100%;
+  }
+
+  .investment-summary strong {
+    white-space: normal;
   }
 
   .purchase-totals > div + div {

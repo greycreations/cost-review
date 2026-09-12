@@ -16,6 +16,7 @@ from app.budget_api import router as budget_router
 from app.config import Settings, get_settings
 from app.database import Database, ensure_environment_identity
 from app.errors import ApiError
+from app.fund_services import AvanzaFundDataService
 from app.investment_api import router as investment_router
 from app.investment_services import create_market_data_service
 from app.ledger_api import router as ledger_router
@@ -35,7 +36,7 @@ def create_app(runtime_settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title=settings.app_name,
-        version="0.4.0",
+        version="0.7.0",
         description="Cost Review Release 1 platform and ledger API.",
         lifespan=lifespan,
         docs_url=f"{settings.api_prefix}/docs",
@@ -45,6 +46,7 @@ def create_app(runtime_settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.database = database
     app.state.market_data_service = create_market_data_service(settings)
+    app.state.fund_data_service = AvanzaFundDataService(settings)
 
     app.add_middleware(
         CORSMiddleware,

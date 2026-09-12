@@ -82,6 +82,46 @@ def main() -> int:
 
     prod_csrf = csrf_from(prod_jar, "cost_review_production_csrf")
     test_csrf = csrf_from(test_jar, "cost_review_test_csrf")
+    _, prod_member = call(
+        prod,
+        f"{prod_base}/users",
+        "POST",
+        {
+            "username": "production-member",
+            "password": "production member password",
+            "is_admin": False,
+        },
+        prod_csrf,
+    )
+    _, test_member = call(
+        test,
+        f"{test_base}/users",
+        "POST",
+        {
+            "username": "test-member",
+            "password": "test member password",
+            "is_admin": False,
+        },
+        test_csrf,
+    )
+    call(
+        test,
+        f"{test_base}/users/{test_member['user_id']}",
+        "DELETE",
+        {"confirmation": "DELETE test-member"},
+        test_csrf,
+    )
+    _, prod_users_after_test_delete = call(prod, f"{prod_base}/users")
+    _, test_users_after_test_delete = call(test, f"{test_base}/users")
+    assert any(
+        user["user_id"] == prod_member["user_id"]
+        and user["username"] == "production-member"
+        for user in prod_users_after_test_delete
+    )
+    assert not any(
+        user["username"] == "production-member" for user in test_users_after_test_delete
+    )
+    assert not any(user["username"] == "test-member" for user in test_users_after_test_delete)
     call(prod, f"{prod_base}/settings", "PATCH", {"language": "en", "region": "GB"}, prod_csrf)
     account_payload = {
         "account_type": "current",
@@ -297,7 +337,12 @@ def main() -> int:
         {
             "purchase_budget": "12000.00",
             "positions": [
-                {"ticker": "INVE B", "shares": 42, "target_percentage": "100"}
+                {
+                    "instrument_type": "stock",
+                    "ticker": "INVE B",
+                    "shares": "42",
+                    "target_percentage": "100",
+                }
             ],
         },
         prod_csrf,
@@ -309,7 +354,12 @@ def main() -> int:
         {
             "purchase_budget": "5000.00",
             "positions": [
-                {"ticker": "AXFO", "shares": 8, "target_percentage": "100"}
+                {
+                    "instrument_type": "stock",
+                    "ticker": "AXFO",
+                    "shares": "8",
+                    "target_percentage": "100",
+                }
             ],
         },
         test_csrf,
@@ -399,10 +449,20 @@ def main() -> int:
     _, prod_portfolio_before = call(prod, f"{prod_base}/investments/portfolio")
     _, test_portfolio_before = call(test, f"{test_base}/investments/portfolio")
     assert prod_portfolio_before["positions"] == [
-        {"ticker": "INVE B", "shares": 42, "target_percentage": "100.0000"}
+        {
+            "instrument_type": "stock",
+            "ticker": "INVE B",
+            "shares": "42.00000000",
+            "target_percentage": "100.0000",
+        }
     ]
     assert test_portfolio_before["positions"] == [
-        {"ticker": "AXFO", "shares": 8, "target_percentage": "100.0000"}
+        {
+            "instrument_type": "stock",
+            "ticker": "AXFO",
+            "shares": "8.00000000",
+            "target_percentage": "100.0000",
+        }
     ]
     _, prod_before = call(prod, f"{prod_base}/auth/session")
     _, prod_environment_before = call(prod, f"{prod_base}/environment")

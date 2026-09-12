@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     csrf_cookie_name: str = "cost_review_production_csrf"
     cookie_secure: bool = True
     session_ttl_hours: int = Field(default=12, ge=1, le=720)
+    allow_self_registration: bool = True
 
     app_allowed_origins: str = "http://localhost:8080"
     app_allowed_hosts: str = "localhost,127.0.0.1"
@@ -48,6 +49,7 @@ class Settings(BaseSettings):
 
     market_data_provider: MarketDataProvider = "yahoo"
     yahoo_finance_base_url: str = "https://query1.finance.yahoo.com"
+    avanza_fund_base_url: str = "https://www.avanza.se"
     eodhd_api_token: SecretStr = SecretStr("")
     eodhd_base_url: str = "https://eodhd.com/api"
     market_data_cache_seconds: int = Field(default=21_600, ge=60, le=86_400)

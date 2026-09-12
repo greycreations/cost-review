@@ -7,6 +7,7 @@ export type EnvironmentStatus = {
   data_plane_id: string;
   reset_generation: number;
   setup_required: boolean;
+  registration_allowed: boolean;
 };
 
 export type AppSettings = {
@@ -21,12 +22,21 @@ export type AppSettings = {
 
 export type Session = {
   username: string;
+  is_admin: boolean;
   environment: Environment;
   environment_label: string;
   data_plane_id: string;
   reset_generation: number;
   expires_at: string;
   settings: AppSettings;
+};
+
+export type UserAccount = {
+  user_id: number;
+  username: string;
+  is_admin: boolean;
+  created_at: string;
+  updated_at: string;
 };
 
 export type LifecycleStatus = "active" | "archived";
@@ -517,12 +527,49 @@ export type InvestmentMarketData = {
   unavailable_symbols: string[];
 };
 
+export type InvestmentFund = {
+  isin: string;
+  provider_id: string;
+  name: string;
+  category: string;
+  fund_type: string;
+  fund_company: string;
+  currency: string;
+  nav: string;
+  nav_date: string;
+  changes: {
+    one_day: string;
+    one_month: string | null;
+    six_months: string | null;
+    one_year: string;
+  };
+  product_fee: string;
+  management_fee: string;
+  risk: number | null;
+  rating: number | null;
+  index_fund: boolean;
+};
+
+export type InvestmentFundData = {
+  source: string;
+  source_url: string;
+  retrieved_at: string;
+  data_date: string | null;
+  is_delayed: boolean;
+  is_stale: boolean;
+  query: string | null;
+  result_count: number;
+  funds: InvestmentFund[];
+  unavailable_isins: string[];
+};
+
 export type InvestmentPortfolio = {
   purchase_budget: string;
   currency: string;
   positions: Array<{
+    instrument_type: "stock" | "fund";
     ticker: string;
-    shares: number;
+    shares: string;
     target_percentage: string;
   }>;
   updated_at: string | null;
@@ -625,8 +672,97 @@ export function login(
   });
 }
 
+export function registerAccount(
+  environment: Environment,
+  username: string,
+  password: string,
+  settings: AppSettings,
+): Promise<Session> {
+  return request(environment, "/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ username, password, settings }),
+  });
+}
+
 export function logout(environment: Environment): Promise<void> {
   return request(environment, "/auth/logout", { method: "POST" }, true);
+}
+
+export function changePassword(
+  environment: Environment,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  return request(
+    environment,
+    "/auth/password",
+    {
+      method: "PATCH",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    },
+    true,
+  );
+}
+
+export function getUsers(environment: Environment): Promise<UserAccount[]> {
+  return request(environment, "/users");
+}
+
+export function createUser(
+  environment: Environment,
+  username: string,
+  password: string,
+  isAdmin: boolean,
+  settings: AppSettings,
+): Promise<UserAccount> {
+  return request(
+    environment,
+    "/users",
+    {
+      method: "POST",
+      body: JSON.stringify({ username, password, is_admin: isAdmin, settings }),
+    },
+    true,
+  );
+}
+
+export function updateUser(
+  environment: Environment,
+  userId: number,
+  values: { username?: string; is_admin?: boolean },
+): Promise<UserAccount> {
+  return request(
+    environment,
+    `/users/${userId}`,
+    { method: "PATCH", body: JSON.stringify(values) },
+    true,
+  );
+}
+
+export function resetUserPassword(
+  environment: Environment,
+  userId: number,
+  newPassword: string,
+): Promise<void> {
+  return request(
+    environment,
+    `/users/${userId}/reset-password`,
+    { method: "POST", body: JSON.stringify({ new_password: newPassword }) },
+    true,
+  );
+}
+
+export function deleteUser(
+  environment: Environment,
+  userId: number,
+  confirmation: string,
+): Promise<void> {
+  return request(
+    environment,
+    `/users/${userId}`,
+    { method: "DELETE", body: JSON.stringify({ confirmation }) },
+    true,
+  );
 }
 
 export function saveSettings(
@@ -667,13 +803,25 @@ export function getInvestmentPortfolio(environment: Environment): Promise<Invest
   return request(environment, "/investments/portfolio");
 }
 
+export function getInvestmentFundData(
+  environment: Environment,
+  options: { query?: string; isins?: string[] },
+): Promise<InvestmentFundData> {
+  const query = new URLSearchParams();
+  if (options.query) query.set("query", options.query);
+  options.isins?.forEach((isin) => query.append("isin", isin));
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return request(environment, `/investments/fund-data${suffix}`);
+}
+
 export function saveInvestmentPortfolio(
   environment: Environment,
   payload: {
     purchase_budget: string;
     positions: Array<{
+      instrument_type: "stock" | "fund";
       ticker: string;
-      shares: number;
+      shares: string;
       target_percentage: string;
     }>;
   },

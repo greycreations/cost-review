@@ -61,6 +61,15 @@ def get_auth_context(
 Auth = Annotated[AuthContext, Depends(get_auth_context)]
 
 
+def require_admin(auth: Auth) -> AuthContext:
+    if not auth.user.is_admin:
+        raise ApiError(403, "admin_required", "Administrator access is required.")
+    return auth
+
+
+AdminAuth = Annotated[AuthContext, Depends(require_admin)]
+
+
 def require_csrf(
     request: Request,
     auth: Auth,
@@ -79,3 +88,12 @@ def require_csrf(
 
 
 CsrfAuth = Annotated[AuthContext, Depends(require_csrf)]
+
+
+def require_admin_csrf(auth: CsrfAuth) -> AuthContext:
+    if not auth.user.is_admin:
+        raise ApiError(403, "admin_required", "Administrator access is required.")
+    return auth
+
+
+AdminCsrfAuth = Annotated[AuthContext, Depends(require_admin_csrf)]
