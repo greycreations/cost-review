@@ -66,6 +66,8 @@ const account = (
 describe("App", () => {
   beforeEach(() => {
     localStorage.clear();
+    document.documentElement.dataset.theme = "light";
+    document.documentElement.style.colorScheme = "light";
     window.location.hash = "";
     accountItems = [];
     transactionItems = [];
@@ -471,6 +473,23 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Allocate your next investment" })).toBeInTheDocument();
   });
 
+  it("switches theme globally and persists the choice for the next visit", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("button", { name: "Switch to dark theme" }));
+
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+    expect(localStorage.getItem("cost-review-theme")).toBe("dark");
+    expect(screen.getByRole("button", { name: "Switch to light theme" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+  });
+
   it("saves investment holdings and allocations through the protected environment API", async () => {
     document.cookie = "cost_review_production_csrf=investment-csrf; path=/";
     const user = userEvent.setup();
@@ -540,9 +559,8 @@ describe("App", () => {
     expect(within(calendar).getAllByText("21 kr")).toHaveLength(2);
 
     await user.click(
-      within(holdingsTable).getByRole("checkbox", { name: "Select holding Axfood" }),
+      within(holdingsTable).getByRole("button", { name: "Remove Axfood from holdings" }),
     );
-    await user.click(screen.getByRole("button", { name: "Remove from holdings" }));
 
     await waitFor(() => {
       const latestSave = vi

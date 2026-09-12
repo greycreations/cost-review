@@ -134,7 +134,9 @@ Derived from Product Specification v1.0. This backlog deliberately prioritizes d
   holdings-based dividend calendar, purchase-plan allocations and a read-only historical
   dividend-yield comparison with visible source, coverage, delay, freshness and
   trailing-dividend basis. Version 0.7.0 adds searchable public fund information, decimal fund
-  units, ISIN-based persistence, mixed stock/fund planning and mobile-responsive controls.
+  units, ISIN-based persistence, mixed stock/fund planning and mobile-responsive controls. The
+  following UI refinement makes single-holding removal directly visible alongside bulk selection
+  and adds a persistent light/dark theme across authenticated and unauthenticated surfaces.
 
 ## Post-MVP backlog
 - OCR/receipt interpretation.

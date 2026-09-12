@@ -3,7 +3,7 @@
 
 Cost Review is a private, self-hosted web application for trustworthy personal
 and household economics. Product behavior is defined by
-`docs/PRODUCT_SPECIFICATION.md` v1.6 and delivered in the order described by
+`docs/PRODUCT_SPECIFICATION.md` v1.7 and delivered in the order described by
 `docs/IMPLEMENTATION_BACKLOG.md`.
 
 Sprint 1 established the Platform Foundation: PostgreSQL, migrations, first-run
@@ -32,7 +32,8 @@ dividend-yield comparison.
 It also adds searchable Swedish fund-market data through Avanza's public, read-only fund
 information, decimal fund units and a combined stock/fund purchase plan. The full application has
 been tightened for narrow mobile screens; dense financial tables remain horizontally swipeable
-without widening the surrounding page.
+without widening the surrounding page. Every saved holding now has a direct remove action in
+addition to bulk selection, and the application offers a device-persistent light/dark theme.
 
 ## Architecture
 
@@ -488,7 +489,8 @@ records and are explicitly not confirmed future payments. Screener selections be
 when the user chooses **Add holdings**; the saved holdings then drive the holdings table, dividend
 calendar and purchase allocation. The dividend comparison ranks trailing dividend per share against
 the latest close and does not add holdings or place trades. Holdings and target allocations are
-persisted per user inside the active data plane; external quotes remain derived and never become
+persisted per user inside the active data plane. Each holding row can be removed directly, while
+checkbox selection remains available for bulk removal. External quotes remain derived and never become
 Ledger events. Funds are searched from Avanza's public fund information without account
 credentials, saved by ISIN and valued from delayed NAV. Version 0.7.0 accepts SEK-denominated funds;
 fund units may contain up to eight decimal places while stocks remain whole-share positions. See

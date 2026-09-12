@@ -41,6 +41,7 @@ import {
   TransactionWorkspace,
   type TransactionInitialFilters,
 } from "./TransactionWorkspace";
+import { applyTheme, readStoredTheme, type Theme } from "./theme";
 
 type LoadState =
   | { kind: "loading" }
@@ -153,6 +154,10 @@ const copy = {
     passwordReset: "Lösenordet återställdes och användaren loggades ut.",
     you: "Du",
     noSelfRegistration: "Nya konton kan endast skapas av en administratör.",
+    lightTheme: "Ljust",
+    darkTheme: "Mörkt",
+    switchToLightTheme: "Byt till ljust tema",
+    switchToDarkTheme: "Byt till mörkt tema",
   },
   en: {
     loading: "Connecting to the selected data environment…",
@@ -247,10 +252,15 @@ const copy = {
     passwordReset: "The password was reset and the user was signed out.",
     you: "You",
     noSelfRegistration: "New accounts can only be created by an administrator.",
+    lightTheme: "Light",
+    darkTheme: "Dark",
+    switchToLightTheme: "Switch to light theme",
+    switchToDarkTheme: "Switch to dark theme",
   },
 } as const;
 
 function App() {
+  const [theme, setTheme] = useState<Theme>(readStoredTheme);
   const [environment, setEnvironment] = useState<Environment>(() => {
     return localStorage.getItem("cost-review-environment") === "test" ? "test" : "production";
   });
@@ -307,6 +317,10 @@ function App() {
     document.documentElement.lang = language;
   }, [language]);
 
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
+
   const selectEnvironment = (next: Environment) => {
     if (next !== environment) {
       setState({ kind: "loading" });
@@ -328,6 +342,9 @@ function App() {
               Investeringar
             </a>
           </nav>
+          <div className="topbar-controls">
+            <ThemeToggle labels={labels} theme={theme} onTheme={setTheme} />
+          </div>
         </header>
         <main>
           <InvestmentWorkspace language="sv" preview />
@@ -338,7 +355,7 @@ function App() {
 
   if (state.kind === "loading") {
     return (
-      <PageFrame environment={environment} labels={labels} onEnvironment={selectEnvironment}>
+      <PageFrame environment={environment} labels={labels} onEnvironment={selectEnvironment} theme={theme} onTheme={setTheme}>
         <div className="center-state" role="status">
           <span className="status-pulse" aria-hidden="true" />
           <p>{labels.loading}</p>
@@ -349,7 +366,7 @@ function App() {
 
   if (state.kind === "error") {
     return (
-      <PageFrame environment={environment} labels={labels} onEnvironment={selectEnvironment}>
+      <PageFrame environment={environment} labels={labels} onEnvironment={selectEnvironment} theme={theme} onTheme={setTheme}>
         <div className="center-state error-state" role="alert">
           <strong>{state.message}</strong>
           <button
@@ -368,7 +385,7 @@ function App() {
 
   if (state.kind === "setup") {
     return (
-      <PageFrame environment={environment} labels={labels} onEnvironment={selectEnvironment}>
+      <PageFrame environment={environment} labels={labels} onEnvironment={selectEnvironment} theme={theme} onTheme={setTheme}>
         <SetupForm
           environment={environment}
           labels={labels}
@@ -380,7 +397,7 @@ function App() {
 
   if (state.kind === "login") {
     return (
-      <PageFrame environment={environment} labels={labels} onEnvironment={selectEnvironment}>
+      <PageFrame environment={environment} labels={labels} onEnvironment={selectEnvironment} theme={theme} onTheme={setTheme}>
         <LoginForm
           environment={environment}
           labels={labels}
@@ -397,6 +414,8 @@ function App() {
       labels={copy[state.session.settings.language]}
       session={state.session}
       onEnvironment={selectEnvironment}
+      theme={theme}
+      onTheme={setTheme}
       onSession={(session) => setState({ kind: "ready", session })}
       onLogout={async () => {
         await logout(environment);
@@ -412,25 +431,68 @@ function PageFrame({
   environment,
   labels,
   onEnvironment,
+  theme,
+  onTheme,
   children,
 }: {
   environment: Environment;
   labels: Labels;
   onEnvironment: (environment: Environment) => void;
+  theme: Theme;
+  onTheme: (theme: Theme) => void;
   children: React.ReactNode;
 }) {
   return (
     <div className={`page-frame environment-${environment}`}>
       <header className="minimal-header">
         <span className="brand">Cost Review</span>
-        <EnvironmentSwitcher
-          environment={environment}
-          labels={labels}
-          onEnvironment={onEnvironment}
-        />
+        <div className="topbar-controls">
+          <ThemeToggle labels={labels} theme={theme} onTheme={onTheme} />
+          <EnvironmentSwitcher
+            environment={environment}
+            labels={labels}
+            onEnvironment={onEnvironment}
+          />
+        </div>
       </header>
       <main className="auth-main">{children}</main>
     </div>
+  );
+}
+
+function ThemeToggle({
+  labels,
+  theme,
+  onTheme,
+}: {
+  labels: Labels;
+  theme: Theme;
+  onTheme: (theme: Theme) => void;
+}) {
+  const isDark = theme === "dark";
+  const actionLabel = isDark ? labels.switchToLightTheme : labels.switchToDarkTheme;
+
+  return (
+    <button
+      aria-label={actionLabel}
+      aria-pressed={isDark}
+      className="theme-toggle"
+      onClick={() => onTheme(isDark ? "light" : "dark")}
+      title={actionLabel}
+      type="button"
+    >
+      {isDark ? (
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="3.5" />
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42" />
+        </svg>
+      ) : (
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <path d="M20.4 15.1A8 8 0 0 1 8.9 3.6 8.5 8.5 0 1 0 20.4 15.1Z" />
+        </svg>
+      )}
+      <span>{isDark ? labels.lightTheme : labels.darkTheme}</span>
+    </button>
   );
 }
 
@@ -669,6 +731,8 @@ function ApplicationShell({
   labels,
   session,
   onEnvironment,
+  theme,
+  onTheme,
   onSession,
   onLogout,
 }: {
@@ -676,6 +740,8 @@ function ApplicationShell({
   labels: Labels;
   session: Session;
   onEnvironment: (environment: Environment) => void;
+  theme: Theme;
+  onTheme: (theme: Theme) => void;
   onSession: (session: Session) => void;
   onLogout: () => Promise<void>;
 }) {
@@ -757,11 +823,14 @@ function ApplicationShell({
             {labels.settings}
           </a>
         </nav>
-        <EnvironmentSwitcher
-          environment={environment}
-          labels={labels}
-          onEnvironment={onEnvironment}
-        />
+        <div className="topbar-controls">
+          <ThemeToggle labels={labels} theme={theme} onTheme={onTheme} />
+          <EnvironmentSwitcher
+            environment={environment}
+            labels={labels}
+            onEnvironment={onEnvironment}
+          />
+        </div>
       </header>
 
       <main>

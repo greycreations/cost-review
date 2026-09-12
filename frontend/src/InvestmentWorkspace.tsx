@@ -240,6 +240,8 @@ const copy = {
     addSelectedHoldings: "Lägg till innehav",
     addSelectedHoldingsCount: "Lägg till {count} innehav",
     removeFromHoldings: "Ta bort från innehav",
+    removeHolding: "Ta bort",
+    removeHoldingLabel: "Ta bort {name} från innehav",
     selectHolding: "Markera innehav",
     portfolioActionSuccess: "Innehavslistan är sparad.",
     search: "Sök bolag eller ticker",
@@ -393,6 +395,8 @@ const copy = {
     addSelectedHoldings: "Add holdings",
     addSelectedHoldingsCount: "Add {count} holdings",
     removeFromHoldings: "Remove from holdings",
+    removeHolding: "Remove",
+    removeHoldingLabel: "Remove {name} from holdings",
     selectHolding: "Select holding",
     portfolioActionSuccess: "The holdings list has been saved.",
     search: "Search company or ticker",
@@ -1050,9 +1054,11 @@ export function InvestmentWorkspace({
     }
   };
 
-  const removeSelectedHoldings = async () => {
+  const removeHoldings = async (identifiers: string[]) => {
+    if (identifiers.length === 0) return;
+    const identifiersToRemove = new Set(identifiers);
     const nextTickers = portfolioTickers.filter(
-      (ticker) => !holdingSelection.includes(ticker),
+      (ticker) => !identifiersToRemove.has(ticker),
     );
     const nextHoldings = Object.fromEntries(
       Object.entries(holdings).filter(([ticker]) => nextTickers.includes(ticker)),
@@ -1064,9 +1070,16 @@ export function InvestmentWorkspace({
       Object.entries(portfolioTypes).filter(([ticker]) => nextTickers.includes(ticker)),
     );
     if (await persistPortfolio(nextTickers, nextHoldings, nextAllocations, budget, nextTypes)) {
-      setHoldingSelection([]);
+      setHoldingSelection((current) =>
+        current.filter((ticker) => !identifiersToRemove.has(ticker)),
+      );
     }
   };
+
+  const removeSelectedHoldings = () => removeHoldings(holdingSelection);
+
+  const removeHoldingLabel = (name: string) =>
+    labels.removeHoldingLabel.replace("{name}", name);
 
   if (!preview && loadState !== "ready") {
     return (
@@ -1492,11 +1505,23 @@ export function InvestmentWorkspace({
                             onChange={() => toggleHoldingSelection(stock.ticker)}
                           />
                         </td>
-                        <td>
+                        <td className="holding-identity-cell">
                           <strong>{stock.name}</strong>
                           <span>
                             {stock.ticker} · {(labels.sectors as Record<string, string>)[stock.sector] ?? stock.sector}
                           </span>
+                          <button
+                            aria-label={removeHoldingLabel(stock.name)}
+                            className="holding-row-remove"
+                            disabled={saveState === "saving"}
+                            onClick={() => void removeHoldings([stock.ticker])}
+                            type="button"
+                          >
+                            <svg aria-hidden="true" viewBox="0 0 24 24">
+                              <path d="M5 7h14M9 7V4h6v3M8 10v7M12 10v7M16 10v7M7 7l1 13h8l1-13" />
+                            </svg>
+                            {labels.removeHolding}
+                          </button>
                         </td>
                         <td>
                           <input
@@ -1560,8 +1585,78 @@ export function InvestmentWorkspace({
                 <table className="investment-table holdings-table fund-holdings-table" aria-label={language === "sv" ? "Fondinnehav" : "Fund holdings"}>
                   <thead><tr><th className="select-column"><span className="sr-only">{labels.selectHolding}</span></th><th>{labels.fundKind}</th><th>{labels.unitsOwned}</th><th>{labels.nav}</th><th>{labels.oneMonth}</th><th>{labels.sixMonths}</th><th>{labels.oneYearColumn}</th><th>{labels.fee}</th><th>{labels.risk}</th><th>{labels.value}</th></tr></thead>
                   <tbody>
-                    {portfolioFunds.map((fund) => { const units = parsePositiveQuantity(holdings[fund.isin] ?? "0"); const isSelected = holdingSelection.includes(fund.isin); return <tr key={fund.isin} className={isSelected ? "selected-row" : undefined}><td className="select-column"><input type="checkbox" aria-label={`${labels.selectHolding} ${fund.name}`} checked={isSelected} onChange={() => toggleHoldingSelection(fund.isin)} /></td><td><strong>{fund.name}</strong><span>{fund.isin} · {fund.fundCompany || fund.fundType} · {fund.category}</span></td><td><input className="table-number-input" type="text" inputMode="decimal" aria-label={`${labels.unitsOwned} · ${fund.name}`} value={holdings[fund.isin] ?? ""} placeholder="0" onChange={(event) => { setHoldings((current) => ({ ...current, [fund.isin]: event.target.value.replace(/[^\d.,]/g, "") })); markDirty(); }} /></td><td>{formatMoney(fund.navOre, language)}<span>{fund.navDate}</span></td><td><TrendValue value={fund.change1m} language={language} /></td><td><TrendValue value={fund.change6m} language={language} /></td><td><TrendValue value={fund.change1y} language={language} /></td><td>{fund.productFee.toLocaleString(language === "sv" ? "sv-SE" : "en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %</td><td>{fund.risk === null ? "—" : `${fund.risk} / 7`}</td><td className="strong-cell">{formatMoney(Math.round(fund.navOre * units), language)}</td></tr>; })}
-                    {unavailableFundIsins.map((isin) => { const isSelected = holdingSelection.includes(isin); return <tr key={isin} className={isSelected ? "selected-row" : undefined}><td className="select-column"><input type="checkbox" aria-label={`${labels.selectHolding} ${isin}`} checked={isSelected} onChange={() => toggleHoldingSelection(isin)} /></td><td><strong>{isin}</strong><span>{labels.unavailableFund}</span></td><td><input className="table-number-input" type="text" inputMode="decimal" aria-label={`${labels.unitsOwned} · ${isin}`} value={holdings[isin] ?? ""} placeholder="0" onChange={(event) => { setHoldings((current) => ({ ...current, [isin]: event.target.value.replace(/[^\d.,]/g, "") })); markDirty(); }} /></td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>; })}
+                    {portfolioFunds.map((fund) => {
+                      const units = parsePositiveQuantity(holdings[fund.isin] ?? "0");
+                      const isSelected = holdingSelection.includes(fund.isin);
+                      return (
+                        <tr key={fund.isin} className={isSelected ? "selected-row" : undefined}>
+                          <td className="select-column">
+                            <input
+                              type="checkbox"
+                              aria-label={`${labels.selectHolding} ${fund.name}`}
+                              checked={isSelected}
+                              onChange={() => toggleHoldingSelection(fund.isin)}
+                            />
+                          </td>
+                          <td className="holding-identity-cell">
+                            <strong>{fund.name}</strong>
+                            <span>{fund.isin} · {fund.fundCompany || fund.fundType} · {fund.category}</span>
+                            <button
+                              aria-label={removeHoldingLabel(fund.name)}
+                              className="holding-row-remove"
+                              disabled={saveState === "saving"}
+                              onClick={() => void removeHoldings([fund.isin])}
+                              type="button"
+                            >
+                              <svg aria-hidden="true" viewBox="0 0 24 24">
+                                <path d="M5 7h14M9 7V4h6v3M8 10v7M12 10v7M16 10v7M7 7l1 13h8l1-13" />
+                              </svg>
+                              {labels.removeHolding}
+                            </button>
+                          </td>
+                          <td>
+                            <input className="table-number-input" type="text" inputMode="decimal" aria-label={`${labels.unitsOwned} · ${fund.name}`} value={holdings[fund.isin] ?? ""} placeholder="0" onChange={(event) => { setHoldings((current) => ({ ...current, [fund.isin]: event.target.value.replace(/[^\d.,]/g, "") })); markDirty(); }} />
+                          </td>
+                          <td>{formatMoney(fund.navOre, language)}<span>{fund.navDate}</span></td>
+                          <td><TrendValue value={fund.change1m} language={language} /></td>
+                          <td><TrendValue value={fund.change6m} language={language} /></td>
+                          <td><TrendValue value={fund.change1y} language={language} /></td>
+                          <td>{fund.productFee.toLocaleString(language === "sv" ? "sv-SE" : "en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %</td>
+                          <td>{fund.risk === null ? "—" : `${fund.risk} / 7`}</td>
+                          <td className="strong-cell">{formatMoney(Math.round(fund.navOre * units), language)}</td>
+                        </tr>
+                      );
+                    })}
+                    {unavailableFundIsins.map((isin) => {
+                      const isSelected = holdingSelection.includes(isin);
+                      return (
+                        <tr key={isin} className={isSelected ? "selected-row" : undefined}>
+                          <td className="select-column">
+                            <input type="checkbox" aria-label={`${labels.selectHolding} ${isin}`} checked={isSelected} onChange={() => toggleHoldingSelection(isin)} />
+                          </td>
+                          <td className="holding-identity-cell">
+                            <strong>{isin}</strong>
+                            <span>{labels.unavailableFund}</span>
+                            <button
+                              aria-label={removeHoldingLabel(isin)}
+                              className="holding-row-remove"
+                              disabled={saveState === "saving"}
+                              onClick={() => void removeHoldings([isin])}
+                              type="button"
+                            >
+                              <svg aria-hidden="true" viewBox="0 0 24 24">
+                                <path d="M5 7h14M9 7V4h6v3M8 10v7M12 10v7M16 10v7M7 7l1 13h8l1-13" />
+                              </svg>
+                              {labels.removeHolding}
+                            </button>
+                          </td>
+                          <td>
+                            <input className="table-number-input" type="text" inputMode="decimal" aria-label={`${labels.unitsOwned} · ${isin}`} value={holdings[isin] ?? ""} placeholder="0" onChange={(event) => { setHoldings((current) => ({ ...current, [isin]: event.target.value.replace(/[^\d.,]/g, "") })); markDirty(); }} />
+                          </td>
+                          <td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                   <tfoot><tr><th colSpan={9}>{labels.total}</th><td>{formatMoney(fundPortfolioValueOre, language)}</td></tr></tfoot>
                 </table>

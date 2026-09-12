@@ -1,6 +1,6 @@
 # Cost Review Product & MVP Specification
 
-**Version:** 1.6
+**Version:** 1.7
 **Date:** 2026-09-12
 **Status:** Requirements baseline / source of truth
 
@@ -332,6 +332,12 @@ Future forecasting provides 30-day / 3 / 6 / 12-month cash-flow projections whil
   as a recommendation or a guarantee of future distributions.
 - Market observations remain derived external data and must not be recorded as investment trades or
   household income.
+- Every saved stock or fund holding exposes a visible direct remove action. Checkbox selection may
+  additionally support bulk removal, but must not be the only discoverable removal path. Removing a
+  holding immediately persists the complete remaining portfolio in the active user's data plane.
+- The application provides light and dark visual themes. Light remains the default; the selected
+  theme is stored as a device-local display preference, applies before and after authentication, and
+  must preserve WCAG AA contrast, visible focus, Production/Demo-Test context and mobile usability.
 
 ## 22. Recommended implementation sequence
 1. **Foundation:** repo structure, Compose, PostgreSQL, migrations, API/backend, frontend shell, auth, setup and environment boundary.
@@ -436,3 +442,15 @@ This document is the implementation requirements baseline. New product behavior 
 - **Boundary:** the comparison is explanatory planning output only. It does not consider future
   board decisions, special-dividend recurrence, diversification, company risk, tax or fees and does
   not create orders, holdings, trades, valuation snapshots or income events.
+
+### Version 1.7 change impact
+
+- **Data model, API and migrations:** no change. Direct single-row removal uses the existing complete
+  portfolio replacement contract and the theme is a non-financial device-local preference.
+- **UX:** each stock, fund and temporarily unavailable fund row includes an immediately visible
+  remove action. Existing checkbox selection remains available for efficient bulk removal.
+- **Appearance:** the calm light theme remains the default and a persistent dark theme is available
+  from the application chrome, including setup, sign-in and the local investment preview.
+- **Accessibility and mobile:** both themes retain semantic state labels, keyboard focus and contrast.
+  The theme control and row actions keep touch-sized targets and remain visible without widening the
+  page at 320 px; wide financial tables continue to use their intentional horizontal swipe region.
