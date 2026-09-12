@@ -20,8 +20,8 @@ Demo/Test environment.
 
 The Release 1 Core MVP blockers are:
 
-1. Platform foundation, setup, authentication, persistence, migrations, and a
-   hard Production/Test boundary.
+1. Platform foundation, setup, multi-user authentication and administration,
+   persistence, migrations, and a hard Production/Test boundary.
 2. Accounts, balances, transactions, splits, income, expenses, transfers,
    refunds, reimbursements, adjustments, currency, sharing, and payroll/income
    breakdowns that preserve the difference between cash flow and economic cost.

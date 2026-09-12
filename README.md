@@ -3,7 +3,7 @@
 
 Cost Review is a private, self-hosted web application for trustworthy personal
 and household economics. Product behavior is defined by
-`docs/PRODUCT_SPECIFICATION.md` v1.3 and delivered in the order described by
+`docs/PRODUCT_SPECIFICATION.md` v1.4 and delivered in the order described by
 `docs/IMPLEMENTATION_BACKLOG.md`.
 
 Sprint 1 established the Platform Foundation: PostgreSQL, migrations, first-run
@@ -23,7 +23,9 @@ explicit reconciliation adjustments, an audit-backed Recycle Bin, and encrypted
 database/configuration/attachment backups with offline restore. Version 0.6.0
 adds a dynamically discovered Yahoo Finance universe of Stockholm-traded shares
 to the Investments tab, with persisted holdings, dividend estimates, and
-whole-share purchase planning.
+whole-share purchase planning. Version 0.7.0 adds network self-registration,
+self-service password changes, and administrator-controlled user creation,
+renaming, role assignment, password reset and deletion.
 
 ## Architecture
 
@@ -90,6 +92,13 @@ Open `http://192.168.1.41:8080`. Store a recovery copy of the completed `.env`,
 especially both `BACKUP_*_ENCRYPTION_KEY` values, away from the Docker host;
 encrypted backups cannot be restored without their original keys.
 
+The first account created in each data environment is its administrator. With
+`ALLOW_SELF_REGISTRATION=true` (the default), anyone who can reach the sign-in
+page can create a regular account. Set it to `false` and recreate the API
+containers if accounts should only be created by an administrator. Disable it
+or enforce authentication at the reverse proxy before exposing an installation
+beyond a trusted network.
+
 The Investments tab uses delayed Yahoo Finance closing prices and dividend history for its initial
 Nasdaq Stockholm universe. No API key is required. The default configuration is:
 
@@ -126,13 +135,13 @@ unset GHCR_TOKEN
 
 Never copy a development machine's `.env` to another installation.
 
-### Upgrade an existing installation to 0.6.0
+### Upgrade an existing installation to 0.7.0
 
 Keep the existing `.env` so database passwords, backup keys, and installation
 identity remain unchanged. Create a current backup, then change only this line:
 
 ```sh
-COST_REVIEW_VERSION=0.6.0
+COST_REVIEW_VERSION=0.7.0
 ```
 
 Pull and recreate the application containers from the installation folder:
@@ -143,11 +152,12 @@ docker compose up --detach --wait
 docker compose ps
 ```
 
-The API containers apply the investment ticker-width migration independently to
-Production and Demo/Test before they start. Existing positions and database,
-attachment, and backup volumes are preserved. Yahoo Finance is the default and
-needs no extra setting; the optional `MARKET_DATA_PROVIDER` values above are
-only needed when overriding the defaults.
+The API containers apply the user-role migration independently to Production
+and Demo/Test before they start. The oldest existing account in each data plane
+becomes administrator automatically. Existing positions, database, attachment,
+and backup volumes are preserved. Add `ALLOW_SELF_REGISTRATION=false` to the
+existing `.env` only if administrator-created accounts are preferred; omission
+keeps the trusted-network default enabled.
 
 ### Build from source for development
 

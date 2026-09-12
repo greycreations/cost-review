@@ -7,6 +7,7 @@ export type EnvironmentStatus = {
   data_plane_id: string;
   reset_generation: number;
   setup_required: boolean;
+  registration_allowed: boolean;
 };
 
 export type AppSettings = {
@@ -21,12 +22,21 @@ export type AppSettings = {
 
 export type Session = {
   username: string;
+  is_admin: boolean;
   environment: Environment;
   environment_label: string;
   data_plane_id: string;
   reset_generation: number;
   expires_at: string;
   settings: AppSettings;
+};
+
+export type UserAccount = {
+  user_id: number;
+  username: string;
+  is_admin: boolean;
+  created_at: string;
+  updated_at: string;
 };
 
 export type LifecycleStatus = "active" | "archived";
@@ -625,8 +635,97 @@ export function login(
   });
 }
 
+export function registerAccount(
+  environment: Environment,
+  username: string,
+  password: string,
+  settings: AppSettings,
+): Promise<Session> {
+  return request(environment, "/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ username, password, settings }),
+  });
+}
+
 export function logout(environment: Environment): Promise<void> {
   return request(environment, "/auth/logout", { method: "POST" }, true);
+}
+
+export function changePassword(
+  environment: Environment,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  return request(
+    environment,
+    "/auth/password",
+    {
+      method: "PATCH",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    },
+    true,
+  );
+}
+
+export function getUsers(environment: Environment): Promise<UserAccount[]> {
+  return request(environment, "/users");
+}
+
+export function createUser(
+  environment: Environment,
+  username: string,
+  password: string,
+  isAdmin: boolean,
+  settings: AppSettings,
+): Promise<UserAccount> {
+  return request(
+    environment,
+    "/users",
+    {
+      method: "POST",
+      body: JSON.stringify({ username, password, is_admin: isAdmin, settings }),
+    },
+    true,
+  );
+}
+
+export function updateUser(
+  environment: Environment,
+  userId: number,
+  values: { username?: string; is_admin?: boolean },
+): Promise<UserAccount> {
+  return request(
+    environment,
+    `/users/${userId}`,
+    { method: "PATCH", body: JSON.stringify(values) },
+    true,
+  );
+}
+
+export function resetUserPassword(
+  environment: Environment,
+  userId: number,
+  newPassword: string,
+): Promise<void> {
+  return request(
+    environment,
+    `/users/${userId}/reset-password`,
+    { method: "POST", body: JSON.stringify({ new_password: newPassword }) },
+    true,
+  );
+}
+
+export function deleteUser(
+  environment: Environment,
+  userId: number,
+  confirmation: string,
+): Promise<void> {
+  return request(
+    environment,
+    `/users/${userId}`,
+    { method: "DELETE", body: JSON.stringify({ confirmation }) },
+    true,
+  );
 }
 
 export function saveSettings(

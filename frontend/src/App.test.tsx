@@ -4,8 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 
+let sessionIsAdmin = false;
+let sessionUnavailable = false;
+let userAccounts: object[] = [];
+
 const session = (environment: "production" | "test") => ({
   username: `${environment}-owner`,
+  is_admin: sessionIsAdmin,
   environment,
   environment_label: environment === "production" ? "Production" : "Demo/Test",
   data_plane_id: environment === "production" ? "prod-plane" : "test-plane",
@@ -62,6 +67,9 @@ describe("App", () => {
     providerItems = [];
     sharingPartyItems = [];
     tagItems = [];
+    sessionIsAdmin = false;
+    sessionUnavailable = false;
+    userAccounts = [];
     analysisData = {
       date_from: "2026-08-01",
       date_to: "2026-08-31",
@@ -76,6 +84,16 @@ describe("App", () => {
       vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
         const path = input.toString();
         const environment = path.includes("/test/") ? "test" : "production";
+        if (path.endsWith("/auth/session") && sessionUnavailable) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                error: { code: "authentication_required", message: "Authentication required." },
+              }),
+              { status: 401, headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        }
         let body: object;
         if (path.endsWith("/setup/status")) {
           body = {
@@ -84,6 +102,7 @@ describe("App", () => {
             data_plane_id: `${environment}-plane`,
             reset_generation: 0,
             setup_required: false,
+            registration_allowed: true,
           };
         } else if (path.includes("/accounts?")) {
           body = { items: accountItems, total: accountItems.length, limit: 50, offset: 0 };
@@ -131,6 +150,8 @@ describe("App", () => {
           body = [];
         } else if (path.endsWith("/recycle-bin")) {
           body = [];
+        } else if (path.endsWith("/users") && !init?.method) {
+          body = userAccounts;
         } else if (path.includes("/audit-events?")) {
           body = { items: [], total: 0, limit: 10, offset: 0 };
         } else if (path.endsWith("/budgets") && init?.method === "POST") {
@@ -284,6 +305,80 @@ describe("App", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText("DEMO / TEST")).not.toBeInTheDocument();
+  });
+
+  it("lets a network visitor create a personal account from the sign-in screen", async () => {
+    sessionUnavailable = true;
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create a new account" }));
+    await user.type(screen.getByLabelText("Username"), "new-member");
+    await user.type(screen.getByLabelText("Password"), "a sufficiently long password");
+    await user.click(screen.getByRole("button", { name: "Create account" }));
+
+    await waitFor(() => {
+      const registerCall = vi.mocked(fetch).mock.calls.find(
+        ([input, init]) =>
+          input.toString().endsWith("/auth/register") && init?.method === "POST",
+      );
+      expect(registerCall).toBeDefined();
+      expect(JSON.parse(String(registerCall?.[1]?.body))).toMatchObject({
+        username: "new-member",
+        password: "a sufficiently long password",
+        settings: { language: "en", base_currency: "SEK" },
+      });
+    });
+  });
+
+  it("changes the signed-in user's password and shows admin-only account controls", async () => {
+    sessionIsAdmin = true;
+    userAccounts = [
+      {
+        user_id: 1,
+        username: "production-owner",
+        is_admin: true,
+        created_at: "2026-09-12T08:00:00Z",
+        updated_at: "2026-09-12T08:00:00Z",
+      },
+      {
+        user_id: 2,
+        username: "household-member",
+        is_admin: false,
+        created_at: "2026-09-12T09:00:00Z",
+        updated_at: "2026-09-12T09:00:00Z",
+      },
+    ];
+    document.cookie = "cost_review_production_csrf=security-csrf; path=/";
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Users" })).toBeInTheDocument();
+    expect(await screen.findByText("household-member")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Current password"), "old account password");
+    const newPasswordFields = screen.getAllByLabelText("New password");
+    await user.type(newPasswordFields[0], "new account password");
+    await user.type(screen.getByLabelText("Confirm new password"), "new account password");
+    await user.click(screen.getByRole("button", { name: "Change password" }));
+
+    await waitFor(() => {
+      const passwordCall = vi.mocked(fetch).mock.calls.find(
+        ([input, init]) =>
+          input.toString().endsWith("/auth/password") && init?.method === "PATCH",
+      );
+      expect(passwordCall).toBeDefined();
+      expect(JSON.parse(String(passwordCall?.[1]?.body))).toEqual({
+        current_password: "old account password",
+        new_password: "new account password",
+      });
+      expect(new Headers(passwordCall?.[1]?.headers).get("X-CSRF-Token")).toBe(
+        "security-csrf",
+      );
+    });
   });
 
   it("opens the single-page investment workspace from the primary navigation", async () => {

@@ -1,20 +1,27 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import {
   ApiError,
   backupDownloadUrl,
+  changePassword,
   createBackup,
+  createUser,
+  deleteUser,
   getAuditEvents,
   getBackups,
   getRecycleBin,
   getSession,
   getSetupStatus,
+  getUsers,
   importBackup,
   login,
   logout,
+  registerAccount,
   resetTestEnvironment,
+  resetUserPassword,
   saveSettings,
   setup,
+  updateUser,
   validateBackup,
   type AuditEvent,
   type AppSettings,
@@ -24,6 +31,7 @@ import {
   type Language,
   type RecycleBinItem,
   type Session,
+  type UserAccount,
 } from "./api";
 import { LedgerWorkspace } from "./LedgerWorkspace";
 import { BudgetWorkspace } from "./BudgetWorkspace";
@@ -60,6 +68,11 @@ const copy = {
     setupTitle: "Skapa den första användaren",
     setupLead: "Inställningen sparas endast i den valda datamiljön.",
     loginTitle: "Logga in",
+    registerTitle: "Skapa konto",
+    registerLead: "Skapa ett personligt konto i den valda datamiljön.",
+    registerAction: "Skapa konto",
+    showRegister: "Skapa ett nytt konto",
+    showLogin: "Jag har redan ett konto",
     username: "Användarnamn",
     password: "Lösenord",
     language: "Språk",
@@ -112,6 +125,34 @@ const copy = {
     auditTrail: "Senaste ändringar",
     noArchived: "Papperskorgen är tom.",
     noAudit: "Inga ändringar har registrerats ännu.",
+    security: "Säkerhet",
+    securityLead:
+      "Byt lösenord för ditt eget konto. Övriga aktiva sessioner loggas ut automatiskt.",
+    currentPassword: "Nuvarande lösenord",
+    newPassword: "Nytt lösenord",
+    confirmPassword: "Bekräfta nytt lösenord",
+    changePassword: "Byt lösenord",
+    passwordChanged: "Lösenordet är uppdaterat.",
+    passwordMismatch: "De nya lösenorden stämmer inte överens.",
+    userAdministration: "Användare",
+    userAdministrationLead:
+      "Administrera konton i den här datamiljön. Borttagning raderar även användarens personliga inställningar och investeringsportfölj.",
+    addUser: "Lägg till användare",
+    administrator: "Administratör",
+    regularUser: "Användare",
+    role: "Roll",
+    saveAccount: "Spara konto",
+    resetPassword: "Återställ lösenord",
+    removeAccount: "Ta bort konto",
+    removeConfirmation: "Skriv DELETE följt av användarnamnet",
+    confirmRemoval: "Bekräfta borttagning",
+    cancel: "Avbryt",
+    accountCreated: "Kontot skapades.",
+    accountSaved: "Kontot uppdaterades.",
+    accountRemoved: "Kontot togs bort.",
+    passwordReset: "Lösenordet återställdes och användaren loggades ut.",
+    you: "Du",
+    noSelfRegistration: "Nya konton kan endast skapas av en administratör.",
   },
   en: {
     loading: "Connecting to the selected data environment…",
@@ -121,6 +162,11 @@ const copy = {
     setupTitle: "Create the initial user",
     setupLead: "These settings are stored only in the selected data environment.",
     loginTitle: "Sign in",
+    registerTitle: "Create account",
+    registerLead: "Create a personal account in the selected data environment.",
+    registerAction: "Create account",
+    showRegister: "Create a new account",
+    showLogin: "I already have an account",
     username: "Username",
     password: "Password",
     language: "Language",
@@ -173,6 +219,34 @@ const copy = {
     auditTrail: "Recent changes",
     noArchived: "The recycle bin is empty.",
     noAudit: "No changes have been recorded yet.",
+    security: "Security",
+    securityLead:
+      "Change the password for your own account. Other active sessions are signed out automatically.",
+    currentPassword: "Current password",
+    newPassword: "New password",
+    confirmPassword: "Confirm new password",
+    changePassword: "Change password",
+    passwordChanged: "Your password has been updated.",
+    passwordMismatch: "The new passwords do not match.",
+    userAdministration: "Users",
+    userAdministrationLead:
+      "Manage accounts in this data environment. Deletion also removes that user's personal settings and investment portfolio.",
+    addUser: "Add user",
+    administrator: "Administrator",
+    regularUser: "User",
+    role: "Role",
+    saveAccount: "Save account",
+    resetPassword: "Reset password",
+    removeAccount: "Delete account",
+    removeConfirmation: "Type DELETE followed by the username",
+    confirmRemoval: "Confirm deletion",
+    cancel: "Cancel",
+    accountCreated: "The account was created.",
+    accountSaved: "The account was updated.",
+    accountRemoved: "The account was deleted.",
+    passwordReset: "The password was reset and the user was signed out.",
+    you: "You",
+    noSelfRegistration: "New accounts can only be created by an administrator.",
   },
 } as const;
 
@@ -310,6 +384,7 @@ function App() {
         <LoginForm
           environment={environment}
           labels={labels}
+          status={state.status}
           onComplete={(session) => setState({ kind: "ready", session })}
         />
       </PageFrame>
@@ -495,14 +570,18 @@ function SetupForm({
 function LoginForm({
   environment,
   labels,
+  status,
   onComplete,
 }: {
   environment: Environment;
   labels: Labels;
+  status: EnvironmentStatus;
   onComplete: (session: Session) => void;
 }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [registering, setRegistering] = useState(false);
+  const [language, setLanguage] = useState<Language>(labels === copy.sv ? "sv" : "en");
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
 
@@ -511,7 +590,14 @@ function LoginForm({
     setWorking(true);
     setError(null);
     try {
-      onComplete(await login(environment, username, password));
+      onComplete(
+        registering
+          ? await registerAccount(environment, username, password, {
+              ...defaultSettings,
+              language,
+            })
+          : await login(environment, username, password),
+      );
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Login failed.");
     } finally {
@@ -522,12 +608,15 @@ function LoginForm({
   return (
     <form className="auth-card compact" onSubmit={submit}>
       <p className="eyebrow">{environment === "test" ? labels.test : labels.production}</p>
-      <h1>{labels.loginTitle}</h1>
+      <h1>{registering ? labels.registerTitle : labels.loginTitle}</h1>
+      {registering ? <p className="lead">{labels.registerLead}</p> : null}
       <FormError message={error} />
       <label>
         {labels.username}
         <input
           autoComplete="username"
+          minLength={3}
+          maxLength={64}
           onChange={(event) => setUsername(event.target.value)}
           required
           value={username}
@@ -536,16 +625,41 @@ function LoginForm({
       <label>
         {labels.password}
         <input
-          autoComplete="current-password"
+          autoComplete={registering ? "new-password" : "current-password"}
+          minLength={registering ? 12 : 1}
           onChange={(event) => setPassword(event.target.value)}
           required
           type="password"
           value={password}
         />
       </label>
+      {registering ? (
+        <label>
+          {labels.language}
+          <select value={language} onChange={(event) => setLanguage(event.target.value as Language)}>
+            <option value="sv">Svenska</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+      ) : null}
       <button className="primary-button" disabled={working} type="submit">
-        {labels.signIn}
+        {registering ? labels.registerAction : labels.signIn}
       </button>
+      {status.registration_allowed ? (
+        <button
+          className="auth-mode-button"
+          disabled={working}
+          onClick={() => {
+            setError(null);
+            setRegistering((current) => !current);
+          }}
+          type="button"
+        >
+          {registering ? labels.showLogin : labels.showRegister}
+        </button>
+      ) : (
+        <p className="quiet-copy auth-registration-note">{labels.noSelfRegistration}</p>
+      )}
     </form>
   );
 }
@@ -714,6 +828,15 @@ function ApplicationShell({
               session={session}
               onSession={onSession}
             />
+            <SecurityPanel environment={environment} labels={labels} />
+            {session.is_admin ? (
+              <UserAdministrationPanel
+                environment={environment}
+                labels={labels}
+                session={session}
+                onSession={onSession}
+              />
+            ) : null}
             <OperationalSafetyPanel
               environment={environment}
               labels={labels}
@@ -1029,6 +1152,390 @@ function SettingsPanel({
           {labels.save}
         </button>
       </form>
+    </section>
+  );
+}
+
+function SecurityPanel({
+  environment,
+  labels,
+}: {
+  environment: Environment;
+  labels: Labels;
+}) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+
+  return (
+    <section className="settings-section security-section">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Account</p>
+          <h2>{labels.security}</h2>
+          <p className="quiet-copy">{labels.securityLead}</p>
+        </div>
+      </div>
+      <form
+        className="password-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setMessage(null);
+          if (newPassword !== confirmation) {
+            setMessage(labels.passwordMismatch);
+            return;
+          }
+          setWorking(true);
+          void changePassword(environment, currentPassword, newPassword)
+            .then(() => {
+              setCurrentPassword("");
+              setNewPassword("");
+              setConfirmation("");
+              setMessage(labels.passwordChanged);
+            })
+            .catch((error) =>
+              setMessage(error instanceof Error ? error.message : "Password change failed."),
+            )
+            .finally(() => setWorking(false));
+        }}
+      >
+        <label>
+          {labels.currentPassword}
+          <input
+            autoComplete="current-password"
+            onChange={(event) => setCurrentPassword(event.target.value)}
+            required
+            type="password"
+            value={currentPassword}
+          />
+        </label>
+        <label>
+          {labels.newPassword}
+          <input
+            autoComplete="new-password"
+            minLength={12}
+            onChange={(event) => setNewPassword(event.target.value)}
+            required
+            type="password"
+            value={newPassword}
+          />
+        </label>
+        <label>
+          {labels.confirmPassword}
+          <input
+            autoComplete="new-password"
+            minLength={12}
+            onChange={(event) => setConfirmation(event.target.value)}
+            required
+            type="password"
+            value={confirmation}
+          />
+        </label>
+        <button className="primary-button" disabled={working} type="submit">
+          {labels.changePassword}
+        </button>
+      </form>
+      {message ? <p className="form-message" role="status">{message}</p> : null}
+    </section>
+  );
+}
+
+type UserDraft = { username: string; is_admin: boolean; password: string };
+
+function UserAdministrationPanel({
+  environment,
+  labels,
+  session,
+  onSession,
+}: {
+  environment: Environment;
+  labels: Labels;
+  session: Session;
+  onSession: (session: Session) => void;
+}) {
+  const [users, setUsers] = useState<UserAccount[]>([]);
+  const [drafts, setDrafts] = useState<Record<number, UserDraft>>({});
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newAdmin, setNewAdmin] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+
+  const installUsers = useCallback((items: UserAccount[]) => {
+    setUsers(items);
+    setDrafts(
+      Object.fromEntries(
+        items.map((user) => [
+          user.user_id,
+          { username: user.username, is_admin: user.is_admin, password: "" },
+        ]),
+      ),
+    );
+  }, []);
+
+  const refresh = () => getUsers(environment).then(installUsers);
+
+  useEffect(() => {
+    let active = true;
+    void getUsers(environment)
+      .then((items) => {
+        if (active) installUsers(items);
+      })
+      .catch((error) => {
+        if (active) setMessage(error instanceof Error ? error.message : "Could not load users.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [environment, installUsers]);
+
+  const updateDraft = (userId: number, values: Partial<UserDraft>) => {
+    setDrafts((current) => ({
+      ...current,
+      [userId]: { ...current[userId], ...values },
+    }));
+  };
+
+  return (
+    <section className="settings-section user-administration-section">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Admin</p>
+          <h2>{labels.userAdministration}</h2>
+          <p className="quiet-copy">{labels.userAdministrationLead}</p>
+        </div>
+      </div>
+
+      <form
+        className="user-create-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setWorking(true);
+          setMessage(null);
+          void createUser(
+            environment,
+            newUsername,
+            newPassword,
+            newAdmin,
+            session.settings,
+          )
+            .then(() => refresh())
+            .then(() => {
+              setNewUsername("");
+              setNewPassword("");
+              setNewAdmin(false);
+              setMessage(labels.accountCreated);
+            })
+            .catch((error) =>
+              setMessage(error instanceof Error ? error.message : "Account creation failed."),
+            )
+            .finally(() => setWorking(false));
+        }}
+      >
+        <label>
+          {labels.username}
+          <input
+            autoComplete="off"
+            minLength={3}
+            maxLength={64}
+            onChange={(event) => setNewUsername(event.target.value)}
+            required
+            value={newUsername}
+          />
+        </label>
+        <label>
+          {labels.password}
+          <input
+            autoComplete="new-password"
+            minLength={12}
+            onChange={(event) => setNewPassword(event.target.value)}
+            required
+            type="password"
+            value={newPassword}
+          />
+        </label>
+        <label className="checkbox-field admin-checkbox">
+          <input
+            checked={newAdmin}
+            onChange={(event) => setNewAdmin(event.target.checked)}
+            type="checkbox"
+          />
+          {labels.administrator}
+        </label>
+        <button className="primary-button" disabled={working} type="submit">
+          {labels.addUser}
+        </button>
+      </form>
+
+      <div className="user-account-list">
+        {users.map((user) => {
+          const draft = drafts[user.user_id];
+          if (!draft) return null;
+          const isCurrent = user.username === session.username;
+          const confirmingDelete = deleteTarget === user.user_id;
+          return (
+            <article className="user-account-card" key={user.user_id}>
+              <div className="user-account-heading">
+                <div>
+                  <strong>{user.username}</strong>
+                  <span>
+                    {user.is_admin ? labels.administrator : labels.regularUser}
+                    {isCurrent ? ` · ${labels.you}` : ""}
+                  </span>
+                </div>
+              </div>
+              <div className="user-account-fields">
+                <label>
+                  {labels.username}
+                  <input
+                    maxLength={64}
+                    minLength={3}
+                    onChange={(event) => updateDraft(user.user_id, { username: event.target.value })}
+                    value={draft.username}
+                  />
+                </label>
+                <label>
+                  {labels.role}
+                  <select
+                    onChange={(event) =>
+                      updateDraft(user.user_id, { is_admin: event.target.value === "admin" })
+                    }
+                    value={draft.is_admin ? "admin" : "user"}
+                  >
+                    <option value="user">{labels.regularUser}</option>
+                    <option value="admin">{labels.administrator}</option>
+                  </select>
+                </label>
+                <button
+                  className="secondary-button"
+                  disabled={working}
+                  onClick={() => {
+                    setWorking(true);
+                    setMessage(null);
+                    void updateUser(environment, user.user_id, {
+                      username: draft.username,
+                      is_admin: draft.is_admin,
+                    })
+                      .then((updated) => {
+                        if (isCurrent) {
+                          onSession({
+                            ...session,
+                            username: updated.username,
+                            is_admin: updated.is_admin,
+                          });
+                        }
+                        return refresh();
+                      })
+                      .then(() => setMessage(labels.accountSaved))
+                      .catch((error) =>
+                        setMessage(error instanceof Error ? error.message : "Account save failed."),
+                      )
+                      .finally(() => setWorking(false));
+                  }}
+                  type="button"
+                >
+                  {labels.saveAccount}
+                </button>
+              </div>
+              {!isCurrent ? (
+                <div className="user-account-actions">
+                  <label>
+                    {labels.newPassword}
+                    <input
+                      autoComplete="new-password"
+                      minLength={12}
+                      onChange={(event) => updateDraft(user.user_id, { password: event.target.value })}
+                      type="password"
+                      value={draft.password}
+                    />
+                  </label>
+                  <button
+                    className="secondary-button"
+                    disabled={working || draft.password.length < 12}
+                    onClick={() => {
+                      setWorking(true);
+                      setMessage(null);
+                      void resetUserPassword(environment, user.user_id, draft.password)
+                        .then(() => {
+                          updateDraft(user.user_id, { password: "" });
+                          setMessage(labels.passwordReset);
+                        })
+                        .catch((error) =>
+                          setMessage(error instanceof Error ? error.message : "Reset failed."),
+                        )
+                        .finally(() => setWorking(false));
+                    }}
+                    type="button"
+                  >
+                    {labels.resetPassword}
+                  </button>
+                  {!confirmingDelete ? (
+                    <button
+                      className="destructive-button"
+                      disabled={working}
+                      onClick={() => {
+                        setDeleteTarget(user.user_id);
+                        setDeleteConfirmation("");
+                      }}
+                      type="button"
+                    >
+                      {labels.removeAccount}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              {confirmingDelete ? (
+                <div className="user-delete-confirmation">
+                  <label>
+                    {labels.removeConfirmation}: <code>DELETE {user.username}</code>
+                    <input
+                      onChange={(event) => setDeleteConfirmation(event.target.value)}
+                      value={deleteConfirmation}
+                    />
+                  </label>
+                  <div className="row-actions">
+                    <button
+                      className="destructive-button"
+                      disabled={working || deleteConfirmation !== `DELETE ${user.username}`}
+                      onClick={() => {
+                        setWorking(true);
+                        setMessage(null);
+                        void deleteUser(environment, user.user_id, deleteConfirmation)
+                          .then(() => refresh())
+                          .then(() => {
+                            setDeleteTarget(null);
+                            setDeleteConfirmation("");
+                            setMessage(labels.accountRemoved);
+                          })
+                          .catch((error) =>
+                            setMessage(error instanceof Error ? error.message : "Deletion failed."),
+                          )
+                          .finally(() => setWorking(false));
+                      }}
+                      type="button"
+                    >
+                      {labels.confirmRemoval}
+                    </button>
+                    <button
+                      className="secondary-button"
+                      disabled={working}
+                      onClick={() => setDeleteTarget(null)}
+                      type="button"
+                    >
+                      {labels.cancel}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+      {message ? <p className="form-message" role="status">{message}</p> : null}
     </section>
   );
 }

@@ -1,7 +1,7 @@
 # Cost Review Product & MVP Specification
 
-**Version:** 1.3
-**Date:** 2026-09-11
+**Version:** 1.4
+**Date:** 2026-09-12
 **Status:** Requirements baseline / source of truth
 
 ## 1. Product vision
@@ -23,12 +23,20 @@ Cost Review is a self-hosted web application for understanding personal and hous
 - Frontend -> versionable backend/API -> PostgreSQL; frontend never connects directly to the database.
 - Schema migrations from the first release.
 - Designed to operate behind Cloudflare/reverse proxy with explicit trusted-proxy, host/origin and secure-cookie configuration.
-- Local username/password authentication in MVP with secure password hashing and session management.
+- Local multi-user username/password authentication in MVP with secure password hashing,
+  environment-scoped roles and session management.
 - No secrets hardcoded in repository or images.
 - 2FA/TOTP is post-MVP but the authentication architecture must permit it later.
 
 ## 3. First-run setup and localization
-Fresh installation enters setup mode when no user exists. The wizard creates the initial user, selects base currency, language/region, timezone and optionally initial accounts, then locks setup mode.
+Fresh installation enters setup mode when no user exists. The wizard creates the initial
+administrator, selects base currency, language/region, timezone and optionally initial accounts,
+then locks setup mode. After setup, any person who can reach the installation may create a regular
+account when operator-controlled self-registration is enabled. Every user can change their own
+password; doing so revokes their other sessions. Administrators can create, rename, reset the
+password of and delete other accounts, and may delegate or remove administrator access. The active
+account cannot delete itself and the final administrator cannot be demoted or deleted. Production
+and Demo/Test keep independent users, roles, password hashes and sessions.
 
 Release 1 supports Swedish and English. Language, region, base currency, date/number formats, week start and timezone are independent settings.
 
@@ -269,7 +277,8 @@ Future forecasting provides 30-day / 3 / 6 / 12-month cash-flow projections whil
 - Provider/category links and Analysis Groups replace destructive merging for analytical purposes.
 - Hierarchy expresses taxonomy; links/groups express analytical relationships.
 - Historical transactions may retain frozen account identity after permanent master-record deletion.
-- Single login is compatible with household economics because sharing parties are metadata, not users.
+- Login accounts control application access. Sharing parties remain separate economic metadata and
+  are not inferred from login identities.
 - Manual transactions save directly; imported/automated data goes through staging.
 - Confidence scores and previews are advisory; uncertain actions remain user-confirmed.
 - Demo/Test uses a real data boundary rather than flags alone.
@@ -286,7 +295,9 @@ Future forecasting provides 30-day / 3 / 6 / 12-month cash-flow projections whil
 
 ## 21. Release 1 acceptance criteria
 - Fresh Ubuntu host can start the application with documented Docker Compose steps and persistent data survives container recreation.
-- Setup creates the initial local user and independent locale/currency/timezone settings.
+- Setup creates the initial local administrator and independent locale/currency/timezone settings;
+  self-registration, password change and administrator-controlled account lifecycle work per data
+  plane without weakening Production/Test isolation.
 - Account/master-data CRUD, soft delete/restore and dependency-safe deletion work.
 - Expense, income, transfer, refund/reimbursement, adjustment and split semantics do not double-count economics.
 - Credit-card purchase and repayment behavior is correct.

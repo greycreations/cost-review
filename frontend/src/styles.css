@@ -215,6 +215,23 @@ button:disabled {
   line-height: 1.08;
 }
 
+.auth-mode-button {
+  min-height: auto;
+  justify-self: start;
+  padding: 2px 0;
+  border: 0;
+  color: var(--accent-strong);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-registration-note {
+  margin: 0;
+}
+
 .lead,
 .hero-lead {
   margin: -7px 0 6px;
@@ -251,6 +268,96 @@ select:hover {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+
+.security-section,
+.user-administration-section {
+  display: grid;
+  gap: 18px;
+}
+
+.security-section .section-heading,
+.user-administration-section .section-heading {
+  margin-bottom: 0;
+}
+
+.password-form,
+.user-create-form,
+.user-account-fields,
+.user-account-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 14px;
+}
+
+.user-create-form {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-subtle);
+}
+
+.admin-checkbox {
+  min-height: 44px;
+  padding-bottom: 3px;
+}
+
+.user-account-list {
+  display: grid;
+  gap: 12px;
+}
+
+.user-account-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.user-account-heading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.user-account-heading strong {
+  font-size: 14px;
+}
+
+.user-account-heading span {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.user-account-fields {
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, 0.6fr) auto;
+}
+
+.user-account-actions {
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.user-delete-confirmation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--destructive) 35%, var(--border));
+  border-radius: 10px;
+  background: var(--destructive-soft);
+}
+
+.user-delete-confirmation code {
+  color: var(--destructive);
+}
+
+.user-delete-confirmation .row-actions {
+  gap: 8px;
 }
 
 .primary-button,
@@ -2067,6 +2174,11 @@ footer {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .password-form,
+  .user-create-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .danger-section {
     grid-template-columns: 1fr;
   }
@@ -2218,6 +2330,20 @@ footer {
   .account-form,
   .split-fields {
     grid-template-columns: 1fr;
+  }
+
+  .password-form,
+  .user-create-form,
+  .user-account-fields,
+  .user-account-actions,
+  .user-delete-confirmation {
+    grid-template-columns: 1fr;
+  }
+
+  .user-account-actions .secondary-button,
+  .user-account-actions .destructive-button,
+  .user-delete-confirmation button {
+    width: 100%;
   }
 
   .overview-metrics,

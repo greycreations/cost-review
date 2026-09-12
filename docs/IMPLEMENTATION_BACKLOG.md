@@ -13,6 +13,8 @@ Derived from Product Specification v1.0. This backlog deliberately prioritizes d
 - CR-006 Independent language, region, base currency and timezone settings.
 - CR-007 Reverse-proxy/Cloudflare-safe trusted host/origin/proxy configuration.
 - CR-008 Establish hard Production vs Demo/Test data boundary and automated isolation tests.
+- CR-009 Multi-user self-registration, own-password change, and administrator-only account
+  creation, credential reset, role management and deletion with final-admin safeguards.
 
 **Exit gate:** recreate containers without data loss; authenticate; switch to persistent test environment; destructive test operation cannot mutate production.
 
