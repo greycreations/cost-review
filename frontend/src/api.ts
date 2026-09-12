@@ -527,12 +527,49 @@ export type InvestmentMarketData = {
   unavailable_symbols: string[];
 };
 
+export type InvestmentFund = {
+  isin: string;
+  provider_id: string;
+  name: string;
+  category: string;
+  fund_type: string;
+  fund_company: string;
+  currency: string;
+  nav: string;
+  nav_date: string;
+  changes: {
+    one_day: string;
+    one_month: string | null;
+    six_months: string | null;
+    one_year: string;
+  };
+  product_fee: string;
+  management_fee: string;
+  risk: number | null;
+  rating: number | null;
+  index_fund: boolean;
+};
+
+export type InvestmentFundData = {
+  source: string;
+  source_url: string;
+  retrieved_at: string;
+  data_date: string | null;
+  is_delayed: boolean;
+  is_stale: boolean;
+  query: string | null;
+  result_count: number;
+  funds: InvestmentFund[];
+  unavailable_isins: string[];
+};
+
 export type InvestmentPortfolio = {
   purchase_budget: string;
   currency: string;
   positions: Array<{
+    instrument_type: "stock" | "fund";
     ticker: string;
-    shares: number;
+    shares: string;
     target_percentage: string;
   }>;
   updated_at: string | null;
@@ -766,13 +803,25 @@ export function getInvestmentPortfolio(environment: Environment): Promise<Invest
   return request(environment, "/investments/portfolio");
 }
 
+export function getInvestmentFundData(
+  environment: Environment,
+  options: { query?: string; isins?: string[] },
+): Promise<InvestmentFundData> {
+  const query = new URLSearchParams();
+  if (options.query) query.set("query", options.query);
+  options.isins?.forEach((isin) => query.append("isin", isin));
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return request(environment, `/investments/fund-data${suffix}`);
+}
+
 export function saveInvestmentPortfolio(
   environment: Environment,
   payload: {
     purchase_budget: string;
     positions: Array<{
+      instrument_type: "stock" | "fund";
       ticker: string;
-      shares: number;
+      shares: string;
       target_percentage: string;
     }>;
   },

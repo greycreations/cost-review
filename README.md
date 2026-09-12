@@ -3,7 +3,7 @@
 
 Cost Review is a private, self-hosted web application for trustworthy personal
 and household economics. Product behavior is defined by
-`docs/PRODUCT_SPECIFICATION.md` v1.5 and delivered in the order described by
+`docs/PRODUCT_SPECIFICATION.md` v1.6 and delivered in the order described by
 `docs/IMPLEMENTATION_BACKLOG.md`.
 
 Sprint 1 established the Platform Foundation: PostgreSQL, migrations, first-run
@@ -29,6 +29,10 @@ renaming, role assignment, password reset and deletion. The same release also
 separates temporary screener selection from durable investment holdings, expands
 the holdings table and calendar, and adds a clearly labelled historical
 dividend-yield comparison.
+It also adds searchable Swedish fund-market data through Avanza's public, read-only fund
+information, decimal fund units and a combined stock/fund purchase plan. The full application has
+been tightened for narrow mobile screens; dense financial tables remain horizontally swipeable
+without widening the surrounding page.
 
 ## Architecture
 
@@ -116,6 +120,14 @@ latest successful in-process snapshot with a stale-data warning when a refresh f
 shows the provider, market date and retrieval time; it never substitutes sample prices in the
 authenticated app.
 
+Ordinary funds use a separate read-only adapter for Avanza's public fund search and fund-guide
+information. It requires no Avanza account or API key. Search results and NAV details use the same
+bounded backend cache; if the public endpoint changes or is unavailable, Cost Review reports that
+honestly instead of replacing it with a local shortlist. `AVANZA_FUND_BASE_URL` may be overridden
+for testing, but normally stays at `https://www.avanza.se`. Version 0.7.0 limits the planner to
+SEK-denominated funds so a foreign-currency NAV is never presented as a SEK portfolio value without
+a historical FX observation.
+
 EODHD remains available as an operator-selected alternative. Set `MARKET_DATA_PROVIDER=eodhd` and
 add `EODHD_API_TOKEN=your-token-here`, then restart both API services. Provider credentials stay in
 the backend environment and are never returned to the browser or included in database backups.
@@ -155,12 +167,12 @@ docker compose up --detach --wait
 docker compose ps
 ```
 
-The API containers apply the user-role migration independently to Production
-and Demo/Test before they start. The oldest existing account in each data plane
-becomes administrator automatically. Existing positions, database, attachment,
-and backup volumes are preserved. Add `ALLOW_SELF_REGISTRATION=false` to the
-existing `.env` only if administrator-created accounts are preferred; omission
-keeps the trusted-network default enabled.
+The API containers apply the user-role and typed investment-position migrations independently to
+Production and Demo/Test before they start. The oldest existing account in each data plane becomes
+administrator automatically. Existing stock positions are preserved and marked as stocks; database,
+attachment and backup volumes are unchanged. Add `ALLOW_SELF_REGISTRATION=false` to the existing
+`.env` only if administrator-created accounts are preferred; omission keeps the trusted-network
+default enabled.
 
 ### Build from source for development
 
@@ -406,7 +418,8 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET | `/api/v1/recycle-bin` | List recoverable archived Ledger records |
 | GET | `/api/v1/audit-events` | Paginated material Ledger change history |
 | GET | `/api/v1/investments/market-data` | Cached Yahoo-discovered Stockholm equity catalog; repeat `ticker` for selected-share history and dividend pattern |
-| GET/PUT | `/api/v1/investments/portfolio` | Read or save the user's selected shares, holdings, budget and target allocation |
+| GET | `/api/v1/investments/fund-data` | Search public fund information by name/ISIN or enrich saved fund ISINs |
+| GET/PUT | `/api/v1/investments/portfolio` | Read or save typed stock/fund holdings, decimal quantities, budget and target allocation |
 | GET/POST | `/api/v1/backups` | List or create encrypted backups |
 | POST/GET | `/api/v1/backups/{filename}/validate`, `/download` | Validate or download one archive |
 
@@ -476,8 +489,12 @@ when the user chooses **Add holdings**; the saved holdings then drive the holdin
 calendar and purchase allocation. The dividend comparison ranks trailing dividend per share against
 the latest close and does not add holdings or place trades. Holdings and target allocations are
 persisted per user inside the active data plane; external quotes remain derived and never become
-Ledger events. See `docs/adr/0013-yahoo-market-data-default.md` and
-`docs/adr/0016-persistent-investment-holdings-and-dividend-comparison.md`.
+Ledger events. Funds are searched from Avanza's public fund information without account
+credentials, saved by ISIN and valued from delayed NAV. Version 0.7.0 accepts SEK-denominated funds;
+fund units may contain up to eight decimal places while stocks remain whole-share positions. See
+`docs/adr/0013-yahoo-market-data-default.md`,
+`docs/adr/0016-persistent-investment-holdings-and-dividend-comparison.md` and
+`docs/adr/0017-public-fund-search-and-decimal-holdings.md`.
 
 ## Source of truth
 

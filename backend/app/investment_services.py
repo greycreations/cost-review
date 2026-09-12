@@ -87,6 +87,7 @@ def read_investment_portfolio(db: DbSession, user_id: int) -> InvestmentPortfoli
         currency=settings.currency if settings else "SEK",
         positions=[
             InvestmentPositionRead(
+                instrument_type=position.instrument_type,
                 ticker=position.ticker,
                 shares=position.shares,
                 target_percentage=position.target_percentage,
@@ -102,17 +103,28 @@ def save_investment_portfolio(
     user_id: int,
     payload: InvestmentPortfolioWrite,
     supported_tickers: frozenset[str] | set[str] | None = None,
+    supported_fund_isins: frozenset[str] | set[str] | None = None,
 ) -> InvestmentPortfolioRead:
     supported = supported_tickers if supported_tickers is not None else STOCKS_BY_TICKER.keys()
-    unknown_tickers = sorted(
-        {position.ticker for position in payload.positions} - supported
+    supported_funds = supported_fund_isins if supported_fund_isins is not None else set()
+    unknown_instruments = sorted(
+        (
+            position.instrument_type,
+            position.ticker,
+        )
+        for position in payload.positions
+        if (position.instrument_type == "stock" and position.ticker not in supported)
+        or (position.instrument_type == "fund" and position.ticker not in supported_funds)
     )
-    if unknown_tickers:
+    if unknown_instruments:
         raise ApiError(
             422,
-            "unsupported_investment_ticker",
-            "One or more investment tickers are not in the supported Stockholm universe.",
-            [{"ticker": ticker} for ticker in unknown_tickers],
+            "unsupported_investment_instrument",
+            "One or more instruments could not be verified by the configured market-data source.",
+            [
+                {"instrument_type": instrument_type, "identifier": identifier}
+                for instrument_type, identifier in unknown_instruments
+            ],
         )
 
     settings = db.get(InvestmentPortfolioSettings, user_id)
@@ -130,6 +142,7 @@ def save_investment_portfolio(
     db.add_all(
         InvestmentPosition(
             user_id=user_id,
+            instrument_type=position.instrument_type,
             ticker=position.ticker,
             shares=position.shares,
             target_percentage=position.target_percentage.quantize(

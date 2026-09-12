@@ -297,10 +297,24 @@ class InvestmentPosition(TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("shares >= 0", name="shares_non_negative"),
         CheckConstraint(
+            "instrument_type IN ('stock', 'fund')",
+            name="instrument_type_allowed",
+        ),
+        CheckConstraint(
+            "instrument_type = 'fund' OR shares = trunc(shares)",
+            name="stock_shares_whole",
+        ),
+        CheckConstraint(
             "target_percentage >= 0 AND target_percentage <= 100",
             name="target_percentage_range",
         ),
-        Index("uq_investment_positions_user_ticker", "user_id", "ticker", unique=True),
+        Index(
+            "uq_investment_positions_user_instrument",
+            "user_id",
+            "instrument_type",
+            "ticker",
+            unique=True,
+        ),
         Index("ix_investment_positions_user_id", "user_id"),
     )
 
@@ -308,8 +322,13 @@ class InvestmentPosition(TimestampMixin, Base):
         BigInteger, primary_key=True, autoincrement=True
     )
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"))
+    instrument_type: Mapped[str] = mapped_column(
+        String(16), default="stock", server_default="stock"
+    )
     ticker: Mapped[str] = mapped_column(String(32))
-    shares: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    shares: Mapped[Decimal] = mapped_column(
+        Numeric(24, 8), default=Decimal("0"), server_default="0"
+    )
     target_percentage: Mapped[Decimal] = mapped_column(
         Numeric(7, 4), default=Decimal("0"), server_default="0"
     )

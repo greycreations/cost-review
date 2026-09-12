@@ -1,6 +1,6 @@
 # Cost Review Product & MVP Specification
 
-**Version:** 1.5
+**Version:** 1.6
 **Date:** 2026-09-12
 **Status:** Requirements baseline / source of truth
 
@@ -403,6 +403,27 @@ This document is the implementation requirements baseline. New product behavior 
 
 - **Data model and migration:** no schema change. Existing environment- and user-scoped portfolio
   positions become the sole source for the durable holdings list and its dividend calendar.
+
+### Version 1.6 change impact
+
+- **Data model and migration:** investment positions gain an explicit stock/fund type. Quantity is
+  widened to a decimal-safe eight-decimal value so ordinary fund units can be persisted while
+  PostgreSQL continues to require whole quantities for stocks. Existing positions migrate as stock.
+- **Provider and API:** Yahoo remains the Stockholm equity source. A separate unauthenticated,
+  read-only Avanza adapter adds bounded fund-name/ISIN search and fund-detail enrichment under
+  `/api/v1/investments/fund-data`, with the same cache, stale-data and honest-unavailability rules.
+  Version 0.7.0 accepts SEK-denominated funds only; foreign-currency funds require dated FX-aware
+  valuation before they can be admitted without misrepresenting portfolio value.
+- **UX:** the single Investments page adds Stocks/Funds tabs, live fund search, category/index/fee/
+  risk filters, fund holdings with NAV/performance/fee/risk, and mixed stock/fund purchase planning.
+  Fund identity is persisted by ISIN; dividend estimates and the dividend calendar continue to use
+  only saved stocks with provider dividend history.
+- **Mobile:** primary navigation, forms, summaries, account administration and investment controls
+  stack at narrow widths. Dense financial tables stay in bounded horizontal swipe regions with
+  persistent instrument identity rather than widening the page.
+- **Boundary:** fund NAV and metadata are derived planning observations. They never create trades,
+  valuation snapshots, dividend income or other Ledger events, and the integration uses no Avanza
+  credentials or trading endpoints.
 - **API:** no new endpoint. Explicit add and remove actions replace the complete portfolio through
   the existing authenticated, CSRF-protected portfolio write contract.
 - **UX:** screener selection is temporary until “Add holdings” is used. The holdings table repeats

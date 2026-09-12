@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.errors import ApiError
+from app.fund_services import AvanzaFundDataService
 from app.investment_schemas import InvestmentMarketDataRead
 from app.investment_services import (
     STOCKS_BY_TICKER,
@@ -43,12 +44,18 @@ class SupportedMarketDataStub:
         raise AssertionError(f"unexpected market snapshot request: {tickers}")
 
 
+class SupportedFundDataStub:
+    async def get_supported_isins(self, isins: tuple[str, ...]) -> frozenset[str]:
+        return frozenset(isin for isin in isins if isin == "SE0001718388")
+
+
 def authenticate(client: TestClient, settings: Settings) -> dict[str, str]:
     response = client.post("/api/v1/setup", json=SETUP)
     assert response.status_code == 201
     csrf = client.cookies.get(settings.csrf_cookie_name)
     assert csrf
     client.app.state.market_data_service = SupportedMarketDataStub()
+    client.app.state.fund_data_service = SupportedFundDataStub()
     return {"X-CSRF-Token": csrf}
 
 
@@ -245,6 +252,91 @@ def test_yahoo_screener_builds_summary_stocks_and_rejects_temporary_instruments(
     assert temporary is None
 
 
+def test_avanza_fund_search_resolves_isin_and_caches_decimal_nav() -> None:
+    requested_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_paths.append(request.url.path)
+        if request.url.path.endswith("filtered-search"):
+            return httpx.Response(
+                200,
+                json={
+                    "hits": [
+                        {
+                            "type": "FUND",
+                            "orderBookId": "41567",
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "isin": "SE0001718388",
+                "name": "Avanza Zero",
+                "nav": "561.6123",
+                "navDate": "2026-09-10T00:00:00",
+                "currency": "SEK",
+                "rating": 5,
+                "productFee": "0",
+                "managementFee": "0",
+                "risk": 4,
+                "developmentOneDay": "-0.45",
+                "developmentOneMonth": "-1.97",
+                "developmentSixMonths": "7.91",
+                "developmentOneYear": "25.53",
+                "categories": ["Sverige"],
+                "fundTypeName": "Aktiefond",
+                "adminCompany": {"name": "Avanza"},
+                "indexFund": True,
+            },
+        )
+
+    service = AvanzaFundDataService(
+        Settings(db_password="test-password", avanza_fund_base_url="https://provider.example")
+    )
+    service._transport = httpx.MockTransport(handler)
+
+    first = asyncio.run(service.get_funds(query="Avanza Zero"))
+    second = asyncio.run(service.get_funds(query="Avanza Zero"))
+
+    assert first.result_count == 1
+    assert first.funds[0].isin == "SE0001718388"
+    assert first.funds[0].nav == Decimal("561.6123")
+    assert first.funds[0].index_fund is True
+    assert second.funds == first.funds
+    assert requested_paths == [
+        "/_api/search/filtered-search",
+        "/_api/fund-guide/guide/41567",
+    ]
+
+
+def test_avanza_fund_lookup_rejects_non_sek_nav_without_fx_rate() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("filtered-search"):
+            return httpx.Response(200, json={"hits": [{"type": "FUND", "orderBookId": "99"}]})
+        return httpx.Response(
+            200,
+            json={
+                "isin": "LU0123456789",
+                "name": "Foreign currency fund",
+                "nav": "100.00",
+                "navDate": "2026-09-10T00:00:00",
+                "currency": "EUR",
+            },
+        )
+
+    service = AvanzaFundDataService(
+        Settings(db_password="test-password", avanza_fund_base_url="https://provider.example")
+    )
+    service._transport = httpx.MockTransport(handler)
+
+    snapshot = asyncio.run(service.get_funds(isins=("LU0123456789",)))
+
+    assert snapshot.funds == []
+    assert snapshot.unavailable_isins == ["LU0123456789"]
+
+
 def test_expired_snapshot_is_returned_as_stale_when_refresh_fails() -> None:
     settings = Settings(
         db_password="test-password",
@@ -311,8 +403,18 @@ def test_portfolio_is_authenticated_csrf_protected_and_decimal_safe(
     assert saved.status_code == 200
     assert saved.json()["purchase_budget"] == "12500.5000"
     assert saved.json()["positions"] == [
-        {"ticker": "INVE B", "shares": 42, "target_percentage": "30.2500"},
-        {"ticker": "AXFO", "shares": 8, "target_percentage": "15.7500"},
+        {
+            "instrument_type": "stock",
+            "ticker": "INVE B",
+            "shares": "42.00000000",
+            "target_percentage": "30.2500",
+        },
+        {
+            "instrument_type": "stock",
+            "ticker": "AXFO",
+            "shares": "8.00000000",
+            "target_percentage": "15.7500",
+        },
     ]
 
     reloaded = client.get("/api/v1/investments/portfolio")
@@ -334,7 +436,7 @@ def test_portfolio_rejects_unknown_tickers_and_overallocation(
         },
     )
     assert unknown.status_code == 422
-    assert unknown.json()["error"]["code"] == "unsupported_investment_ticker"
+    assert unknown.json()["error"]["code"] == "unsupported_investment_instrument"
 
     overallocated = client.put(
         "/api/v1/investments/portfolio",
@@ -349,6 +451,39 @@ def test_portfolio_rejects_unknown_tickers_and_overallocation(
     )
     assert overallocated.status_code == 422
     assert overallocated.json()["error"]["code"] == "validation_failed"
+
+
+def test_portfolio_persists_decimal_fund_units_by_isin(
+    client: TestClient,
+    settings: Settings,
+) -> None:
+    headers = authenticate(client, settings)
+
+    saved = client.put(
+        "/api/v1/investments/portfolio",
+        headers=headers,
+        json={
+            "purchase_budget": "2500",
+            "positions": [
+                {
+                    "instrument_type": "fund",
+                    "ticker": "SE0001718388",
+                    "shares": "12.34567890",
+                    "target_percentage": "100",
+                }
+            ],
+        },
+    )
+
+    assert saved.status_code == 200
+    assert saved.json()["positions"] == [
+        {
+            "instrument_type": "fund",
+            "ticker": "SE0001718388",
+            "shares": "12.34567890",
+            "target_percentage": "100.0000",
+        }
+    ]
 
 
 def test_market_data_never_falls_back_to_samples_when_unconfigured(

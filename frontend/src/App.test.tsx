@@ -35,8 +35,9 @@ let sharingPartyItems: object[] = [];
 let tagItems: object[] = [];
 let analysisData: object;
 let investmentPositions: Array<{
+  instrument_type: "stock" | "fund";
   ticker: string;
-  shares: number;
+  shares: string;
   target_percentage: string;
 }> = [];
 
@@ -76,7 +77,7 @@ describe("App", () => {
     sessionUnavailable = false;
     userAccounts = [];
     investmentPositions = [
-      { ticker: "INVE B", shares: 10, target_percentage: "100.0000" },
+      { instrument_type: "stock", ticker: "INVE B", shares: "10", target_percentage: "100.0000" },
     ];
     analysisData = {
       date_from: "2026-08-01",
@@ -299,6 +300,35 @@ describe("App", () => {
               },
             ],
           };
+        } else if (path.includes("/investments/fund-data?")) {
+          body = {
+            source: "Avanza · public fund information",
+            source_url: "https://www.avanza.se/fonder/lista.html",
+            retrieved_at: "2026-09-12T10:00:00Z",
+            data_date: "2026-09-10",
+            is_delayed: true,
+            is_stale: false,
+            query: "Avanza Zero",
+            result_count: 1,
+            unavailable_isins: [],
+            funds: [{
+              isin: "SE0001718388",
+              provider_id: "41567",
+              name: "Avanza Zero",
+              category: "Sweden",
+              fund_type: "Equity fund",
+              fund_company: "Avanza",
+              currency: "SEK",
+              nav: "561.6100",
+              nav_date: "2026-09-10",
+              changes: { one_day: "-0.45", one_month: "-1.97", six_months: "7.91", one_year: "25.53" },
+              product_fee: "0.00",
+              management_fee: "0.00",
+              risk: 4,
+              rating: 5,
+              index_fund: true,
+            }],
+          };
         } else if (path.endsWith("/investments/portfolio")) {
           if (init?.method === "PUT") {
             const submitted = JSON.parse(String(init.body)) as {
@@ -465,7 +495,7 @@ describe("App", () => {
     expect(saveCall).toBeDefined();
     expect(JSON.parse(String(saveCall?.[1]?.body))).toEqual({
       purchase_budget: "10000.00",
-      positions: [{ ticker: "INVE B", shares: 12, target_percentage: "100.00" }],
+      positions: [{ instrument_type: "stock", ticker: "INVE B", shares: "12", target_percentage: "100.00" }],
     });
     expect(new Headers(saveCall?.[1]?.headers).get("X-CSRF-Token")).toBe("investment-csrf");
   });
@@ -523,8 +553,40 @@ describe("App", () => {
         )
         .at(-1);
       expect(JSON.parse(String(latestSave?.[1]?.body)).positions).toEqual([
-        { ticker: "INVE B", shares: 10, target_percentage: "100.00" },
+        { instrument_type: "stock", ticker: "INVE B", shares: "10", target_percentage: "100.00" },
       ]);
+    });
+  });
+
+  it("searches the public fund range and persists decimal fund units by ISIN", async () => {
+    document.cookie = "cost_review_production_csrf=investment-csrf; path=/";
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Investments" }));
+    await user.click(await screen.findByRole("tab", { name: "Funds" }));
+    await user.type(screen.getByRole("textbox", { name: "Search fund or ISIN" }), "Avanza Zero");
+
+    const fundTable = await screen.findByRole("table", { name: "Funds on the Swedish fund market" });
+    await user.click(await within(fundTable).findByRole("checkbox", { name: "Select Avanza Zero" }));
+    await user.click(screen.getByRole("button", { name: "Add 1 holdings" }));
+
+    const fundHoldings = await screen.findByRole("table", { name: "Fund holdings" });
+    const units = within(fundHoldings).getByRole("textbox", { name: "Fund units · Avanza Zero" });
+    await user.type(units, "12.3456789");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      const latestSave = vi.mocked(fetch).mock.calls.filter(
+        ([input, init]) => input.toString().endsWith("/investments/portfolio") && init?.method === "PUT",
+      ).at(-1);
+      expect(JSON.parse(String(latestSave?.[1]?.body)).positions).toContainEqual({
+        instrument_type: "fund",
+        ticker: "SE0001718388",
+        shares: "12.34567890",
+        target_percentage: "0.00",
+      });
     });
   });
 

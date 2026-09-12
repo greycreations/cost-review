@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ApiError,
+  getInvestmentFundData,
   getInvestmentMarketData,
   getInvestmentPortfolio,
   saveInvestmentPortfolio,
   type Environment,
   type InvestmentMarketData,
   type InvestmentMarketStock,
+  type InvestmentFund,
   type Language,
 } from "./api";
 
@@ -29,6 +31,25 @@ type Stock = {
   annualDividendOre?: number;
   dividends: DividendPayment[];
   detailLevel?: "summary" | "history";
+};
+
+type Fund = {
+  isin: string;
+  name: string;
+  category: string;
+  fundType: string;
+  fundCompany: string;
+  navOre: number;
+  changeToday: number;
+  change1m: number | null;
+  change6m: number | null;
+  change1y: number;
+  productFee: number;
+  managementFee: number;
+  risk: number | null;
+  rating: number | null;
+  indexFund: boolean;
+  navDate: string;
 };
 
 const STOCK_PAGE_SIZE = 50;
@@ -135,6 +156,12 @@ const PREVIEW_STOCKS: Stock[] = [
   },
 ];
 
+const PREVIEW_FUNDS: Fund[] = [
+  { isin: "SE0005188836", name: "Länsförsäkringar Global Index", category: "Global", fundType: "Aktiefond", fundCompany: "Länsförsäkringar Fondförvaltning", navOre: 59729, changeToday: 0.3, change1m: 2.1, change6m: 8.4, change1y: 14.7, productFee: 0.21, managementFee: 0.2, risk: 4, rating: 4, indexFund: true, navDate: "2026-09-10" },
+  { isin: "SE0001718388", name: "Avanza Zero", category: "Sverige", fundType: "Aktiefond", fundCompany: "Avanza", navOre: 56161, changeToday: -0.45, change1m: -1.97, change6m: 7.91, change1y: 25.53, productFee: 0, managementFee: 0, risk: 4, rating: 5, indexFund: true, navDate: "2026-09-10" },
+  { isin: "SE0012454338", name: "Avanza Emerging Markets", category: "Tillväxtmarknader", fundType: "Aktiefond", fundCompany: "Avanza", navOre: 20002, changeToday: 0.28, change1m: 1.8, change6m: 11.4, change1y: 18.2, productFee: 0.23, managementFee: 0.15, risk: 4, rating: 4, indexFund: true, navDate: "2026-09-10" },
+];
+
 const DEFAULT_SELECTED = ["INVE B", "VOLV B", "SEB A", "AXFO", "TEL2 B"];
 const DEFAULT_ALLOCATIONS: Record<string, string> = {
   "INVE B": "30",
@@ -148,7 +175,9 @@ const copy = {
   sv: {
     eyebrow: "Portföljverktyg",
     title: "Investeringar",
-    lead: "Sålla bland svenska aktier, uppskatta årets utdelningar och fördela nästa köp — på en och samma sida.",
+    lead: "Sålla bland svenska aktier och fonder, uppskatta årets utdelningar och fördela nästa köp — på en och samma sida.",
+    stocksTab: "Aktier",
+    fundsTab: "Fonder",
     sample: "Exempeldata · inte live",
     sampleHint: "Kurser och utdelningar är illustrativa i den lokala förhandsvisningen.",
     delayedClosingPrices: "fördröjda slutkurser",
@@ -178,6 +207,33 @@ const copy = {
     addHoldings: "Fyll i dina innehav nedan",
     noPurchase: "Ange en köpbudget nedan",
     screener: "Aktiescreener",
+    fundScreener: "Fondsök",
+    fundMarket: "Fonder på svenska fondmarknaden",
+    fundLead: "Sök på fondnamn eller ISIN. Träffarna hämtas från Avanzas publika fondinformation.",
+    fundSearch: "Sök fond eller ISIN",
+    fundSearchHint: "Skriv minst två tecken för att söka i fondutbudet.",
+    fundSearching: "Söker fonder…",
+    fundError: "Fonddata kunde inte hämtas just nu.",
+    fundHoldingsUnavailable: "Några sparade fondinnehav kunde inte prisuppdateras just nu. De ligger kvar sparade och kan fortfarande tas bort här.",
+    unavailableFund: "Fonddata saknas tillfälligt",
+    fundSource: "Öppna Avanzas fondlista",
+    noFundMatches: "Inga fonder matchar sökningen och filtren.",
+    fundCategory: "Kategori",
+    allCategories: "Alla kategorier",
+    fundKind: "Fondtyp",
+    fundCompany: "Fondbolag",
+    nav: "NAV",
+    fee: "Produktavgift",
+    maxFee: "Högsta avgift",
+    risk: "Risk",
+    maxRisk: "Högsta risk",
+    rating: "Betyg",
+    indexOnly: "Endast indexfonder",
+    unitsOwned: "Fondandelar",
+    estimatedUnits: "Beräknade andelar",
+    instrumentsInHoldings: "Instrument i innehav",
+    fundSourceHint: "NAV och utveckling är fördröjda. Avgifter och riskklass kommer från fondinformationen.",
+    swipeTable: "Svep i tabellen för att se fler kolumner.",
     exchange: "Stockholmsbörsen",
     exchangeLead: "Markera bolag och lägg till dem i din permanenta innehavslista.",
     screenerSelection: "markerade",
@@ -214,7 +270,7 @@ const copy = {
     noMatches: "Inga aktier matchar de valda filtren.",
     currentPortfolio: "Nuvarande portfölj",
     holdingsTitle: "Innehav & utdelningar",
-    holdingsLead: "Ange antal aktier. Beloppen nedan är en årsprognos före skatt.",
+    holdingsLead: "Ange antal aktier eller fondandelar. Utdelningsbeloppen nedan är en årsprognos före skatt.",
     owned: "Antal ägda",
     value: "Värde",
     annualDividend: "Utdelning / år",
@@ -225,7 +281,7 @@ const copy = {
     noHoldings: "Lägg in minst ett innehav för att se utdelningen över året.",
     planning: "Köpplan",
     purchaseTitle: "Fördela nästa investering",
-    purchaseLead: "Budgeten delas enligt dina procenttal. Endast hela aktier räknas med.",
+    purchaseLead: "Budgeten delas enligt dina procenttal. Aktier räknas i heltal och fondköp i beräknade decimalandelar.",
     budget: "Total köpbudget",
     allocation: "Fördelning",
     equal: "Fördela jämnt",
@@ -233,6 +289,7 @@ const copy = {
     percentage: "Andel",
     budgetShare: "Budgetandel",
     sharesToBuy: "Antal att köpa",
+    quantityToBuy: "Antal / andelar",
     purchaseCost: "Kostnad",
     cashLeft: "Kvar i andel",
     allocationExact: "Hela budgeten är fördelad.",
@@ -241,7 +298,7 @@ const copy = {
     actualCost: "Total köpkostnad",
     remainingCash: "Kvar efter köp",
     allocatedBudget: "Fördelad budget",
-    noSelected: "Markera aktier i screenern och välj Lägg till innehav.",
+    noSelected: "Markera aktier eller fonder i sökningen och välj Lägg till innehav.",
     optimizer: "Utdelningsoptimerare",
     optimizerTitle: "Mest historisk utdelning per investerad krona",
     optimizerLead:
@@ -271,7 +328,9 @@ const copy = {
   en: {
     eyebrow: "Portfolio workspace",
     title: "Investments",
-    lead: "Screen Swedish shares, estimate annual dividends and allocate your next purchase — all on one page.",
+    lead: "Screen Swedish shares and funds, estimate annual dividends and allocate your next purchase — all on one page.",
+    stocksTab: "Stocks",
+    fundsTab: "Funds",
     sample: "Sample data · not live",
     sampleHint: "Prices and dividends are illustrative in the local preview.",
     delayedClosingPrices: "delayed closing prices",
@@ -301,6 +360,33 @@ const copy = {
     addHoldings: "Add your holdings below",
     noPurchase: "Enter a purchase budget below",
     screener: "Stock screener",
+    fundScreener: "Fund search",
+    fundMarket: "Funds on the Swedish fund market",
+    fundLead: "Search by fund name or ISIN. Results are loaded from Avanza's public fund information.",
+    fundSearch: "Search fund or ISIN",
+    fundSearchHint: "Enter at least two characters to search the fund range.",
+    fundSearching: "Searching funds…",
+    fundError: "Fund data could not be loaded right now.",
+    fundHoldingsUnavailable: "Some saved fund holdings could not be repriced right now. They remain saved and can still be removed here.",
+    unavailableFund: "Fund data is temporarily unavailable",
+    fundSource: "Open Avanza's fund list",
+    noFundMatches: "No funds match the search and filters.",
+    fundCategory: "Category",
+    allCategories: "All categories",
+    fundKind: "Fund type",
+    fundCompany: "Fund company",
+    nav: "NAV",
+    fee: "Product fee",
+    maxFee: "Maximum fee",
+    risk: "Risk",
+    maxRisk: "Maximum risk",
+    rating: "Rating",
+    indexOnly: "Index funds only",
+    unitsOwned: "Fund units",
+    estimatedUnits: "Estimated units",
+    instrumentsInHoldings: "Instruments held",
+    fundSourceHint: "NAV and performance are delayed. Fees and risk class come from the fund information.",
+    swipeTable: "Swipe the table to see more columns.",
     exchange: "Stockholm exchange",
     exchangeLead: "Select companies and add them to your permanent holdings list.",
     screenerSelection: "selected",
@@ -337,7 +423,7 @@ const copy = {
     noMatches: "No shares match the selected filters.",
     currentPortfolio: "Current portfolio",
     holdingsTitle: "Holdings & dividends",
-    holdingsLead: "Enter the number of shares held. Amounts are annual estimates before tax.",
+    holdingsLead: "Enter the number of shares or fund units held. Dividend amounts are annual estimates before tax.",
     owned: "Shares held",
     value: "Value",
     annualDividend: "Dividend / year",
@@ -348,7 +434,7 @@ const copy = {
     noHoldings: "Add at least one holding to see how dividends are distributed through the year.",
     planning: "Purchase plan",
     purchaseTitle: "Allocate your next investment",
-    purchaseLead: "The budget is divided by your percentages. Only whole shares are included.",
+    purchaseLead: "The budget is divided by your percentages. Stocks use whole shares and fund purchases show estimated fractional units.",
     budget: "Total purchase budget",
     allocation: "Allocation",
     equal: "Split equally",
@@ -356,6 +442,7 @@ const copy = {
     percentage: "Share",
     budgetShare: "Budget allocation",
     sharesToBuy: "Shares to buy",
+    quantityToBuy: "Shares / units",
     purchaseCost: "Cost",
     cashLeft: "Left in allocation",
     allocationExact: "The full budget is allocated.",
@@ -364,7 +451,7 @@ const copy = {
     actualCost: "Total purchase cost",
     remainingCash: "Cash remaining",
     allocatedBudget: "Allocated budget",
-    noSelected: "Select shares in the screener and choose Add holdings.",
+    noSelected: "Select shares or funds in search and choose Add holdings.",
     optimizer: "Dividend optimizer",
     optimizerTitle: "Highest historical dividend per invested krona",
     optimizerLead:
@@ -406,7 +493,7 @@ function readStoredSelection(): string[] {
   try {
     const stored = JSON.parse(localStorage.getItem("cost-review-selected-stocks") ?? "null") as unknown;
     if (!Array.isArray(stored)) return DEFAULT_SELECTED;
-    const valid = stored.filter((ticker): ticker is string => typeof ticker === "string" && PREVIEW_STOCKS.some((stock) => stock.ticker === ticker));
+    const valid = stored.filter((ticker): ticker is string => typeof ticker === "string" && (PREVIEW_STOCKS.some((stock) => stock.ticker === ticker) || PREVIEW_FUNDS.some((fund) => fund.isin === ticker)));
     return valid;
   } catch {
     return DEFAULT_SELECTED;
@@ -420,6 +507,18 @@ function dividendPerShare(stock: Stock): number {
 function parsePositiveInteger(value: string): number {
   if (!/^\d+$/.test(value.trim())) return 0;
   return Math.min(Number(value), 1_000_000_000);
+}
+
+function parsePositiveQuantity(value: string): number {
+  const normalized = value.trim().replace(",", ".");
+  if (!/^\d+(\.\d{0,8})?$/.test(normalized)) return 0;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? Math.min(parsed, 1_000_000_000) : 0;
+}
+
+function quantityForApi(value: string, instrumentType: "stock" | "fund"): string {
+  const quantity = instrumentType === "stock" ? parsePositiveInteger(value) : parsePositiveQuantity(value);
+  return instrumentType === "stock" ? String(quantity) : quantity.toFixed(8);
 }
 
 function parseMoneyToOre(value: string): number {
@@ -451,6 +550,11 @@ function percentInputFromDecimal(value: string): string {
   return value.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "") || "0";
 }
 
+function quantityInputFromDecimal(value: string): string {
+  const normalized = value.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  return Number(normalized) === 0 ? "" : normalized;
+}
+
 function apiStockToStock(stock: InvestmentMarketStock): Stock {
   return {
     ticker: stock.ticker,
@@ -469,6 +573,31 @@ function apiStockToStock(stock: InvestmentMarketStock): Stock {
     })),
     detailLevel: stock.detail_level ?? "history",
   };
+}
+
+function apiFundToFund(fund: InvestmentFund): Fund {
+  return {
+    isin: fund.isin,
+    name: fund.name,
+    category: fund.category,
+    fundType: fund.fund_type,
+    fundCompany: fund.fund_company,
+    navOre: decimalStringToOre(fund.nav),
+    changeToday: Number(fund.changes.one_day),
+    change1m: fund.changes.one_month === null ? null : Number(fund.changes.one_month),
+    change6m: fund.changes.six_months === null ? null : Number(fund.changes.six_months),
+    change1y: Number(fund.changes.one_year),
+    productFee: Number(fund.product_fee),
+    managementFee: Number(fund.management_fee),
+    risk: fund.risk,
+    rating: fund.rating,
+    indexFund: fund.index_fund,
+    navDate: fund.nav_date,
+  };
+}
+
+function mergeFunds(current: Fund[], incoming: Fund[]): Fund[] {
+  return [...new Map([...current, ...incoming].map((fund) => [fund.isin, fund])).values()];
 }
 
 function percentageToBasisPoints(value: string): number {
@@ -510,6 +639,7 @@ export function InvestmentWorkspace({
   preview?: boolean;
 }) {
   const labels = copy[language];
+  const [instrumentView, setInstrumentView] = useState<"stocks" | "funds">("stocks");
   const [query, setQuery] = useState("");
   const [sector, setSector] = useState("all");
   const [dividendFilter, setDividendFilter] = useState("all");
@@ -517,6 +647,15 @@ export function InvestmentWorkspace({
   const [maxPrice, setMaxPrice] = useState("");
   const [visibleCount, setVisibleCount] = useState(STOCK_PAGE_SIZE);
   const [stocks, setStocks] = useState<Stock[]>(preview ? PREVIEW_STOCKS : []);
+  const [funds, setFunds] = useState<Fund[]>(preview ? PREVIEW_FUNDS : []);
+  const [fundQuery, setFundQuery] = useState("");
+  const [fundSelection, setFundSelection] = useState<string[]>([]);
+  const [fundCategory, setFundCategory] = useState("all");
+  const [maxFundFee, setMaxFundFee] = useState("");
+  const [maxFundRisk, setMaxFundRisk] = useState("all");
+  const [indexFundsOnly, setIndexFundsOnly] = useState(false);
+  const [fundSearchState, setFundSearchState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [fundHoldingState, setFundHoldingState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [marketSnapshot, setMarketSnapshot] = useState<InvestmentMarketData | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "not-configured" | "error">(
     preview ? "ready" : "loading",
@@ -526,6 +665,9 @@ export function InvestmentWorkspace({
   const [screenerSelection, setScreenerSelection] = useState<string[]>([]);
   const [portfolioTickers, setPortfolioTickers] = useState<string[]>(
     preview ? readStoredSelection() : [],
+  );
+  const [portfolioTypes, setPortfolioTypes] = useState<Record<string, "stock" | "fund">>(() =>
+    Object.fromEntries((preview ? readStoredSelection() : []).map((ticker) => [ticker, PREVIEW_FUNDS.some((fund) => fund.isin === ticker) ? "fund" : "stock"])),
   );
   const [holdingSelection, setHoldingSelection] = useState<string[]>([]);
   const [holdings, setHoldings] = useState<Record<string, string>>(() =>
@@ -567,13 +709,18 @@ export function InvestmentWorkspace({
         setStocks(market.stocks.map(apiStockToStock));
         detailRequested.current.clear();
         setPortfolioTickers(portfolio.positions.map((position) => position.ticker));
+        setPortfolioTypes(
+          Object.fromEntries(
+            portfolio.positions.map((position) => [position.ticker, position.instrument_type]),
+          ),
+        );
         setScreenerSelection([]);
         setHoldingSelection([]);
         setHoldings(
           Object.fromEntries(
             portfolio.positions.map((position) => [
               position.ticker,
-              position.shares ? String(position.shares) : "",
+              quantityInputFromDecimal(String(position.shares)),
             ]),
           ),
         );
@@ -589,6 +736,24 @@ export function InvestmentWorkspace({
         setDirty(false);
         setSaveState("idle");
         setLoadState("ready");
+        const fundIsins = portfolio.positions
+          .filter((position) => position.instrument_type === "fund")
+          .map((position) => position.ticker);
+        if (fundIsins.length > 0) {
+          setFundHoldingState("loading");
+          void getInvestmentFundData(environment, { isins: fundIsins })
+            .then((snapshot) => {
+              if (active) {
+                setFunds((current) => mergeFunds(current, snapshot.funds.map(apiFundToFund)));
+                setFundHoldingState(snapshot.unavailable_isins.length > 0 ? "error" : "ready");
+              }
+            })
+            .catch(() => {
+              if (active) setFundHoldingState("error");
+            });
+        } else {
+          setFundHoldingState("idle");
+        }
       })
       .catch((error) => {
         if (!active) return;
@@ -603,6 +768,23 @@ export function InvestmentWorkspace({
       active = false;
     };
   }, [environment, labels.marketUnavailable, preview, reloadKey]);
+
+  useEffect(() => {
+    if (preview || fundQuery.trim().length < 2) return;
+    const timeout = window.setTimeout(() => {
+      setFundSearchState("loading");
+      void getInvestmentFundData(environment, { query: fundQuery.trim() })
+        .then((snapshot) => {
+          setFunds((current) => mergeFunds(
+            current.filter((fund) => portfolioTickers.includes(fund.isin)),
+            snapshot.funds.map(apiFundToFund),
+          ));
+          setFundSearchState("ready");
+        })
+        .catch(() => setFundSearchState("error"));
+    }, 350);
+    return () => window.clearTimeout(timeout);
+  }, [environment, fundQuery, portfolioTickers, preview]);
 
   useEffect(() => {
     if (preview || loadState !== "ready") return;
@@ -634,8 +816,18 @@ export function InvestmentWorkspace({
   };
 
   const portfolioStocks = useMemo(
-    () => stocks.filter((stock) => portfolioTickers.includes(stock.ticker)),
-    [portfolioTickers, stocks],
+    () => stocks.filter((stock) => portfolioTickers.includes(stock.ticker) && portfolioTypes[stock.ticker] !== "fund"),
+    [portfolioTickers, portfolioTypes, stocks],
+  );
+  const portfolioFunds = useMemo(
+    () => funds.filter((fund) => portfolioTickers.includes(fund.isin) && portfolioTypes[fund.isin] === "fund"),
+    [funds, portfolioTickers, portfolioTypes],
+  );
+  const unavailableFundIsins = useMemo(
+    () => portfolioTickers.filter(
+      (ticker) => portfolioTypes[ticker] === "fund" && !portfolioFunds.some((fund) => fund.isin === ticker),
+    ),
+    [portfolioFunds, portfolioTickers, portfolioTypes],
   );
   const filteredStocks = useMemo(() => {
     const maximumOre = maxPrice ? parseMoneyToOre(maxPrice) : Number.POSITIVE_INFINITY;
@@ -650,11 +842,28 @@ export function InvestmentWorkspace({
     });
   }, [dividendFilter, language, maxPrice, performanceFilter, query, sector, stocks]);
   const visibleStocks = filteredStocks.slice(0, visibleCount);
+  const fundCategories = [...new Set(funds.map((fund) => fund.category))].sort((a, b) => a.localeCompare(b));
+  const filteredFunds = useMemo(() => {
+    const maximumFee = maxFundFee.trim().replace(",", ".");
+    const feeLimit = maximumFee && /^\d+(\.\d+)?$/.test(maximumFee) ? Number(maximumFee) : Number.POSITIVE_INFINITY;
+    const riskLimit = maxFundRisk === "all" ? Number.POSITIVE_INFINITY : Number(maxFundRisk);
+    const normalizedQuery = preview ? fundQuery.trim().toLocaleLowerCase() : "";
+    return funds.filter((fund) =>
+      (!normalizedQuery || `${fund.name} ${fund.isin} ${fund.fundCompany}`.toLocaleLowerCase().includes(normalizedQuery))
+      && (fundCategory === "all" || fund.category === fundCategory)
+      && fund.productFee <= feeLimit
+      && (maxFundRisk === "all" || (fund.risk !== null && fund.risk <= riskLimit))
+      && (!indexFundsOnly || fund.indexFund),
+    );
+  }, [fundCategory, fundQuery, funds, indexFundsOnly, maxFundFee, maxFundRisk, preview]);
   const newScreenerTickers = screenerSelection.filter(
     (ticker) => !portfolioTickers.includes(ticker),
   );
+  const newFundIsins = fundSelection.filter((isin) => !portfolioTickers.includes(isin));
 
-  const portfolioValueOre = portfolioStocks.reduce((sum, stock) => sum + stock.priceOre * parsePositiveInteger(holdings[stock.ticker] ?? "0"), 0);
+  const stockPortfolioValueOre = portfolioStocks.reduce((sum, stock) => sum + stock.priceOre * parsePositiveInteger(holdings[stock.ticker] ?? "0"), 0);
+  const fundPortfolioValueOre = portfolioFunds.reduce((sum, fund) => sum + Math.round(fund.navOre * parsePositiveQuantity(holdings[fund.isin] ?? "0")), 0);
+  const portfolioValueOre = stockPortfolioValueOre + fundPortfolioValueOre;
   const annualDividendOre = portfolioStocks.reduce((sum, stock) => sum + dividendPerShare(stock) * parsePositiveInteger(holdings[stock.ticker] ?? "0"), 0);
   const weightedYield = portfolioValueOre > 0 ? (annualDividendOre / portfolioValueOre) * 100 : 0;
   const monthlyDividends = Array.from({ length: 12 }, (_, index) => portfolioStocks.reduce((sum, stock) => {
@@ -687,13 +896,21 @@ export function InvestmentWorkspace({
         : right.yieldPercent - left.yieldPercent,
     )
     .slice(0, 10);
-  const purchaseRows = portfolioStocks.map((stock) => {
-    const basisPoints = percentageToBasisPoints(allocations[stock.ticker] ?? "0");
-    const allocatedOre = Math.floor((budgetOre * basisPoints) / 10_000);
-    const shareCount = Math.floor(allocatedOre / stock.priceOre);
-    const costOre = shareCount * stock.priceOre;
-    return { stock, basisPoints, allocatedOre, shareCount, costOre, remainingOre: allocatedOre - costOre };
-  });
+  const purchaseRows = [
+    ...portfolioStocks.map((stock) => {
+      const basisPoints = percentageToBasisPoints(allocations[stock.ticker] ?? "0");
+      const allocatedOre = Math.floor((budgetOre * basisPoints) / 10_000);
+      const shareCount = Math.floor(allocatedOre / stock.priceOre);
+      const costOre = shareCount * stock.priceOre;
+      return { identifier: stock.ticker, name: stock.name, instrumentType: "stock" as const, basisPoints, allocatedOre, priceOre: stock.priceOre, quantity: String(shareCount), costOre, remainingOre: allocatedOre - costOre };
+    }),
+    ...portfolioFunds.map((fund) => {
+      const basisPoints = percentageToBasisPoints(allocations[fund.isin] ?? "0");
+      const allocatedOre = Math.floor((budgetOre * basisPoints) / 10_000);
+      const units = fund.navOre > 0 ? allocatedOre / fund.navOre : 0;
+      return { identifier: fund.isin, name: fund.name, instrumentType: "fund" as const, basisPoints, allocatedOre, priceOre: fund.navOre, quantity: units.toLocaleString(language === "sv" ? "sv-SE" : "en-GB", { minimumFractionDigits: 0, maximumFractionDigits: 4 }), costOre: allocatedOre, remainingOre: 0 };
+    }),
+  ];
   const totalBasisPoints = purchaseRows.reduce((sum, row) => sum + row.basisPoints, 0);
   const totalPurchaseCostOre = purchaseRows.reduce((sum, row) => sum + row.costOre, 0);
   const totalAllocatedOre = purchaseRows.reduce((sum, row) => sum + row.allocatedOre, 0);
@@ -715,13 +932,19 @@ export function InvestmentWorkspace({
     );
   };
 
+  const toggleFundSelection = (isin: string) => {
+    setFundSelection((current) =>
+      current.includes(isin) ? current.filter((item) => item !== isin) : [...current, isin],
+    );
+  };
+
   const distributeEqually = () => {
-    if (portfolioStocks.length === 0) return;
-    const base = Math.floor(10_000 / portfolioStocks.length);
-    let remainder = 10_000 - base * portfolioStocks.length;
-    setAllocations((current) => ({ ...current, ...Object.fromEntries(portfolioStocks.map((stock) => {
+    if (portfolioTickers.length === 0) return;
+    const base = Math.floor(10_000 / portfolioTickers.length);
+    let remainder = 10_000 - base * portfolioTickers.length;
+    setAllocations((current) => ({ ...current, ...Object.fromEntries(portfolioTickers.map((ticker) => {
       const value = base + (remainder-- > 0 ? 1 : 0);
-      return [stock.ticker, (value / 100).toFixed(2).replace(/\.00$/, "")];
+      return [ticker, (value / 100).toFixed(2).replace(/\.00$/, "")];
     })) }));
     markDirty();
   };
@@ -740,6 +963,7 @@ export function InvestmentWorkspace({
     nextHoldings = holdings,
     nextAllocations = allocations,
     nextBudget = budget,
+    nextTypes = portfolioTypes,
   ): Promise<boolean> => {
     const nextTotalBasisPoints = nextTickers.reduce(
       (sum, ticker) => sum + percentageToBasisPoints(nextAllocations[ticker] ?? "0"),
@@ -750,6 +974,7 @@ export function InvestmentWorkspace({
     setSaveError(null);
     if (preview) {
       setPortfolioTickers(nextTickers);
+      setPortfolioTypes(nextTypes);
       setHoldings(nextHoldings);
       setAllocations(nextAllocations);
       setBudget(nextBudget);
@@ -761,19 +986,25 @@ export function InvestmentWorkspace({
       const saved = await saveInvestmentPortfolio(environment, {
         purchase_budget: (parseMoneyToOre(nextBudget) / 100).toFixed(2),
         positions: nextTickers.map((ticker) => ({
+          instrument_type: nextTypes[ticker] ?? "stock",
           ticker,
-          shares: parsePositiveInteger(nextHoldings[ticker] ?? "0"),
+          shares: quantityForApi(nextHoldings[ticker] ?? "0", nextTypes[ticker] ?? "stock"),
           target_percentage: (
             percentageToBasisPoints(nextAllocations[ticker] ?? "0") / 100
           ).toFixed(2),
         })),
       });
       setPortfolioTickers(saved.positions.map((position) => position.ticker));
+      setPortfolioTypes(
+        Object.fromEntries(
+          saved.positions.map((position) => [position.ticker, position.instrument_type]),
+        ),
+      );
       setHoldings(
         Object.fromEntries(
           saved.positions.map((position) => [
             position.ticker,
-            position.shares ? String(position.shares) : "",
+            quantityInputFromDecimal(String(position.shares)),
           ]),
         ),
       );
@@ -804,8 +1035,18 @@ export function InvestmentWorkspace({
       ...screenerSelection.filter((ticker) => !portfolioTickers.includes(ticker)),
     ];
     if (nextTickers.length === portfolioTickers.length) return;
-    if (await persistPortfolio(nextTickers)) {
+    const nextTypes = { ...portfolioTypes, ...Object.fromEntries(newScreenerTickers.map((ticker) => [ticker, "stock" as const])) };
+    if (await persistPortfolio(nextTickers, holdings, allocations, budget, nextTypes)) {
       setScreenerSelection([]);
+    }
+  };
+
+  const addSelectedFunds = async () => {
+    const nextTickers = [...portfolioTickers, ...newFundIsins];
+    if (nextTickers.length === portfolioTickers.length) return;
+    const nextTypes = { ...portfolioTypes, ...Object.fromEntries(newFundIsins.map((isin) => [isin, "fund" as const])) };
+    if (await persistPortfolio(nextTickers, holdings, allocations, budget, nextTypes)) {
+      setFundSelection([]);
     }
   };
 
@@ -819,7 +1060,10 @@ export function InvestmentWorkspace({
     const nextAllocations = Object.fromEntries(
       Object.entries(allocations).filter(([ticker]) => nextTickers.includes(ticker)),
     );
-    if (await persistPortfolio(nextTickers, nextHoldings, nextAllocations)) {
+    const nextTypes = Object.fromEntries(
+      Object.entries(portfolioTypes).filter(([ticker]) => nextTickers.includes(ticker)),
+    );
+    if (await persistPortfolio(nextTickers, nextHoldings, nextAllocations, budget, nextTypes)) {
       setHoldingSelection([]);
     }
   };
@@ -936,16 +1180,21 @@ export function InvestmentWorkspace({
         </div>
       </div>
 
-      <div className="investment-summary" aria-label={labels.selectedShares}>
+      <div className="instrument-tabs" role="tablist" aria-label={language === "sv" ? "Instrumenttyp" : "Instrument type"}>
+        <button className={instrumentView === "stocks" ? "active" : undefined} role="tab" aria-selected={instrumentView === "stocks"} type="button" onClick={() => setInstrumentView("stocks")}>{labels.stocksTab}</button>
+        <button className={instrumentView === "funds" ? "active" : undefined} role="tab" aria-selected={instrumentView === "funds"} type="button" onClick={() => setInstrumentView("funds")}>{labels.fundsTab}</button>
+      </div>
+
+      <div className="investment-summary" aria-label={labels.instrumentsInHoldings}>
         <div>
-          <span>{labels.selectedShares}</span>
-          <strong>{portfolioStocks.length}</strong>
+          <span>{labels.instrumentsInHoldings}</span>
+          <strong>{portfolioTickers.length}</strong>
           <p>{preview ? labels.previewSaved : labels.saved}</p>
         </div>
         <div>
           <span>{labels.portfolioValue}</span>
           <strong>{formatMoney(portfolioValueOre, language)}</strong>
-          <p>{portfolioValueOre > 0 ? `${portfolioStocks.filter((stock) => parsePositiveInteger(holdings[stock.ticker] ?? "0") > 0).length} ${language === "sv" ? "innehav" : "holdings"}` : labels.addHoldings}</p>
+          <p>{portfolioValueOre > 0 ? `${portfolioStocks.filter((stock) => parsePositiveInteger(holdings[stock.ticker] ?? "0") > 0).length + portfolioFunds.filter((fund) => parsePositiveQuantity(holdings[fund.isin] ?? "0") > 0).length} ${language === "sv" ? "innehav" : "holdings"}` : labels.addHoldings}</p>
         </div>
         <div className="summary-feature">
           <span>{labels.expectedDividend}</span>
@@ -955,10 +1204,11 @@ export function InvestmentWorkspace({
         <div>
           <span>{labels.nextPurchase}</span>
           <strong>{formatMoney(totalPurchaseCostOre, language)}</strong>
-          <p>{budgetOre > 0 ? `${purchaseRows.reduce((sum, row) => sum + row.shareCount, 0)} ${language === "sv" ? "aktier" : "shares"}` : labels.noPurchase}</p>
+          <p>{budgetOre > 0 ? `${purchaseRows.filter((row) => row.costOre > 0).length} ${language === "sv" ? "köpförslag" : "purchase suggestions"}` : labels.noPurchase}</p>
         </div>
       </div>
 
+      {instrumentView === "stocks" ? (
       <section className="investment-panel screener-panel" aria-labelledby="stock-list-title">
         <div className="investment-panel-heading">
           <div>
@@ -1026,6 +1276,7 @@ export function InvestmentWorkspace({
             </button>
           </div>
         </div>
+        <p className="mobile-scroll-hint">{labels.swipeTable}</p>
         <div className="investment-table-scroll">
           <table className="investment-table" aria-label={labels.exchange}>
             <thead>
@@ -1067,6 +1318,49 @@ export function InvestmentWorkspace({
           </div>
         ) : null}
       </section>
+      ) : (
+      <section className="investment-panel screener-panel fund-screener-panel" aria-labelledby="fund-list-title">
+        <div className="investment-panel-heading">
+          <div>
+            <p className="panel-label">{labels.fundScreener}</p>
+            <h2 id="fund-list-title">{labels.fundMarket}</h2>
+            <p>{labels.fundLead}</p>
+            <p className="investment-history-hint">
+              {labels.fundSourceHint}{" "}
+              <a href="https://www.avanza.se/fonder/lista.html" rel="noreferrer" target="_blank">
+                {labels.fundSource}
+              </a>
+            </p>
+          </div>
+          <button className="quiet-button" type="button" onClick={() => { setFundQuery(""); setFundCategory("all"); setMaxFundFee(""); setMaxFundRisk("all"); setIndexFundsOnly(false); }}>{labels.clear}</button>
+        </div>
+        <div className="investment-filter-grid fund-filter-grid">
+          <label className="search-filter">
+            <span>{labels.fundSearch}</span>
+            <div className="input-with-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+              <input value={fundQuery} onChange={(event) => { const value = event.target.value; setFundQuery(value); if (!preview && value.trim().length < 2) { setFundSearchState("idle"); setFunds((current) => current.filter((fund) => portfolioTickers.includes(fund.isin))); } }} placeholder={language === "sv" ? "t.ex. Avanza Zero" : "e.g. Avanza Zero"} />
+            </div>
+          </label>
+          <label><span>{labels.fundCategory}</span><select value={fundCategory} onChange={(event) => setFundCategory(event.target.value)}><option value="all">{labels.allCategories}</option>{fundCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+          <label><span>{labels.maxFee}</span><div className="percent-input"><input inputMode="decimal" value={maxFundFee} onChange={(event) => setMaxFundFee(event.target.value)} placeholder={labels.maxPricePlaceholder} /><span>%</span></div></label>
+          <label><span>{labels.maxRisk}</span><select value={maxFundRisk} onChange={(event) => setMaxFundRisk(event.target.value)}><option value="all">{labels.all}</option>{[1,2,3,4,5,6,7].map((risk) => <option key={risk} value={risk}>{risk} / 7</option>)}</select></label>
+          <label className="fund-index-filter"><span>{labels.fundKind}</span><span className="checkbox-line"><input type="checkbox" checked={indexFundsOnly} onChange={(event) => setIndexFundsOnly(event.target.checked)} />{labels.indexOnly}</span></label>
+        </div>
+        <div className="table-meta screener-table-meta">
+          <span>{fundSearchState === "loading" ? labels.fundSearching : fundQuery.trim().length < 2 && !preview ? labels.fundSearchHint : `${filteredFunds.length} ${labels.matches}`}</span>
+          <div><span>{fundSelection.length} {labels.screenerSelection}</span><button className="primary-button" disabled={saveState === "saving" || newFundIsins.length === 0} onClick={() => void addSelectedFunds()} type="button">{newFundIsins.length > 0 ? labels.addSelectedHoldingsCount.replace("{count}", String(newFundIsins.length)) : labels.addSelectedHoldings}</button></div>
+        </div>
+        <p className="mobile-scroll-hint">{labels.swipeTable}</p>
+        <div className="investment-table-scroll">
+          <table className="investment-table fund-table" aria-label={labels.fundMarket}>
+            <thead><tr><th className="select-column"><span className="sr-only">{labels.select}</span></th><th>{labels.fundKind}</th><th>{labels.nav}</th><th>{labels.today}</th><th>{labels.oneMonth}</th><th>{labels.sixMonths}</th><th>{labels.oneYearColumn}</th><th>{labels.fee}</th><th>{labels.risk}</th><th>{labels.rating}</th></tr></thead>
+            <tbody>{filteredFunds.map((fund) => { const isSelected = fundSelection.includes(fund.isin); return <tr key={fund.isin} className={isSelected ? "selected-row" : undefined}><td className="select-column"><input type="checkbox" aria-label={`${labels.select} ${fund.name}`} checked={isSelected} onChange={() => toggleFundSelection(fund.isin)} /></td><td><strong>{fund.name}</strong><span>{fund.isin} · {fund.fundCompany || fund.fundType} · {fund.category}</span></td><td>{formatMoney(fund.navOre, language)}<span>{fund.navDate}</span></td><td><TrendValue value={fund.changeToday} language={language} /></td><td><TrendValue value={fund.change1m} language={language} /></td><td><TrendValue value={fund.change6m} language={language} /></td><td><TrendValue value={fund.change1y} language={language} /></td><td>{fund.productFee.toLocaleString(language === "sv" ? "sv-SE" : "en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %</td><td>{fund.risk === null ? "—" : `${fund.risk} / 7`}</td><td>{fund.rating === null ? "—" : `${fund.rating} / 5`}</td></tr>; })}</tbody>
+          </table>
+          {fundSearchState === "error" ? <p className="investment-empty">{labels.fundError}</p> : filteredFunds.length === 0 && (preview || fundQuery.trim().length >= 2) && fundSearchState !== "loading" ? <p className="investment-empty">{labels.noFundMatches}</p> : null}
+        </div>
+      </section>
+      )}
 
       <section className="investment-panel optimizer-panel" aria-labelledby="optimizer-title">
         <div className="investment-panel-heading optimizer-heading">
@@ -1156,10 +1450,14 @@ export function InvestmentWorkspace({
           </div>
         </div>
 
-        {portfolioStocks.length === 0 ? (
+        {portfolioTickers.length === 0 ? (
           <p className="investment-empty holdings-empty">{labels.noSelected}</p>
         ) : (
           <>
+            {fundHoldingState === "error" && portfolioTickers.some((ticker) => portfolioTypes[ticker] === "fund") ? (
+              <p className="optimizer-warning" role="status">{labels.fundHoldingsUnavailable}</p>
+            ) : null}
+            {portfolioStocks.length > 0 ? (
             <div className="investment-table-scroll holdings-table-scroll">
               <table className="investment-table holdings-table" aria-label={labels.holdingsTitle}>
                 <thead>
@@ -1249,13 +1547,28 @@ export function InvestmentWorkspace({
                 <tfoot>
                   <tr>
                     <th colSpan={11}>{labels.total}</th>
-                    <td>{formatMoney(portfolioValueOre, language)}</td>
+                    <td>{formatMoney(stockPortfolioValueOre, language)}</td>
                     <td>{formatMoney(annualDividendOre, language)}</td>
                   </tr>
                 </tfoot>
               </table>
             </div>
+            ) : null}
 
+            {portfolioFunds.length > 0 || unavailableFundIsins.length > 0 ? (
+              <div className="investment-table-scroll holdings-table-scroll fund-holdings-scroll">
+                <table className="investment-table holdings-table fund-holdings-table" aria-label={language === "sv" ? "Fondinnehav" : "Fund holdings"}>
+                  <thead><tr><th className="select-column"><span className="sr-only">{labels.selectHolding}</span></th><th>{labels.fundKind}</th><th>{labels.unitsOwned}</th><th>{labels.nav}</th><th>{labels.oneMonth}</th><th>{labels.sixMonths}</th><th>{labels.oneYearColumn}</th><th>{labels.fee}</th><th>{labels.risk}</th><th>{labels.value}</th></tr></thead>
+                  <tbody>
+                    {portfolioFunds.map((fund) => { const units = parsePositiveQuantity(holdings[fund.isin] ?? "0"); const isSelected = holdingSelection.includes(fund.isin); return <tr key={fund.isin} className={isSelected ? "selected-row" : undefined}><td className="select-column"><input type="checkbox" aria-label={`${labels.selectHolding} ${fund.name}`} checked={isSelected} onChange={() => toggleHoldingSelection(fund.isin)} /></td><td><strong>{fund.name}</strong><span>{fund.isin} · {fund.fundCompany || fund.fundType} · {fund.category}</span></td><td><input className="table-number-input" type="text" inputMode="decimal" aria-label={`${labels.unitsOwned} · ${fund.name}`} value={holdings[fund.isin] ?? ""} placeholder="0" onChange={(event) => { setHoldings((current) => ({ ...current, [fund.isin]: event.target.value.replace(/[^\d.,]/g, "") })); markDirty(); }} /></td><td>{formatMoney(fund.navOre, language)}<span>{fund.navDate}</span></td><td><TrendValue value={fund.change1m} language={language} /></td><td><TrendValue value={fund.change6m} language={language} /></td><td><TrendValue value={fund.change1y} language={language} /></td><td>{fund.productFee.toLocaleString(language === "sv" ? "sv-SE" : "en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %</td><td>{fund.risk === null ? "—" : `${fund.risk} / 7`}</td><td className="strong-cell">{formatMoney(Math.round(fund.navOre * units), language)}</td></tr>; })}
+                    {unavailableFundIsins.map((isin) => { const isSelected = holdingSelection.includes(isin); return <tr key={isin} className={isSelected ? "selected-row" : undefined}><td className="select-column"><input type="checkbox" aria-label={`${labels.selectHolding} ${isin}`} checked={isSelected} onChange={() => toggleHoldingSelection(isin)} /></td><td><strong>{isin}</strong><span>{labels.unavailableFund}</span></td><td><input className="table-number-input" type="text" inputMode="decimal" aria-label={`${labels.unitsOwned} · ${isin}`} value={holdings[isin] ?? ""} placeholder="0" onChange={(event) => { setHoldings((current) => ({ ...current, [isin]: event.target.value.replace(/[^\d.,]/g, "") })); markDirty(); }} /></td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>; })}
+                  </tbody>
+                  <tfoot><tr><th colSpan={9}>{labels.total}</th><td>{formatMoney(fundPortfolioValueOre, language)}</td></tr></tfoot>
+                </table>
+              </div>
+            ) : null}
+
+            {portfolioStocks.length > 0 ? (
             <div className="dividend-calendar">
               <div className="calendar-heading">
                 <div>
@@ -1277,11 +1590,12 @@ export function InvestmentWorkspace({
               </div>
               {annualDividendOre === 0 ? <p className="calendar-empty">{labels.noHoldings}</p> : null}
             </div>
+            ) : null}
           </>
         )}
       </section>
 
-      {portfolioStocks.length > 0 ? (
+      {portfolioTickers.length > 0 ? (
           <section className="investment-panel purchase-panel" aria-labelledby="purchase-title">
             <div className="investment-panel-heading purchase-heading">
               <div><p className="panel-label">{labels.planning}</p><h2 id="purchase-title">{labels.purchaseTitle}</h2><p>{labels.purchaseLead}</p></div>
@@ -1290,14 +1604,14 @@ export function InvestmentWorkspace({
 
             <div className="allocation-status">
               <div className="allocation-copy"><span>{labels.allocation}</span><strong className={totalBasisPoints > 10_000 ? "over" : undefined}>{(totalBasisPoints / 100).toLocaleString(language === "sv" ? "sv-SE" : "en-GB", { maximumFractionDigits: 2 })} %</strong><span>{totalBasisPoints === 10_000 ? labels.allocationExact : totalBasisPoints > 10_000 ? labels.allocationHigh : `${((10_000 - totalBasisPoints) / 100).toLocaleString(language === "sv" ? "sv-SE" : "en-GB", { maximumFractionDigits: 2 })} % ${labels.allocationLow}`}</span></div>
-              <div className="allocation-actions"><button className="quiet-button" type="button" onClick={distributeEqually}>{labels.equal}</button><button className="ghost-button" type="button" onClick={() => { setAllocations((current) => ({ ...current, ...Object.fromEntries(portfolioStocks.map((stock) => [stock.ticker, "0"])) })); markDirty(); }}>{labels.reset}</button></div>
+              <div className="allocation-actions"><button className="quiet-button" type="button" onClick={distributeEqually}>{labels.equal}</button><button className="ghost-button" type="button" onClick={() => { setAllocations((current) => ({ ...current, ...Object.fromEntries(portfolioTickers.map((ticker) => [ticker, "0"])) })); markDirty(); }}>{labels.reset}</button></div>
               <div className="allocation-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, totalBasisPoints / 100)}><span className={totalBasisPoints > 10_000 ? "over" : undefined} style={{ width: `${Math.min(100, totalBasisPoints / 100)}%` }} /></div>
             </div>
 
             <div className="investment-table-scroll purchase-table-scroll">
               <table className="investment-table purchase-table" aria-label={labels.purchaseTitle}>
-                <thead><tr><th>{labels.company}</th><th>{labels.percentage}</th><th>{labels.budgetShare}</th><th>{labels.price}</th><th>{labels.sharesToBuy}</th><th>{labels.purchaseCost}</th><th>{labels.cashLeft}</th></tr></thead>
-                <tbody>{purchaseRows.map((row) => <tr key={row.stock.ticker}><td><strong>{row.stock.name}</strong><span>{row.stock.ticker}</span></td><td><div className="percent-input"><input type="number" min="0" max="100" step="0.1" inputMode="decimal" aria-label={`${labels.percentage} · ${row.stock.name}`} value={allocations[row.stock.ticker] ?? ""} onChange={(event) => { setAllocations((current) => ({ ...current, [row.stock.ticker]: event.target.value })); markDirty(); }} /><span>%</span></div></td><td>{formatMoney(row.allocatedOre, language)}</td><td>{formatMoney(row.stock.priceOre, language)}</td><td className="share-count"><strong>{row.shareCount}</strong></td><td className="strong-cell">{formatMoney(row.costOre, language)}</td><td>{formatMoney(row.remainingOre, language)}</td></tr>)}</tbody>
+                <thead><tr><th>{labels.company}</th><th>{labels.percentage}</th><th>{labels.budgetShare}</th><th>{labels.price}</th><th>{labels.quantityToBuy}</th><th>{labels.purchaseCost}</th><th>{labels.cashLeft}</th></tr></thead>
+                <tbody>{purchaseRows.map((row) => <tr key={`${row.instrumentType}-${row.identifier}`}><td><strong>{row.name}</strong><span>{row.identifier} · {row.instrumentType === "fund" ? labels.fundsTab : labels.stocksTab}</span></td><td><div className="percent-input"><input type="number" min="0" max="100" step="0.1" inputMode="decimal" aria-label={`${labels.percentage} · ${row.name}`} value={allocations[row.identifier] ?? ""} onChange={(event) => { setAllocations((current) => ({ ...current, [row.identifier]: event.target.value })); markDirty(); }} /><span>%</span></div></td><td>{formatMoney(row.allocatedOre, language)}</td><td>{formatMoney(row.priceOre, language)}</td><td className="share-count"><strong>{row.quantity}</strong></td><td className="strong-cell">{formatMoney(row.costOre, language)}</td><td>{formatMoney(row.remainingOre, language)}</td></tr>)}</tbody>
               </table>
             </div>
             <div className="purchase-totals">

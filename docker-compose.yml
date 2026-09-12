@@ -80,6 +80,7 @@ services:
       MARKET_DATA_PROVIDER: ${MARKET_DATA_PROVIDER:-yahoo}
       EODHD_API_TOKEN: ${EODHD_API_TOKEN:-}
       MARKET_DATA_CACHE_SECONDS: ${MARKET_DATA_CACHE_SECONDS:-21600}
+      AVANZA_FUND_BASE_URL: ${AVANZA_FUND_BASE_URL:-https://www.avanza.se}
     volumes:
       - prod-attachments:/app/storage/attachments
       - prod-backups:/app/storage/backups
@@ -108,6 +109,7 @@ services:
       MARKET_DATA_PROVIDER: ${MARKET_DATA_PROVIDER:-yahoo}
       EODHD_API_TOKEN: ${EODHD_API_TOKEN:-}
       MARKET_DATA_CACHE_SECONDS: ${MARKET_DATA_CACHE_SECONDS:-21600}
+      AVANZA_FUND_BASE_URL: ${AVANZA_FUND_BASE_URL:-https://www.avanza.se}
     volumes:
       - test-attachments:/app/storage/attachments
       - test-backups:/app/storage/backups

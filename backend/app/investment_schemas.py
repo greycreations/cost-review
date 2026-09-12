@@ -9,17 +9,26 @@ from pydantic import BaseModel, Field, StringConstraints, field_validator, model
 Ticker = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32)]
 Money = Annotated[Decimal, Field(ge=0, max_digits=20, decimal_places=4)]
 Percentage = Annotated[Decimal, Field(ge=0, le=100, max_digits=7, decimal_places=4)]
+HoldingQuantity = Annotated[Decimal, Field(ge=0, le=1_000_000_000, max_digits=24, decimal_places=8)]
+InstrumentType = Literal["stock", "fund"]
 
 
 class InvestmentPositionWrite(BaseModel):
+    instrument_type: InstrumentType = "stock"
     ticker: Ticker
-    shares: int = Field(ge=0, le=1_000_000_000)
+    shares: HoldingQuantity
     target_percentage: Percentage = Decimal("0")
 
     @field_validator("ticker")
     @classmethod
     def normalize_ticker(cls, value: str) -> str:
         return " ".join(value.upper().split())
+
+    @model_validator(mode="after")
+    def validate_quantity(self) -> InvestmentPositionWrite:
+        if self.instrument_type == "stock" and self.shares != self.shares.to_integral_value():
+            raise ValueError("stock positions must contain whole shares")
+        return self
 
 
 class InvestmentPortfolioWrite(BaseModel):
@@ -28,17 +37,18 @@ class InvestmentPortfolioWrite(BaseModel):
 
     @model_validator(mode="after")
     def validate_positions(self) -> InvestmentPortfolioWrite:
-        tickers = [position.ticker for position in self.positions]
-        if len(set(tickers)) != len(tickers):
-            raise ValueError("positions must contain unique tickers")
+        identifiers = [(position.instrument_type, position.ticker) for position in self.positions]
+        if len(set(identifiers)) != len(identifiers):
+            raise ValueError("positions must contain unique instruments")
         if sum((position.target_percentage for position in self.positions), Decimal("0")) > 100:
             raise ValueError("target percentages must total at most 100")
         return self
 
 
 class InvestmentPositionRead(BaseModel):
+    instrument_type: InstrumentType
     ticker: str
-    shares: int
+    shares: Decimal
     target_percentage: Decimal
 
 
@@ -90,3 +100,34 @@ class InvestmentMarketDataRead(BaseModel):
     stock_count: int = Field(default=0, ge=0)
     stocks: list[InvestmentMarketStockRead]
     unavailable_symbols: list[str]
+
+
+class InvestmentFundRead(BaseModel):
+    isin: str
+    provider_id: str
+    name: str
+    category: str
+    fund_type: str
+    fund_company: str
+    currency: str
+    nav: Decimal
+    nav_date: date
+    changes: MarketChangesRead
+    product_fee: Decimal
+    management_fee: Decimal
+    risk: int | None = Field(default=None, ge=1, le=7)
+    rating: int | None = Field(default=None, ge=1, le=5)
+    index_fund: bool
+
+
+class InvestmentFundDataRead(BaseModel):
+    source: str
+    source_url: str
+    retrieved_at: datetime
+    data_date: date | None
+    is_delayed: bool
+    is_stale: bool
+    query: str | None
+    result_count: int = Field(ge=0)
+    funds: list[InvestmentFundRead]
+    unavailable_isins: list[str]

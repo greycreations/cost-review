@@ -49,6 +49,7 @@ class Settings(BaseSettings):
 
     market_data_provider: MarketDataProvider = "yahoo"
     yahoo_finance_base_url: str = "https://query1.finance.yahoo.com"
+    avanza_fund_base_url: str = "https://www.avanza.se"
     eodhd_api_token: SecretStr = SecretStr("")
     eodhd_base_url: str = "https://eodhd.com/api"
     market_data_cache_seconds: int = Field(default=21_600, ge=60, le=86_400)
