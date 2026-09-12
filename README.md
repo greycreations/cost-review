@@ -3,7 +3,7 @@
 
 Cost Review is a private, self-hosted web application for trustworthy personal
 and household economics. Product behavior is defined by
-`docs/PRODUCT_SPECIFICATION.md` v1.7 and delivered in the order described by
+`docs/PRODUCT_SPECIFICATION.md` v1.8 and delivered in the order described by
 `docs/IMPLEMENTATION_BACKLOG.md`.
 
 Sprint 1 established the Platform Foundation: PostgreSQL, migrations, first-run
@@ -35,6 +35,9 @@ been tightened for narrow mobile screens; dense financial tables remain horizont
 without widening the surrounding page. Every saved holding now has a direct remove action in
 addition to bulk selection, the application offers a device-persistent light/dark theme, and every
 named column in the Investments tables can be sorted descending or ascending from its header.
+Version 0.8.0 consolidates those portfolio and appearance refinements and replaces the preliminary
+Yahoo-only dividend ranking with a separately validated ordinary-dividend comparison. Exact ticker,
+current payout and two comparable payout cycles are checked against Avanza before a share may rank.
 
 ## Architecture
 
@@ -152,13 +155,13 @@ unset GHCR_TOKEN
 
 Never copy a development machine's `.env` to another installation.
 
-### Upgrade an existing installation to 0.7.0
+### Upgrade an existing installation to 0.8.0
 
 Keep the existing `.env` so database passwords, backup keys, and installation
 identity remain unchanged. Create a current backup, then change only this line:
 
 ```sh
-COST_REVIEW_VERSION=0.7.0
+COST_REVIEW_VERSION=0.8.0
 ```
 
 Pull and recreate the application containers from the installation folder:
@@ -169,7 +172,8 @@ docker compose up --detach --wait
 docker compose ps
 ```
 
-The API containers apply the user-role and typed investment-position migrations independently to
+No new database migration is required when upgrading from 0.7.0. The API containers still apply all
+available migrations independently to
 Production and Demo/Test before they start. The oldest existing account in each data plane becomes
 administrator automatically. Existing stock positions are preserved and marked as stocks; database,
 attachment and backup volumes are unchanged. Add `ALLOW_SELF_REGISTRATION=false` to the existing

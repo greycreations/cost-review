@@ -75,7 +75,7 @@ class AvanzaDividendOpportunityService:
                 base_url=self._base_url,
                 timeout=self._timeout_seconds,
                 follow_redirects=True,
-                headers={"Accept": "application/json", "User-Agent": "Cost-Review/0.7.0"},
+                headers={"Accept": "application/json", "User-Agent": "Cost-Review/0.8.0"},
                 transport=self._transport,
             ) as client:
                 results = await asyncio.gather(
