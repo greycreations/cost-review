@@ -1,6 +1,6 @@
 # Cost Review Product & MVP Specification
 
-**Version:** 1.4
+**Version:** 1.5
 **Date:** 2026-09-12
 **Status:** Requirements baseline / source of truth
 
@@ -147,7 +147,10 @@ Savings and debt goals support target value, optional target date and flexible s
 - Buys/sells inside the account are not household expenses.
 - Unrealized value change is not income; dividends are investment income; realized gains/losses are tracked on sale.
 - Release 1 baseline uses manual value updates/snapshots.
-- Post-MVP: exact holdings, market prices, dividend feeds and richer analytics through modular provider adapters.
+- The optional provider-backed planning workspace keeps user-selected whole-share holdings and
+  purchase allocations separate from canonical investment transactions and valuation snapshots.
+- Market prices, trailing dividends, payout-month history and comparative analytics are derived
+  external observations supplied through modular provider adapters.
 
 ## 10. Import, staging and rules
 ### Import provider profiles
@@ -319,9 +322,16 @@ Future forecasting provides 30-day / 3 / 6 / 12-month cash-flow projections whil
 - The Investments workspace may use an optional server-side market-data provider. When enabled,
   the source, observation date, delay and forecast basis must be visible; unavailable live data
   must never be silently replaced with fictional values.
-- Investment watchlist, whole-share holdings, purchase budget and target allocations are persisted
-  independently in Production and Demo/Test. Market observations remain derived external data and
-  must not be recorded as investment trades or household income.
+- Screener checkbox selection remains temporary until the user explicitly adds shares to their
+  holdings. Whole-share holdings, purchase budget and target allocations are then persisted per user
+  and independently in Production and Demo/Test. The holdings table and dividend calendar derive
+  solely from that saved list and support explicit removal.
+- A dividend comparison may rank the current catalog by trailing-12-month dividend per share divided
+  by the latest closing price and show a whole-share scenario for the entered purchase budget. It
+  must be labelled as historical and mechanical, must not mutate holdings, and must not be presented
+  as a recommendation or a guarantee of future distributions.
+- Market observations remain derived external data and must not be recorded as investment trades or
+  household income.
 
 ## 22. Recommended implementation sequence
 1. **Foundation:** repo structure, Compose, PostgreSQL, migrations, API/backend, frontend shell, auth, setup and environment boundary.
@@ -376,3 +386,32 @@ This document is the implementation requirements baseline. New product behavior 
   shares. Source, count, freshness and the historical estimate basis remain visible.
 - **Boundary:** catalog and history observations remain derived external data. They never create or
   alter investment trades, valuation snapshots, dividend-income events or ledger history.
+
+### Version 1.4 change impact
+
+- **Data model and migration:** users gain an administrator flag. Existing data planes promote the
+  oldest user so upgrades retain an administrator without manual database intervention.
+- **API and security:** operator-controlled self-registration, self-service password change and
+  CSRF-protected administrator account-management routes are added. Password changes and resets
+  revoke other affected sessions, while deletion cannot target the active or final administrator.
+- **UX:** the sign-in surface can expose account creation and Settings adds personal password change
+  plus administrator-only account creation, rename, role, password-reset and deletion controls.
+- **Boundary:** accounts, roles, password hashes and sessions remain independent in Production and
+  Demo/Test. Login users do not implicitly become economic sharing parties.
+
+### Version 1.5 change impact
+
+- **Data model and migration:** no schema change. Existing environment- and user-scoped portfolio
+  positions become the sole source for the durable holdings list and its dividend calendar.
+- **API:** no new endpoint. Explicit add and remove actions replace the complete portfolio through
+  the existing authenticated, CSRF-protected portfolio write contract.
+- **UX:** screener selection is temporary until “Add holdings” is used. The holdings table repeats
+  screener market fields, adds owned shares, position value, annual dividend and dividend months,
+  and supports checkbox-based removal. Navigating away or closing the page no longer loses saved
+  holdings or their calendar.
+- **Analysis:** a read-only top-ten comparison ranks catalog shares by historical trailing dividend
+  yield and shows the whole shares, invested amount and historical annual dividend obtainable with
+  the current purchase budget.
+- **Boundary:** the comparison is explanatory planning output only. It does not consider future
+  board decisions, special-dividend recurrence, diversification, company risk, tax or fees and does
+  not create orders, holdings, trades, valuation snapshots or income events.

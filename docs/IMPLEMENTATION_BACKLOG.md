@@ -130,8 +130,10 @@ Derived from Product Specification v1.0. This backlog deliberately prioritizes d
 - CR-116 Configurable proactive in-app economic alerts through Attention.
 - CR-117 Optional provider-backed Stockholm investment screener, with Yahoo Finance as the
   keyless default and EODHD as a configurable alternative, dynamic Yahoo discovery of the
-  Stockholm equity universe, plus persisted holdings and purchase-plan allocations with visible
-  source, coverage, delay, freshness and trailing-dividend basis.
+  Stockholm equity universe, explicit screener-to-holdings add/remove actions, persisted holdings,
+  holdings-based dividend calendar, purchase-plan allocations and a read-only historical
+  dividend-yield comparison with visible source, coverage, delay, freshness and
+  trailing-dividend basis.
 
 ## Post-MVP backlog
 - OCR/receipt interpretation.

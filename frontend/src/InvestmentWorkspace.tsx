@@ -158,7 +158,7 @@ const copy = {
     staleData: "Datakällan kunde inte nås. Senast lyckade hämtning visas.",
     saved: "Portföljen sparas i den valda datamiljön.",
     previewSaved: "Dina inmatningar sparas lokalt på den här enheten.",
-    savePortfolio: "Spara portfölj",
+    savePortfolio: "Spara ändringar",
     saving: "Sparar…",
     saveSuccess: "Portföljen är sparad.",
     unsaved: "Du har osparade ändringar.",
@@ -170,7 +170,7 @@ const copy = {
     limitedUniverse: "{count} Stockholm-handlade aktier hittades via Yahoo Finance.",
     historyHint: "1 mån, 6 mån och utdelningsmånader hämtas när du väljer en aktie.",
     showMore: "Visa 50 fler",
-    selectedShares: "Valda aktier",
+    selectedShares: "Aktier i innehav",
     portfolioValue: "Portföljvärde",
     expectedDividend: "Beräknad utdelning",
     nextPurchase: "Planerat köp",
@@ -179,7 +179,13 @@ const copy = {
     noPurchase: "Ange en köpbudget nedan",
     screener: "Aktiescreener",
     exchange: "Stockholmsbörsen",
-    exchangeLead: "Välj bolag att ta med i din portföljvy och köpplan.",
+    exchangeLead: "Markera bolag och lägg till dem i din permanenta innehavslista.",
+    screenerSelection: "markerade",
+    addSelectedHoldings: "Lägg till innehav",
+    addSelectedHoldingsCount: "Lägg till {count} innehav",
+    removeFromHoldings: "Ta bort från innehav",
+    selectHolding: "Markera innehav",
+    portfolioActionSuccess: "Innehavslistan är sparad.",
     search: "Sök bolag eller ticker",
     sector: "Sektor",
     allSectors: "Alla sektorer",
@@ -201,9 +207,10 @@ const copy = {
     today: "I dag",
     oneMonth: "1 mån",
     sixMonths: "6 mån",
+    oneYearColumn: "1 år",
     dividendYield: "Direktavk.",
     dividendShare: "Utd./aktie",
-    payout: "Utbetalning",
+    payout: "Utdelningsmånader",
     noMatches: "Inga aktier matchar de valda filtren.",
     currentPortfolio: "Nuvarande portfölj",
     holdingsTitle: "Innehav & utdelningar",
@@ -234,7 +241,19 @@ const copy = {
     actualCost: "Total köpkostnad",
     remainingCash: "Kvar efter köp",
     allocatedBudget: "Fördelad budget",
-    noSelected: "Välj minst en aktie i screenern för att skapa en portfölj och köpplan.",
+    noSelected: "Markera aktier i screenern och välj Lägg till innehav.",
+    optimizer: "Utdelningsoptimerare",
+    optimizerTitle: "Mest historisk utdelning per investerad krona",
+    optimizerLead:
+      "Rangordningen jämför utdelning under de senaste 12 månaderna med den senaste slutkursen.",
+    optimizerWarning:
+      "Detta är ett mekaniskt jämförelseunderlag, inte en rekommendation. Det bedömer inte framtida utdelningsbeslut, extrautdelningar, bolagsrisk, kurstapp, skatt eller avgifter.",
+    optimizerRank: "Plats",
+    optimizerCapital: "Med köpbudgeten",
+    optimizerShares: "Hela aktier",
+    optimizerCost: "Investerat",
+    optimizerDividend: "Historisk utdelning / år",
+    optimizerEmpty: "Inga aktier med registrerad utdelning finns i den aktuella datan.",
     sectors: {
       basic_materials: "Råvaror",
       communication_services: "Kommunikation",
@@ -262,7 +281,7 @@ const copy = {
     staleData: "The data source could not be reached. Showing the latest successful retrieval.",
     saved: "The portfolio is stored in the selected data environment.",
     previewSaved: "Your entries are stored locally on this device.",
-    savePortfolio: "Save portfolio",
+    savePortfolio: "Save changes",
     saving: "Saving…",
     saveSuccess: "Portfolio saved.",
     unsaved: "You have unsaved changes.",
@@ -274,7 +293,7 @@ const copy = {
     limitedUniverse: "Yahoo Finance found {count} Stockholm-traded shares.",
     historyHint: "1-month, 6-month and dividend-month history is loaded when you select a share.",
     showMore: "Show 50 more",
-    selectedShares: "Selected shares",
+    selectedShares: "Shares in holdings",
     portfolioValue: "Portfolio value",
     expectedDividend: "Estimated dividend",
     nextPurchase: "Planned purchase",
@@ -283,7 +302,13 @@ const copy = {
     noPurchase: "Enter a purchase budget below",
     screener: "Stock screener",
     exchange: "Stockholm exchange",
-    exchangeLead: "Choose companies to include in your portfolio and purchase plan.",
+    exchangeLead: "Select companies and add them to your permanent holdings list.",
+    screenerSelection: "selected",
+    addSelectedHoldings: "Add holdings",
+    addSelectedHoldingsCount: "Add {count} holdings",
+    removeFromHoldings: "Remove from holdings",
+    selectHolding: "Select holding",
+    portfolioActionSuccess: "The holdings list has been saved.",
     search: "Search company or ticker",
     sector: "Sector",
     allSectors: "All sectors",
@@ -305,9 +330,10 @@ const copy = {
     today: "Today",
     oneMonth: "1 mo",
     sixMonths: "6 mo",
+    oneYearColumn: "1 yr",
     dividendYield: "Yield",
     dividendShare: "Dividend/share",
-    payout: "Payout",
+    payout: "Dividend months",
     noMatches: "No shares match the selected filters.",
     currentPortfolio: "Current portfolio",
     holdingsTitle: "Holdings & dividends",
@@ -338,7 +364,19 @@ const copy = {
     actualCost: "Total purchase cost",
     remainingCash: "Cash remaining",
     allocatedBudget: "Allocated budget",
-    noSelected: "Select at least one share in the screener to create a portfolio and purchase plan.",
+    noSelected: "Select shares in the screener and choose Add holdings.",
+    optimizer: "Dividend optimizer",
+    optimizerTitle: "Highest historical dividend per invested krona",
+    optimizerLead:
+      "The ranking compares dividends during the trailing 12 months with the latest closing price.",
+    optimizerWarning:
+      "This is a mechanical comparison, not a recommendation. It does not assess future dividend decisions, special dividends, company risk, price losses, tax, or fees.",
+    optimizerRank: "Rank",
+    optimizerCapital: "Using the purchase budget",
+    optimizerShares: "Whole shares",
+    optimizerCost: "Invested",
+    optimizerDividend: "Historical dividend / year",
+    optimizerEmpty: "No stocks with a recorded dividend are available in the current data.",
     sectors: {
       basic_materials: "Basic materials",
       communication_services: "Communication services",
@@ -485,7 +523,11 @@ export function InvestmentWorkspace({
   );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [selected, setSelected] = useState<string[]>(preview ? readStoredSelection() : []);
+  const [screenerSelection, setScreenerSelection] = useState<string[]>([]);
+  const [portfolioTickers, setPortfolioTickers] = useState<string[]>(
+    preview ? readStoredSelection() : [],
+  );
+  const [holdingSelection, setHoldingSelection] = useState<string[]>([]);
   const [holdings, setHoldings] = useState<Record<string, string>>(() =>
     preview ? readStoredRecord("cost-review-stock-holdings", {}) : {},
   );
@@ -501,8 +543,10 @@ export function InvestmentWorkspace({
   const detailRequested = useRef(new Set<string>());
 
   useEffect(() => {
-    if (preview) localStorage.setItem("cost-review-selected-stocks", JSON.stringify(selected));
-  }, [preview, selected]);
+    if (preview) {
+      localStorage.setItem("cost-review-selected-stocks", JSON.stringify(portfolioTickers));
+    }
+  }, [portfolioTickers, preview]);
   useEffect(() => {
     if (preview) localStorage.setItem("cost-review-stock-holdings", JSON.stringify(holdings));
   }, [holdings, preview]);
@@ -522,7 +566,9 @@ export function InvestmentWorkspace({
         setMarketSnapshot(market);
         setStocks(market.stocks.map(apiStockToStock));
         detailRequested.current.clear();
-        setSelected(portfolio.positions.map((position) => position.ticker));
+        setPortfolioTickers(portfolio.positions.map((position) => position.ticker));
+        setScreenerSelection([]);
+        setHoldingSelection([]);
         setHoldings(
           Object.fromEntries(
             portfolio.positions.map((position) => [
@@ -560,7 +606,7 @@ export function InvestmentWorkspace({
 
   useEffect(() => {
     if (preview || loadState !== "ready") return;
-    const pending = selected.filter((ticker) => {
+    const pending = [...new Set([...portfolioTickers, ...screenerSelection])].filter((ticker) => {
       const stock = stocks.find((item) => item.ticker === ticker);
       return stock?.detailLevel !== "history" && !detailRequested.current.has(ticker);
     });
@@ -577,7 +623,7 @@ export function InvestmentWorkspace({
     return () => {
       active = false;
     };
-  }, [environment, loadState, preview, selected, stocks]);
+  }, [environment, loadState, portfolioTickers, preview, screenerSelection, stocks]);
 
   const markDirty = () => {
     if (!preview) {
@@ -587,9 +633,9 @@ export function InvestmentWorkspace({
     }
   };
 
-  const selectedStocks = useMemo(
-    () => stocks.filter((stock) => selected.includes(stock.ticker)),
-    [selected, stocks],
+  const portfolioStocks = useMemo(
+    () => stocks.filter((stock) => portfolioTickers.includes(stock.ticker)),
+    [portfolioTickers, stocks],
   );
   const filteredStocks = useMemo(() => {
     const maximumOre = maxPrice ? parseMoneyToOre(maxPrice) : Number.POSITIVE_INFINITY;
@@ -604,18 +650,44 @@ export function InvestmentWorkspace({
     });
   }, [dividendFilter, language, maxPrice, performanceFilter, query, sector, stocks]);
   const visibleStocks = filteredStocks.slice(0, visibleCount);
+  const newScreenerTickers = screenerSelection.filter(
+    (ticker) => !portfolioTickers.includes(ticker),
+  );
 
-  const portfolioValueOre = selectedStocks.reduce((sum, stock) => sum + stock.priceOre * parsePositiveInteger(holdings[stock.ticker] ?? "0"), 0);
-  const annualDividendOre = selectedStocks.reduce((sum, stock) => sum + dividendPerShare(stock) * parsePositiveInteger(holdings[stock.ticker] ?? "0"), 0);
+  const portfolioValueOre = portfolioStocks.reduce((sum, stock) => sum + stock.priceOre * parsePositiveInteger(holdings[stock.ticker] ?? "0"), 0);
+  const annualDividendOre = portfolioStocks.reduce((sum, stock) => sum + dividendPerShare(stock) * parsePositiveInteger(holdings[stock.ticker] ?? "0"), 0);
   const weightedYield = portfolioValueOre > 0 ? (annualDividendOre / portfolioValueOre) * 100 : 0;
-  const monthlyDividends = Array.from({ length: 12 }, (_, index) => selectedStocks.reduce((sum, stock) => {
-    const payment = stock.dividends.find((item) => item.month === index + 1);
-    return sum + (payment?.amountOre ?? 0) * parsePositiveInteger(holdings[stock.ticker] ?? "0");
+  const monthlyDividends = Array.from({ length: 12 }, (_, index) => portfolioStocks.reduce((sum, stock) => {
+    const paymentOre = stock.dividends
+      .filter((item) => item.month === index + 1)
+      .reduce((paymentSum, item) => paymentSum + item.amountOre, 0);
+    return sum + paymentOre * parsePositiveInteger(holdings[stock.ticker] ?? "0");
   }, 0));
   const maxMonthlyDividend = Math.max(...monthlyDividends, 1);
 
   const budgetOre = parseMoneyToOre(budget);
-  const purchaseRows = selectedStocks.map((stock) => {
+  const optimizerRows = stocks
+    .filter((stock) => stock.priceOre > 0 && dividendPerShare(stock) > 0)
+    .map((stock) => {
+      const annualPerShareOre = dividendPerShare(stock);
+      const yieldPercent = (annualPerShareOre / stock.priceOre) * 100;
+      const shares = Math.floor(budgetOre / stock.priceOre);
+      return {
+        stock,
+        annualPerShareOre,
+        yieldPercent,
+        shares,
+        costOre: shares * stock.priceOre,
+        annualDividendOre: shares * annualPerShareOre,
+      };
+    })
+    .sort((left, right) =>
+      right.yieldPercent === left.yieldPercent
+        ? left.stock.name.localeCompare(right.stock.name)
+        : right.yieldPercent - left.yieldPercent,
+    )
+    .slice(0, 10);
+  const purchaseRows = portfolioStocks.map((stock) => {
     const basisPoints = percentageToBasisPoints(allocations[stock.ticker] ?? "0");
     const allocatedOre = Math.floor((budgetOre * basisPoints) / 10_000);
     const shareCount = Math.floor(allocatedOre / stock.priceOre);
@@ -627,16 +699,27 @@ export function InvestmentWorkspace({
   const totalAllocatedOre = purchaseRows.reduce((sum, row) => sum + row.allocatedOre, 0);
   const remainingBudgetOre = Math.max(0, budgetOre - totalPurchaseCostOre);
 
-  const toggleSelected = (ticker: string) => {
-    setSelected((current) => current.includes(ticker) ? current.filter((item) => item !== ticker) : [...current, ticker]);
-    markDirty();
+  const toggleScreenerSelection = (ticker: string) => {
+    setScreenerSelection((current) =>
+      current.includes(ticker)
+        ? current.filter((item) => item !== ticker)
+        : [...current, ticker],
+    );
+  };
+
+  const toggleHoldingSelection = (ticker: string) => {
+    setHoldingSelection((current) =>
+      current.includes(ticker)
+        ? current.filter((item) => item !== ticker)
+        : [...current, ticker],
+    );
   };
 
   const distributeEqually = () => {
-    if (selectedStocks.length === 0) return;
-    const base = Math.floor(10_000 / selectedStocks.length);
-    let remainder = 10_000 - base * selectedStocks.length;
-    setAllocations((current) => ({ ...current, ...Object.fromEntries(selectedStocks.map((stock) => {
+    if (portfolioStocks.length === 0) return;
+    const base = Math.floor(10_000 / portfolioStocks.length);
+    let remainder = 10_000 - base * portfolioStocks.length;
+    setAllocations((current) => ({ ...current, ...Object.fromEntries(portfolioStocks.map((stock) => {
       const value = base + (remainder-- > 0 ? 1 : 0);
       return [stock.ticker, (value / 100).toFixed(2).replace(/\.00$/, "")];
     })) }));
@@ -652,25 +735,92 @@ export function InvestmentWorkspace({
     setVisibleCount(STOCK_PAGE_SIZE);
   };
 
-  const savePortfolio = async () => {
-    if (preview || totalBasisPoints > 10_000) return;
+  const persistPortfolio = async (
+    nextTickers: string[],
+    nextHoldings = holdings,
+    nextAllocations = allocations,
+    nextBudget = budget,
+  ): Promise<boolean> => {
+    const nextTotalBasisPoints = nextTickers.reduce(
+      (sum, ticker) => sum + percentageToBasisPoints(nextAllocations[ticker] ?? "0"),
+      0,
+    );
+    if (nextTotalBasisPoints > 10_000) return false;
     setSaveState("saving");
     setSaveError(null);
+    if (preview) {
+      setPortfolioTickers(nextTickers);
+      setHoldings(nextHoldings);
+      setAllocations(nextAllocations);
+      setBudget(nextBudget);
+      setDirty(false);
+      setSaveState("saved");
+      return true;
+    }
     try {
       const saved = await saveInvestmentPortfolio(environment, {
-        purchase_budget: (budgetOre / 100).toFixed(2),
-        positions: selectedStocks.map((stock) => ({
-          ticker: stock.ticker,
-          shares: parsePositiveInteger(holdings[stock.ticker] ?? "0"),
-          target_percentage: (percentageToBasisPoints(allocations[stock.ticker] ?? "0") / 100).toFixed(2),
+        purchase_budget: (parseMoneyToOre(nextBudget) / 100).toFixed(2),
+        positions: nextTickers.map((ticker) => ({
+          ticker,
+          shares: parsePositiveInteger(nextHoldings[ticker] ?? "0"),
+          target_percentage: (
+            percentageToBasisPoints(nextAllocations[ticker] ?? "0") / 100
+          ).toFixed(2),
         })),
       });
+      setPortfolioTickers(saved.positions.map((position) => position.ticker));
+      setHoldings(
+        Object.fromEntries(
+          saved.positions.map((position) => [
+            position.ticker,
+            position.shares ? String(position.shares) : "",
+          ]),
+        ),
+      );
+      setAllocations(
+        Object.fromEntries(
+          saved.positions.map((position) => [
+            position.ticker,
+            percentInputFromDecimal(position.target_percentage),
+          ]),
+        ),
+      );
       setBudget(moneyInputFromDecimal(saved.purchase_budget));
       setDirty(false);
       setSaveState("saved");
+      return true;
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : labels.marketUnavailable);
       setSaveState("error");
+      return false;
+    }
+  };
+
+  const savePortfolio = () => persistPortfolio(portfolioTickers);
+
+  const addSelectedHoldings = async () => {
+    const nextTickers = [
+      ...portfolioTickers,
+      ...screenerSelection.filter((ticker) => !portfolioTickers.includes(ticker)),
+    ];
+    if (nextTickers.length === portfolioTickers.length) return;
+    if (await persistPortfolio(nextTickers)) {
+      setScreenerSelection([]);
+    }
+  };
+
+  const removeSelectedHoldings = async () => {
+    const nextTickers = portfolioTickers.filter(
+      (ticker) => !holdingSelection.includes(ticker),
+    );
+    const nextHoldings = Object.fromEntries(
+      Object.entries(holdings).filter(([ticker]) => nextTickers.includes(ticker)),
+    );
+    const nextAllocations = Object.fromEntries(
+      Object.entries(allocations).filter(([ticker]) => nextTickers.includes(ticker)),
+    );
+    if (await persistPortfolio(nextTickers, nextHoldings, nextAllocations)) {
+      setHoldingSelection([]);
     }
   };
 
@@ -789,13 +939,13 @@ export function InvestmentWorkspace({
       <div className="investment-summary" aria-label={labels.selectedShares}>
         <div>
           <span>{labels.selectedShares}</span>
-          <strong>{selectedStocks.length}</strong>
+          <strong>{portfolioStocks.length}</strong>
           <p>{preview ? labels.previewSaved : labels.saved}</p>
         </div>
         <div>
           <span>{labels.portfolioValue}</span>
           <strong>{formatMoney(portfolioValueOre, language)}</strong>
-          <p>{portfolioValueOre > 0 ? `${selectedStocks.filter((stock) => parsePositiveInteger(holdings[stock.ticker] ?? "0") > 0).length} ${language === "sv" ? "innehav" : "holdings"}` : labels.addHoldings}</p>
+          <p>{portfolioValueOre > 0 ? `${portfolioStocks.filter((stock) => parsePositiveInteger(holdings[stock.ticker] ?? "0") > 0).length} ${language === "sv" ? "innehav" : "holdings"}` : labels.addHoldings}</p>
         </div>
         <div className="summary-feature">
           <span>{labels.expectedDividend}</span>
@@ -857,19 +1007,37 @@ export function InvestmentWorkspace({
           </label>
         </div>
 
-        <div className="table-meta"><span>{filteredStocks.length} {labels.matches}</span><span>{selectedStocks.length} {language === "sv" ? "valda" : "selected"}</span></div>
+        <div className="table-meta screener-table-meta">
+          <span>{filteredStocks.length} {labels.matches}</span>
+          <div>
+            <span>{screenerSelection.length} {labels.screenerSelection}</span>
+            <button
+              className="primary-button"
+              disabled={saveState === "saving" || newScreenerTickers.length === 0}
+              onClick={() => void addSelectedHoldings()}
+              type="button"
+            >
+              {newScreenerTickers.length > 0
+                ? labels.addSelectedHoldingsCount.replace(
+                    "{count}",
+                    String(newScreenerTickers.length),
+                  )
+                : labels.addSelectedHoldings}
+            </button>
+          </div>
+        </div>
         <div className="investment-table-scroll">
           <table className="investment-table" aria-label={labels.exchange}>
             <thead>
-              <tr><th className="select-column"><span className="sr-only">{labels.select}</span></th><th>{labels.company}</th><th>{labels.price}</th><th>{labels.today}</th><th>{labels.oneMonth}</th><th>{labels.sixMonths}</th><th>1 år</th><th>{labels.dividendYield}</th><th>{labels.dividendShare}</th><th>{labels.payout}</th></tr>
+              <tr><th className="select-column"><span className="sr-only">{labels.select}</span></th><th>{labels.company}</th><th>{labels.price}</th><th>{labels.today}</th><th>{labels.oneMonth}</th><th>{labels.sixMonths}</th><th>{labels.oneYearColumn}</th><th>{labels.dividendYield}</th><th>{labels.dividendShare}</th><th>{labels.payout}</th></tr>
             </thead>
             <tbody>
               {visibleStocks.map((stock) => {
                 const annualPerShare = dividendPerShare(stock);
-                const isSelected = selected.includes(stock.ticker);
+                const isSelected = screenerSelection.includes(stock.ticker);
                 return (
                   <tr key={stock.ticker} className={isSelected ? "selected-row" : undefined}>
-                    <td className="select-column"><input type="checkbox" aria-label={`${labels.select} ${stock.name}`} checked={isSelected} onChange={() => toggleSelected(stock.ticker)} /></td>
+                    <td className="select-column"><input type="checkbox" aria-label={`${labels.select} ${stock.name}`} checked={isSelected} onChange={() => toggleScreenerSelection(stock.ticker)} /></td>
                     <td><strong>{stock.name}</strong><span>{stock.ticker} · {(labels.sectors as Record<string, string>)[stock.sector] ?? stock.sector}</span></td>
                     <td>{formatMoney(stock.priceOre, language)}</td>
                     <td><TrendValue value={stock.changeToday} language={language} /></td>
@@ -900,35 +1068,220 @@ export function InvestmentWorkspace({
         ) : null}
       </section>
 
-      {selectedStocks.length === 0 ? <div className="investment-empty large">{labels.noSelected}</div> : (
-        <>
-          <section className="investment-panel holdings-panel" aria-labelledby="holdings-title">
-            <div className="investment-panel-heading">
-              <div><p className="panel-label">{labels.currentPortfolio}</p><h2 id="holdings-title">{labels.holdingsTitle}</h2><p>{labels.holdingsLead}</p></div>
-              <div className="yield-callout"><span>{labels.expectedDividend}</span><strong>{formatMoney(annualDividendOre, language, false)}</strong><small>{weightedYield.toLocaleString(language === "sv" ? "sv-SE" : "en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} % · {labels.weightedYield}</small></div>
+      <section className="investment-panel optimizer-panel" aria-labelledby="optimizer-title">
+        <div className="investment-panel-heading optimizer-heading">
+          <div>
+            <p className="panel-label">{labels.optimizer}</p>
+            <h2 id="optimizer-title">{labels.optimizerTitle}</h2>
+            <p>{labels.optimizerLead}</p>
+          </div>
+          <div className="optimizer-budget">
+            <span>{labels.optimizerCapital}</span>
+            <strong>{formatMoney(budgetOre, language)}</strong>
+          </div>
+        </div>
+        <p className="optimizer-warning">{labels.optimizerWarning}</p>
+        {optimizerRows.length > 0 ? (
+          <div className="investment-table-scroll optimizer-table-scroll">
+            <table className="investment-table optimizer-table" aria-label={labels.optimizerTitle}>
+              <thead>
+                <tr>
+                  <th>{labels.optimizerRank}</th>
+                  <th>{labels.company}</th>
+                  <th>{labels.price}</th>
+                  <th>{labels.dividendShare}</th>
+                  <th>{labels.dividendYield}</th>
+                  <th>{labels.optimizerShares}</th>
+                  <th>{labels.optimizerCost}</th>
+                  <th>{labels.optimizerDividend}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {optimizerRows.map((row, index) => (
+                  <tr key={row.stock.ticker}>
+                    <td className="optimizer-rank">{index + 1}</td>
+                    <td>
+                      <strong>{row.stock.name}</strong>
+                      <span>
+                        {row.stock.ticker} · {(labels.sectors as Record<string, string>)[row.stock.sector] ?? row.stock.sector}
+                      </span>
+                    </td>
+                    <td>{formatMoney(row.stock.priceOre, language)}</td>
+                    <td>{formatMoney(row.annualPerShareOre, language)}</td>
+                    <td className="strong-cell">
+                      {row.yieldPercent.toLocaleString(language === "sv" ? "sv-SE" : "en-GB", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })} %
+                    </td>
+                    <td>{row.shares}</td>
+                    <td>{formatMoney(row.costOre, language)}</td>
+                    <td>{formatMoney(row.annualDividendOre, language)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="investment-empty">{labels.optimizerEmpty}</p>
+        )}
+      </section>
+
+      <section className="investment-panel holdings-panel" aria-labelledby="holdings-title">
+        <div className="investment-panel-heading">
+          <div>
+            <p className="panel-label">{labels.currentPortfolio}</p>
+            <h2 id="holdings-title">{labels.holdingsTitle}</h2>
+            <p>{labels.holdingsLead}</p>
+          </div>
+          <div className="holdings-heading-actions">
+            <div className="yield-callout">
+              <span>{labels.expectedDividend}</span>
+              <strong>{formatMoney(annualDividendOre, language, false)}</strong>
+              <small>
+                {weightedYield.toLocaleString(language === "sv" ? "sv-SE" : "en-GB", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })} % · {labels.weightedYield}
+              </small>
             </div>
+            <button
+              className="destructive-button holdings-remove-button"
+              disabled={holdingSelection.length === 0 || saveState === "saving"}
+              onClick={() => void removeSelectedHoldings()}
+              type="button"
+            >
+              {labels.removeFromHoldings}
+            </button>
+          </div>
+        </div>
+
+        {portfolioStocks.length === 0 ? (
+          <p className="investment-empty holdings-empty">{labels.noSelected}</p>
+        ) : (
+          <>
             <div className="investment-table-scroll holdings-table-scroll">
               <table className="investment-table holdings-table" aria-label={labels.holdingsTitle}>
-                <thead><tr><th>{labels.company}</th><th>{labels.owned}</th><th>{labels.price}</th><th>{labels.value}</th><th>{labels.dividendShare}</th><th>{labels.annualDividend}</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th className="select-column"><span className="sr-only">{labels.selectHolding}</span></th>
+                    <th>{labels.company}</th>
+                    <th>{labels.owned}</th>
+                    <th>{labels.price}</th>
+                    <th>{labels.today}</th>
+                    <th>{labels.oneMonth}</th>
+                    <th>{labels.sixMonths}</th>
+                    <th>{labels.oneYearColumn}</th>
+                    <th>{labels.dividendYield}</th>
+                    <th>{labels.dividendShare}</th>
+                    <th>{labels.payout}</th>
+                    <th>{labels.value}</th>
+                    <th>{labels.annualDividend}</th>
+                  </tr>
+                </thead>
                 <tbody>
-                  {selectedStocks.map((stock) => {
+                  {portfolioStocks.map((stock) => {
                     const shares = parsePositiveInteger(holdings[stock.ticker] ?? "0");
-                    return <tr key={stock.ticker}><td><strong>{stock.name}</strong><span>{stock.ticker}</span></td><td><input className="table-number-input" type="number" min="0" step="1" inputMode="numeric" aria-label={`${labels.owned} · ${stock.name}`} value={holdings[stock.ticker] ?? ""} placeholder="0" onChange={(event) => { setHoldings((current) => ({ ...current, [stock.ticker]: event.target.value.replace(/[^\d]/g, "") })); markDirty(); }} /></td><td>{formatMoney(stock.priceOre, language)}</td><td>{formatMoney(stock.priceOre * shares, language)}</td><td>{formatMoney(dividendPerShare(stock), language)}</td><td className="strong-cell">{formatMoney(dividendPerShare(stock) * shares, language)}</td></tr>;
+                    const annualPerShare = dividendPerShare(stock);
+                    const isSelected = holdingSelection.includes(stock.ticker);
+                    return (
+                      <tr key={stock.ticker} className={isSelected ? "selected-row" : undefined}>
+                        <td className="select-column">
+                          <input
+                            type="checkbox"
+                            aria-label={`${labels.selectHolding} ${stock.name}`}
+                            checked={isSelected}
+                            onChange={() => toggleHoldingSelection(stock.ticker)}
+                          />
+                        </td>
+                        <td>
+                          <strong>{stock.name}</strong>
+                          <span>
+                            {stock.ticker} · {(labels.sectors as Record<string, string>)[stock.sector] ?? stock.sector}
+                          </span>
+                        </td>
+                        <td>
+                          <input
+                            className="table-number-input"
+                            type="number"
+                            min="0"
+                            step="1"
+                            inputMode="numeric"
+                            aria-label={`${labels.owned} · ${stock.name}`}
+                            value={holdings[stock.ticker] ?? ""}
+                            placeholder="0"
+                            onChange={(event) => {
+                              setHoldings((current) => ({
+                                ...current,
+                                [stock.ticker]: event.target.value.replace(/[^\d]/g, ""),
+                              }));
+                              markDirty();
+                            }}
+                          />
+                        </td>
+                        <td>{formatMoney(stock.priceOre, language)}</td>
+                        <td><TrendValue value={stock.changeToday} language={language} /></td>
+                        <td><TrendValue value={stock.change1m} language={language} /></td>
+                        <td><TrendValue value={stock.change6m} language={language} /></td>
+                        <td><TrendValue value={stock.change1y} language={language} /></td>
+                        <td>
+                          {annualPerShare > 0
+                            ? `${((annualPerShare / stock.priceOre) * 100).toLocaleString(
+                                language === "sv" ? "sv-SE" : "en-GB",
+                                { minimumFractionDigits: 2, maximumFractionDigits: 2 },
+                              )} %`
+                            : "—"}
+                        </td>
+                        <td>{annualPerShare > 0 ? formatMoney(annualPerShare, language) : "—"}</td>
+                        <td>
+                          {stock.dividends.length > 0
+                            ? stock.dividends
+                                .map((item) => monthName(item.month, language, true))
+                                .join(" + ")
+                            : "—"}
+                        </td>
+                        <td>{formatMoney(stock.priceOre * shares, language)}</td>
+                        <td className="strong-cell">{formatMoney(annualPerShare * shares, language)}</td>
+                      </tr>
+                    );
                   })}
                 </tbody>
-                <tfoot><tr><th>{labels.total}</th><td></td><td></td><td>{formatMoney(portfolioValueOre, language)}</td><td></td><td>{formatMoney(annualDividendOre, language)}</td></tr></tfoot>
+                <tfoot>
+                  <tr>
+                    <th colSpan={11}>{labels.total}</th>
+                    <td>{formatMoney(portfolioValueOre, language)}</td>
+                    <td>{formatMoney(annualDividendOre, language)}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
 
             <div className="dividend-calendar">
-              <div className="calendar-heading"><div><h3>{labels.dividendCalendar}</h3><p>{labels.dividendCalendarLead}</p></div><strong>{formatMoney(annualDividendOre, language, false)} <small>{labels.perYear}</small></strong></div>
+              <div className="calendar-heading">
+                <div>
+                  <h3>{labels.dividendCalendar}</h3>
+                  <p>{labels.dividendCalendarLead}</p>
+                </div>
+                <strong>{formatMoney(annualDividendOre, language, false)} <small>{labels.perYear}</small></strong>
+              </div>
               <div className="calendar-chart" aria-label={labels.dividendCalendar}>
-                {monthlyDividends.map((amountOre, index) => <div className="calendar-month" key={index}><div className="calendar-value">{amountOre > 0 ? formatMoney(amountOre, language, false) : "—"}</div><div className="calendar-bar-track"><span style={{ height: `${Math.max(amountOre > 0 ? 8 : 0, (amountOre / maxMonthlyDividend) * 100)}%` }} /></div><span>{monthName(index + 1, language, true)}</span></div>)}
+                {monthlyDividends.map((amountOre, index) => (
+                  <div className="calendar-month" key={index}>
+                    <div className="calendar-value">{amountOre > 0 ? formatMoney(amountOre, language, false) : "—"}</div>
+                    <div className="calendar-bar-track">
+                      <span style={{ height: `${Math.max(amountOre > 0 ? 8 : 0, (amountOre / maxMonthlyDividend) * 100)}%` }} />
+                    </div>
+                    <span>{monthName(index + 1, language, true)}</span>
+                  </div>
+                ))}
               </div>
               {annualDividendOre === 0 ? <p className="calendar-empty">{labels.noHoldings}</p> : null}
             </div>
-          </section>
+          </>
+        )}
+      </section>
 
+      {portfolioStocks.length > 0 ? (
           <section className="investment-panel purchase-panel" aria-labelledby="purchase-title">
             <div className="investment-panel-heading purchase-heading">
               <div><p className="panel-label">{labels.planning}</p><h2 id="purchase-title">{labels.purchaseTitle}</h2><p>{labels.purchaseLead}</p></div>
@@ -937,7 +1290,7 @@ export function InvestmentWorkspace({
 
             <div className="allocation-status">
               <div className="allocation-copy"><span>{labels.allocation}</span><strong className={totalBasisPoints > 10_000 ? "over" : undefined}>{(totalBasisPoints / 100).toLocaleString(language === "sv" ? "sv-SE" : "en-GB", { maximumFractionDigits: 2 })} %</strong><span>{totalBasisPoints === 10_000 ? labels.allocationExact : totalBasisPoints > 10_000 ? labels.allocationHigh : `${((10_000 - totalBasisPoints) / 100).toLocaleString(language === "sv" ? "sv-SE" : "en-GB", { maximumFractionDigits: 2 })} % ${labels.allocationLow}`}</span></div>
-              <div className="allocation-actions"><button className="quiet-button" type="button" onClick={distributeEqually}>{labels.equal}</button><button className="ghost-button" type="button" onClick={() => { setAllocations((current) => ({ ...current, ...Object.fromEntries(selectedStocks.map((stock) => [stock.ticker, "0"])) })); markDirty(); }}>{labels.reset}</button></div>
+              <div className="allocation-actions"><button className="quiet-button" type="button" onClick={distributeEqually}>{labels.equal}</button><button className="ghost-button" type="button" onClick={() => { setAllocations((current) => ({ ...current, ...Object.fromEntries(portfolioStocks.map((stock) => [stock.ticker, "0"])) })); markDirty(); }}>{labels.reset}</button></div>
               <div className="allocation-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, totalBasisPoints / 100)}><span className={totalBasisPoints > 10_000 ? "over" : undefined} style={{ width: `${Math.min(100, totalBasisPoints / 100)}%` }} /></div>
             </div>
 
@@ -953,8 +1306,7 @@ export function InvestmentWorkspace({
               <div><span>{labels.remainingCash}</span><strong>{formatMoney(remainingBudgetOre, language)}</strong></div>
             </div>
           </section>
-        </>
-      )}
+      ) : null}
     </section>
   );
 }

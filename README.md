@@ -3,7 +3,7 @@
 
 Cost Review is a private, self-hosted web application for trustworthy personal
 and household economics. Product behavior is defined by
-`docs/PRODUCT_SPECIFICATION.md` v1.4 and delivered in the order described by
+`docs/PRODUCT_SPECIFICATION.md` v1.5 and delivered in the order described by
 `docs/IMPLEMENTATION_BACKLOG.md`.
 
 Sprint 1 established the Platform Foundation: PostgreSQL, migrations, first-run
@@ -25,7 +25,10 @@ adds a dynamically discovered Yahoo Finance universe of Stockholm-traded shares
 to the Investments tab, with persisted holdings, dividend estimates, and
 whole-share purchase planning. Version 0.7.0 adds network self-registration,
 self-service password changes, and administrator-controlled user creation,
-renaming, role assignment, password reset and deletion.
+renaming, role assignment, password reset and deletion. The same release also
+separates temporary screener selection from durable investment holdings, expands
+the holdings table and calendar, and adds a clearly labelled historical
+dividend-yield comparison.
 
 ## Architecture
 
@@ -468,9 +471,13 @@ movement as income or claiming investment-performance attribution.
 The Investments view is an optional provider-backed planning surface. It shows the market source,
 latest trading date, retrieval time, delayed-data status and any stale-cache fallback. Annual
 dividend amounts and calendar months are derived from the trailing 12 months of provider dividend
-records and are explicitly not confirmed future payments. Holdings and target allocations are
-persisted inside the active data plane; external quotes remain derived and never become Ledger
-events. See `docs/adr/0013-yahoo-market-data-default.md`.
+records and are explicitly not confirmed future payments. Screener selections become durable only
+when the user chooses **Add holdings**; the saved holdings then drive the holdings table, dividend
+calendar and purchase allocation. The dividend comparison ranks trailing dividend per share against
+the latest close and does not add holdings or place trades. Holdings and target allocations are
+persisted per user inside the active data plane; external quotes remain derived and never become
+Ledger events. See `docs/adr/0013-yahoo-market-data-default.md` and
+`docs/adr/0016-persistent-investment-holdings-and-dividend-comparison.md`.
 
 ## Source of truth
 

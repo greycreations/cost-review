@@ -2772,11 +2772,25 @@ footer {
 
 .table-meta {
   display: flex;
+  align-items: center;
   justify-content: space-between;
+  gap: 14px;
   margin: 18px 2px -3px;
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 650;
+}
+
+.screener-table-meta > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.screener-table-meta .primary-button {
+  min-height: 40px;
+  padding: 0 14px;
+  white-space: nowrap;
 }
 
 .investment-table-scroll {
@@ -2918,6 +2932,81 @@ footer {
   font-size: 11px;
 }
 
+.optimizer-heading {
+  align-items: flex-start;
+}
+
+.optimizer-budget {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: end;
+  gap: 6px;
+  padding: 12px 15px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+}
+
+.optimizer-budget span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.optimizer-budget strong {
+  color: var(--text-primary);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.optimizer-warning {
+  max-width: 72rem;
+  margin: 19px 0 0;
+  padding: 13px 15px;
+  border: 1px solid color-mix(in srgb, var(--analysis-sand) 42%, var(--border));
+  border-radius: 9px;
+  color: var(--warning-text);
+  background: var(--warning-soft);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.optimizer-table-scroll {
+  margin-top: 20px;
+  margin-bottom: 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.optimizer-table {
+  min-width: 980px;
+}
+
+.optimizer-rank {
+  color: var(--text-secondary);
+  font-weight: 760;
+}
+
+.holdings-heading-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+}
+
+.holdings-remove-button {
+  min-height: 40px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+.holdings-empty {
+  margin-top: 23px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+}
+
 .holdings-table-scroll,
 .purchase-table-scroll {
   margin-top: 23px;
@@ -2928,7 +3017,7 @@ footer {
 }
 
 .holdings-table {
-  min-width: 810px;
+  min-width: 1580px;
 }
 
 .holdings-table th,
@@ -2938,8 +3027,10 @@ footer {
   padding: 13px 26px;
 }
 
-.holdings-table th:first-child,
-.holdings-table td:first-child,
+.holdings-table th:first-child:not(.select-column),
+.holdings-table td:first-child:not(.select-column),
+.holdings-table .select-column + th,
+.holdings-table .select-column + td,
 .purchase-table th:first-child,
 .purchase-table td:first-child {
   text-align: left;
@@ -3189,10 +3280,16 @@ footer {
   }
 
   .investment-data-note,
-  .yield-callout {
+  .yield-callout,
+  .optimizer-budget {
     justify-items: start;
     max-width: none;
     text-align: left;
+  }
+
+  .holdings-heading-actions {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .investment-summary {
@@ -3225,6 +3322,12 @@ footer {
   .investment-table-scroll {
     margin-right: -21px;
     margin-left: -21px;
+  }
+
+  .table-meta,
+  .screener-table-meta > div {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .holdings-table-scroll,

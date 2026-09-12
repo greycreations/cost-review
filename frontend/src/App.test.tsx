@@ -34,6 +34,11 @@ let providerItems: object[] = [];
 let sharingPartyItems: object[] = [];
 let tagItems: object[] = [];
 let analysisData: object;
+let investmentPositions: Array<{
+  ticker: string;
+  shares: number;
+  target_percentage: string;
+}> = [];
 
 const account = (
   accountId: number,
@@ -70,6 +75,9 @@ describe("App", () => {
     sessionIsAdmin = false;
     sessionUnavailable = false;
     userAccounts = [];
+    investmentPositions = [
+      { ticker: "INVE B", shares: 10, target_percentage: "100.0000" },
+    ];
     analysisData = {
       date_from: "2026-08-01",
       date_to: "2026-08-31",
@@ -267,15 +275,51 @@ describe("App", () => {
                 ],
                 detail_level: "history",
               },
+              {
+                ticker: "AXFO",
+                provider_symbol: "AXFO.ST",
+                name: "Axfood",
+                sector: "consumer_defensive",
+                currency: "SEK",
+                price: "252.10",
+                price_date: "2026-09-11",
+                changes: {
+                  one_day: "0.10",
+                  one_month: "-0.60",
+                  six_months: "5.80",
+                  one_year: "9.60",
+                },
+                annual_dividend_per_share: "8.75",
+                dividend_yield: "3.47",
+                dividend_pattern: [
+                  { month: 3, amount: "4.38", date_basis: "payment_date" },
+                  { month: 9, amount: "4.37", date_basis: "payment_date" },
+                ],
+                detail_level: "history",
+              },
             ],
           };
         } else if (path.endsWith("/investments/portfolio")) {
+          if (init?.method === "PUT") {
+            const submitted = JSON.parse(String(init.body)) as {
+              purchase_budget: string;
+              positions: typeof investmentPositions;
+            };
+            investmentPositions = submitted.positions;
+            body = {
+              purchase_budget: submitted.purchase_budget,
+              currency: "SEK",
+              positions: investmentPositions,
+              updated_at: "2026-09-11T18:05:00Z",
+            };
+          } else {
           body = {
             purchase_budget: "10000.0000",
             currency: "SEK",
-            positions: [{ ticker: "INVE B", shares: 10, target_percentage: "100.0000" }],
+            positions: investmentPositions,
             updated_at: "2026-09-11T18:00:00Z",
           };
+          }
         } else {
           body = session(environment);
         }
@@ -409,7 +453,7 @@ describe("App", () => {
     });
     await user.clear(heldShares);
     await user.type(heldShares, "12");
-    await user.click(screen.getByRole("button", { name: "Save portfolio" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(await screen.findByText("Portfolio saved.")).toBeInTheDocument();
     const saveCall = vi
@@ -424,6 +468,85 @@ describe("App", () => {
       positions: [{ ticker: "INVE B", shares: 12, target_percentage: "100.00" }],
     });
     expect(new Headers(saveCall?.[1]?.headers).get("X-CSRF-Token")).toBe("investment-csrf");
+  });
+
+  it("persists added holdings, dividend months, and removal across investment visits", async () => {
+    document.cookie = "cost_review_production_csrf=investment-csrf; path=/";
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Investments" }));
+
+    const screener = await screen.findByRole("table", { name: "Stockholm exchange" });
+    await user.click(within(screener).getByRole("checkbox", { name: "Select Axfood" }));
+    await user.click(screen.getByRole("button", { name: "Add 1 holdings" }));
+
+    let holdingsTable = await screen.findByRole("table", { name: "Holdings & dividends" });
+    expect(within(holdingsTable).getByText("Axfood")).toBeInTheDocument();
+    expect(within(holdingsTable).getByRole("columnheader", { name: "Today" })).toBeInTheDocument();
+    expect(within(holdingsTable).getByRole("columnheader", { name: "1 mo" })).toBeInTheDocument();
+    expect(within(holdingsTable).getByRole("columnheader", { name: "6 mo" })).toBeInTheDocument();
+    expect(within(holdingsTable).getByRole("columnheader", { name: "1 yr" })).toBeInTheDocument();
+    expect(within(holdingsTable).getByRole("columnheader", { name: "Yield" })).toBeInTheDocument();
+    expect(
+      within(holdingsTable).getByRole("columnheader", { name: "Dividend months" }),
+    ).toBeInTheDocument();
+
+    const axfoodShares = within(holdingsTable).getByRole("spinbutton", {
+      name: "Shares held · Axfood",
+    });
+    await user.type(axfoodShares, "5");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await user.click(screen.getByRole("link", { name: "Overview" }));
+    await user.click(screen.getByRole("link", { name: "Investments" }));
+
+    holdingsTable = await screen.findByRole("table", { name: "Holdings & dividends" });
+    expect(within(holdingsTable).getByText("Axfood")).toBeInTheDocument();
+    expect(within(holdingsTable).getByDisplayValue("5")).toBeInTheDocument();
+    expect(within(holdingsTable).getByText("Mar + Sept")).toBeInTheDocument();
+    const calendar = screen.getByLabelText("Dividend calendar");
+    expect(within(calendar).getAllByText("21 kr")).toHaveLength(2);
+
+    await user.click(
+      within(holdingsTable).getByRole("checkbox", { name: "Select holding Axfood" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Remove from holdings" }));
+
+    await waitFor(() => {
+      const latestSave = vi
+        .mocked(fetch)
+        .mock.calls.filter(
+          ([input, init]) =>
+            input.toString().endsWith("/investments/portfolio") && init?.method === "PUT",
+        )
+        .at(-1);
+      expect(JSON.parse(String(latestSave?.[1]?.body)).positions).toEqual([
+        { ticker: "INVE B", shares: 10, target_percentage: "100.00" },
+      ]);
+    });
+  });
+
+  it("shows the dividend ranking as a historical comparison, not a recommendation", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Investments" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Highest historical dividend per invested krona",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/mechanical comparison, not a recommendation/i)).toBeInTheDocument();
+    const optimizer = screen.getByRole("table", {
+      name: "Highest historical dividend per invested krona",
+    });
+    const rows = within(optimizer).getAllByRole("row");
+    expect(within(rows[1]).getByText("Axfood")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("3.47 %")).toBeInTheDocument();
   });
 
   it("shows pilot data safety controls in Settings", async () => {
