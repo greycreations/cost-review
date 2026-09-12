@@ -185,7 +185,8 @@ class AuditEvent(Base):
     __table_args__ = (
         CheckConstraint(
             "action IN ('created', 'updated', 'archived', 'restored', "
-            "'balance_adjusted', 'permanently_deleted')",
+            "'balance_adjusted', 'permanently_deleted', 'password_changed', "
+            "'password_reset', 'deleted')",
             name="action_allowed",
         ),
         CheckConstraint(
