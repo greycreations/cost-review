@@ -335,6 +335,10 @@ Future forecasting provides 30-day / 3 / 6 / 12-month cash-flow projections whil
 - Every saved stock or fund holding exposes a visible direct remove action. Checkbox selection may
   additionally support bulk removal, but must not be the only discoverable removal path. Removing a
   holding immediately persists the complete remaining portfolio in the active user's data plane.
+- Every named column in the Investments workspace's stock, fund, comparison, holdings and purchase-
+  plan tables is sortable from its header. The first activation sorts descending and the next sorts
+  ascending; the active direction is visible and programmatically exposed. Selection-only columns
+  remain unsorted, and missing provider values stay last in either direction.
 - The application provides light and dark visual themes. Light remains the default; the selected
   theme is stored as a device-local display preference, applies before and after authentication, and
   must preserve WCAG AA contrast, visible focus, Production/Demo-Test context and mobile usability.
@@ -449,6 +453,9 @@ This document is the implementation requirements baseline. New product behavior 
   portfolio replacement contract and the theme is a non-financial device-local preference.
 - **UX:** each stock, fund and temporarily unavailable fund row includes an immediately visible
   remove action. Existing checkbox selection remains available for efficient bulk removal.
+- **Tables:** all named columns across the two screeners, dividend comparison, stock/fund holdings
+  and purchase plan support independent two-way sorting. Rank retains its original comparison rank
+  when another optimizer column controls the visible order.
 - **Appearance:** the calm light theme remains the default and a persistent dark theme is available
   from the application chrome, including setup, sign-in and the local investment preview.
 - **Accessibility and mobile:** both themes retain semantic state labels, keyboard focus and contrast.

@@ -62,7 +62,7 @@ Surfaces use 10–14 px corner radii, a subtle #DFE5E1 border, and little or no 
 
 Do not build a dashboard full of small KPI cards. Give the single most important value—normalized recurring cost—space in a hero area, then use a limited number of larger analytical panels.
 
-Tables use weak horizontal dividers, comfortable row height, aligned numeric columns, and sticky headers only when they materially help scanning.
+Tables use weak horizontal dividers, comfortable row height, aligned numeric columns, and sticky headers only when they materially help scanning. Sortable headers expose a full touch-sized button, a quiet bidirectional affordance and an explicit up/down indicator for the active direction. First activation is descending, then ascending; `aria-sort` mirrors the visible state.
 
 ## 5. Navigation
 

@@ -33,7 +33,8 @@ It also adds searchable Swedish fund-market data through Avanza's public, read-o
 information, decimal fund units and a combined stock/fund purchase plan. The full application has
 been tightened for narrow mobile screens; dense financial tables remain horizontally swipeable
 without widening the surrounding page. Every saved holding now has a direct remove action in
-addition to bulk selection, and the application offers a device-persistent light/dark theme.
+addition to bulk selection, the application offers a device-persistent light/dark theme, and every
+named column in the Investments tables can be sorted descending or ascending from its header.
 
 ## Architecture
 

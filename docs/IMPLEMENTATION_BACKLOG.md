@@ -136,7 +136,8 @@ Derived from Product Specification v1.0. This backlog deliberately prioritizes d
   trailing-dividend basis. Version 0.7.0 adds searchable public fund information, decimal fund
   units, ISIN-based persistence, mixed stock/fund planning and mobile-responsive controls. The
   following UI refinement makes single-holding removal directly visible alongside bulk selection
-  and adds a persistent light/dark theme across authenticated and unauthenticated surfaces.
+  and adds a persistent light/dark theme across authenticated and unauthenticated surfaces. Every
+  named investment-table column also gains accessible descending/ascending header sorting.
 
 ## Post-MVP backlog
 - OCR/receipt interpretation.

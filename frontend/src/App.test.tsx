@@ -473,6 +473,76 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Allocate your next investment" })).toBeInTheDocument();
   });
 
+  it("sorts investment columns descending first and ascending on the next click", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Investments" }));
+
+    const screener = await screen.findByRole("table", { name: "Stockholm exchange" });
+    const yieldHeader = within(screener).getByRole("columnheader", { name: "Yield" });
+    const yieldButton = within(yieldHeader).getByRole("button", { name: "Yield" });
+
+    await user.click(yieldButton);
+    expect(yieldHeader).toHaveAttribute("aria-sort", "descending");
+    let rows = within(screener).getAllByRole("row").slice(1);
+    expect(within(rows[0]).getByText("Axfood")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Investor B")).toBeInTheDocument();
+
+    await user.click(yieldButton);
+    expect(yieldHeader).toHaveAttribute("aria-sort", "ascending");
+    rows = within(screener).getAllByRole("row").slice(1);
+    expect(within(rows[0]).getByText("Investor B")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Axfood")).toBeInTheDocument();
+  });
+
+  it("provides sortable controls for every named investment table column", async () => {
+    investmentPositions = [
+      { instrument_type: "stock", ticker: "INVE B", shares: "10", target_percentage: "60.0000" },
+      { instrument_type: "fund", ticker: "SE0001718388", shares: "12.5", target_percentage: "40.0000" },
+    ];
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Investments" }));
+
+    const expectSortableHeaders = (table: HTMLElement, expected: number) => {
+      const header = table.querySelector("thead");
+      expect(header).not.toBeNull();
+      expect(within(header as HTMLElement).getAllByRole("button")).toHaveLength(expected);
+    };
+
+    expectSortableHeaders(
+      await screen.findByRole("table", { name: "Stockholm exchange" }),
+      9,
+    );
+    expectSortableHeaders(
+      screen.getByRole("table", { name: "Highest historical dividend per invested krona" }),
+      8,
+    );
+    expectSortableHeaders(
+      await screen.findByRole("table", { name: "Holdings & dividends" }),
+      12,
+    );
+    expectSortableHeaders(
+      await screen.findByRole("table", { name: "Fund holdings" }),
+      9,
+    );
+    expectSortableHeaders(
+      screen.getByRole("table", { name: "Allocate your next investment" }),
+      7,
+    );
+
+    await user.click(screen.getByRole("tab", { name: "Funds" }));
+    await user.type(screen.getByRole("textbox", { name: "Search fund or ISIN" }), "Avanza Zero");
+    expectSortableHeaders(
+      await screen.findByRole("table", { name: "Funds on the Swedish fund market" }),
+      9,
+    );
+  });
+
   it("switches theme globally and persists the choice for the next visit", async () => {
     const user = userEvent.setup();
     render(<App />);
