@@ -20,9 +20,12 @@ export type AppSettings = {
   week_start: "monday" | "saturday" | "sunday";
 };
 
+export type UserRole = "owner" | "member" | "viewer";
+
 export type Session = {
+  user_id: number;
   username: string;
-  is_admin: boolean;
+  role: UserRole;
   environment: Environment;
   environment_label: string;
   data_plane_id: string;
@@ -31,10 +34,16 @@ export type Session = {
   settings: AppSettings;
 };
 
+export type HouseholdMember = {
+  user_id: number;
+  username: string;
+  role: UserRole;
+};
+
 export type UserAccount = {
   user_id: number;
   username: string;
-  is_admin: boolean;
+  role: UserRole;
   created_at: string;
   updated_at: string;
 };
@@ -168,7 +177,8 @@ export type Tag = {
 export type SharingParty = {
   sharing_party_id: number;
   name: string;
-  is_self: boolean;
+  user_id: number | null;
+  username: string | null;
   notes: string | null;
   status: LifecycleStatus;
   archived_at: string | null;
@@ -296,7 +306,7 @@ export type AnalysisPerspective = "total" | "my_share";
 export type ShareAllocation = {
   sharing_party_id: number;
   percentage: string;
-  is_self: boolean;
+  user_id: number | null;
 };
 export type ShareAllocationInput = {
   sharing_party_id: number;
@@ -654,10 +664,14 @@ async function request<T>(
     const payload = (await response.json().catch(() => null)) as
       | { error?: { code?: string; message?: string } }
       | null;
+    const fallback =
+      response.status === 429
+        ? "Too many attempts. Wait a few minutes and try again."
+        : "Cost Review API is unavailable.";
     throw new ApiError(
       response.status,
-      payload?.error?.code ?? "request_failed",
-      payload?.error?.message ?? "Cost Review API is unavailable.",
+      payload?.error?.code ?? (response.status === 429 ? "rate_limited" : "request_failed"),
+      payload?.error?.message ?? fallback,
     );
   }
   if (response.status === 204) {
@@ -729,6 +743,10 @@ export function changePassword(
   );
 }
 
+export function getHouseholdMembers(environment: Environment): Promise<HouseholdMember[]> {
+  return request(environment, "/household/members");
+}
+
 export function getUsers(environment: Environment): Promise<UserAccount[]> {
   return request(environment, "/users");
 }
@@ -737,7 +755,7 @@ export function createUser(
   environment: Environment,
   username: string,
   password: string,
-  isAdmin: boolean,
+  role: UserRole,
   settings: AppSettings,
 ): Promise<UserAccount> {
   return request(
@@ -745,7 +763,7 @@ export function createUser(
     "/users",
     {
       method: "POST",
-      body: JSON.stringify({ username, password, is_admin: isAdmin, settings }),
+      body: JSON.stringify({ username, password, role, settings }),
     },
     true,
   );
@@ -754,7 +772,7 @@ export function createUser(
 export function updateUser(
   environment: Environment,
   userId: number,
-  values: { username?: string; is_admin?: boolean },
+  values: { username?: string; role?: UserRole },
 ): Promise<UserAccount> {
   return request(
     environment,
@@ -1103,7 +1121,7 @@ export function getSharingParties(
 
 export function createSharingParty(
   environment: Environment,
-  payload: { name: string; is_self: boolean },
+  payload: { name: string; user_id: number | null },
 ): Promise<SharingParty> {
   return request(
     environment,
@@ -1411,4 +1429,320 @@ function readCookie(name: string): string | null {
   const prefix = `${encodeURIComponent(name)}=`;
   const entry = document.cookie.split("; ").find((item) => item.startsWith(prefix));
   return entry ? decodeURIComponent(entry.slice(prefix.length)) : null;
+}
+
+export type ImportRowStatus = "ready" | "duplicate" | "invalid" | "skipped" | "committed";
+
+export type ImportMapping = {
+  date_column: string;
+  description_column: string;
+  amount_column: string | null;
+  debit_column: string | null;
+  credit_column: string | null;
+  posting_date_column: string | null;
+  currency_column: string | null;
+  reference_column: string | null;
+  date_format: string;
+  decimal_separator: "," | ".";
+  amount_sign: "as_is" | "inverted";
+  delimiter: string | null;
+  header_row: number;
+};
+
+export type ImportPreview = {
+  filename: string;
+  headers: string[];
+  sample_rows: Record<string, unknown>[];
+  row_count: number;
+  delimiter: string | null;
+  suggested_mapping: Partial<ImportMapping> & Record<string, unknown>;
+  profile_suggestions: { import_profile_id: number; name: string; confidence: number }[];
+  previous_imports: { import_batch_id: number; status: string; created_at: string }[];
+};
+
+export type ImportProfile = ImportMapping & {
+  import_profile_id: number;
+  name: string;
+  default_account_id: number | null;
+  status: LifecycleStatus;
+};
+
+export type ImportBatch = {
+  import_batch_id: number;
+  import_profile_id: number | null;
+  account_id: number;
+  filename: string;
+  status: "staged" | "committed" | "undone";
+  row_count: number;
+  status_counts: Record<ImportRowStatus, number>;
+  created_by_user_id: number | null;
+  created_at: string;
+  committed_at: string | null;
+  undone_at: string | null;
+};
+
+export type ImportRow = {
+  import_row_id: number;
+  row_number: number;
+  raw: Record<string, unknown>;
+  transaction_date: string | null;
+  posting_date: string | null;
+  description: string | null;
+  amount: string | null;
+  currency: string | null;
+  reference: string | null;
+  category_id: number | null;
+  provider_id: number | null;
+  status: ImportRowStatus;
+  errors: string[];
+  duplicate_transaction_id: number | null;
+  duplicate_confidence: number | null;
+  duplicate_reason: string | null;
+  transaction_id: number | null;
+};
+
+export type ImportUndoPreview = {
+  import_batch_id: number;
+  transaction_count: number;
+  active_transaction_count: number;
+  expenses: string;
+  income: string;
+  edited_after_import_count: number;
+  linked_recovery_count: number;
+  can_undo: boolean;
+};
+
+export type ImportRowChange = {
+  transaction_date?: string;
+  posting_date?: string;
+  description?: string;
+  amount?: string;
+  category_id?: number | null;
+  provider_id?: number | null;
+  status?: "ready" | "skipped";
+};
+
+export function previewImport(environment: Environment, file: File): Promise<ImportPreview> {
+  const body = new FormData();
+  body.append("file", file, file.name);
+  return request(environment, "/imports/preview", { method: "POST", body }, true);
+}
+
+export function stageImport(
+  environment: Environment,
+  file: File,
+  options: {
+    account_id: number;
+    import_profile_id?: number | null;
+    mapping?: ImportMapping | null;
+    save_profile_name?: string | null;
+  },
+): Promise<ImportBatch> {
+  const body = new FormData();
+  body.append("file", file, file.name);
+  body.append("options", JSON.stringify(options));
+  return request(environment, "/imports", { method: "POST", body }, true);
+}
+
+export function getImports(environment: Environment): Promise<Page<ImportBatch>> {
+  return request(environment, "/imports?limit=50");
+}
+
+export function getImport(environment: Environment, batchId: number): Promise<ImportBatch> {
+  return request(environment, `/imports/${batchId}`);
+}
+
+export function getImportRows(
+  environment: Environment,
+  batchId: number,
+): Promise<Page<ImportRow>> {
+  return request(environment, `/imports/${batchId}/rows?limit=1000`);
+}
+
+export function updateImportRow(
+  environment: Environment,
+  batchId: number,
+  rowId: number,
+  change: ImportRowChange,
+): Promise<ImportRow> {
+  return request(
+    environment,
+    `/imports/${batchId}/rows/${rowId}`,
+    { method: "PATCH", body: JSON.stringify(change) },
+    true,
+  );
+}
+
+export function bulkUpdateImportRows(
+  environment: Environment,
+  batchId: number,
+  rowIds: number[],
+  change: Pick<ImportRowChange, "status" | "category_id" | "provider_id">,
+): Promise<{ updated: number }> {
+  return request(
+    environment,
+    `/imports/${batchId}/rows/bulk`,
+    { method: "POST", body: JSON.stringify({ import_row_ids: rowIds, ...change }) },
+    true,
+  );
+}
+
+export function commitImport(environment: Environment, batchId: number): Promise<ImportBatch> {
+  return request(environment, `/imports/${batchId}/commit`, { method: "POST" }, true);
+}
+
+export function getImportUndoPreview(
+  environment: Environment,
+  batchId: number,
+): Promise<ImportUndoPreview> {
+  return request(environment, `/imports/${batchId}/undo-preview`);
+}
+
+export function undoImport(
+  environment: Environment,
+  batchId: number,
+  confirmation: string,
+): Promise<ImportBatch> {
+  return request(
+    environment,
+    `/imports/${batchId}/undo`,
+    { method: "POST", body: JSON.stringify({ confirmation }) },
+    true,
+  );
+}
+
+export function getImportProfiles(environment: Environment): Promise<ImportProfile[]> {
+  return request(environment, "/import-profiles");
+}
+
+export type RecurringFrequency = "weekly" | "monthly" | "quarterly" | "yearly";
+
+export type RecurringDefinition = {
+  recurring_definition_id: number;
+  name: string;
+  account_id: number;
+  provider_id: number | null;
+  category_id: number | null;
+  transaction_kind: "expense" | "income";
+  currency: string;
+  frequency: RecurringFrequency;
+  interval_count: number;
+  start_date: string;
+  end_date: string | null;
+  tolerance_percent: string;
+  notes: string | null;
+  versions: { effective_from: string; amount: string; amount_type: "fixed" | "variable" }[];
+  status: LifecycleStatus;
+};
+
+export type RecurringInput = {
+  name: string;
+  account_id: number;
+  category_id: number | null;
+  transaction_kind: "expense" | "income";
+  amount: string;
+  amount_type: "fixed" | "variable";
+  frequency: RecurringFrequency;
+  interval_count: number;
+  start_date: string;
+  end_date: string | null;
+};
+
+export type ExpectedOccurrence = {
+  recurring_definition_id: number;
+  name: string;
+  account_id: number;
+  transaction_kind: "expense" | "income";
+  due_date: string;
+  expected_amount: string;
+  amount_type: "fixed" | "variable";
+  currency: string;
+  status: "expected" | "overdue" | "confirmed" | "skipped";
+  transaction_id: number | null;
+  deviation_percent: string | null;
+  outside_tolerance: boolean;
+  candidates: {
+    transaction_id: number;
+    transaction_date: string;
+    description: string;
+    amount: string;
+    confidence: number;
+  }[];
+};
+
+export function getRecurring(environment: Environment): Promise<RecurringDefinition[]> {
+  return request(environment, "/recurring");
+}
+
+export function createRecurring(
+  environment: Environment,
+  payload: RecurringInput,
+): Promise<RecurringDefinition> {
+  return request(
+    environment,
+    "/recurring",
+    { method: "POST", body: JSON.stringify(payload) },
+    true,
+  );
+}
+
+export function setRecurringArchived(
+  environment: Environment,
+  definitionId: number,
+  archived: boolean,
+): Promise<RecurringDefinition> {
+  return request(
+    environment,
+    `/recurring/${definitionId}/${archived ? "archive" : "restore"}`,
+    { method: "POST" },
+    true,
+  );
+}
+
+export function getExpectedOccurrences(
+  environment: Environment,
+  dateFrom: string,
+  dateTo: string,
+): Promise<ExpectedOccurrence[]> {
+  return request(environment, `/recurring/expected?date_from=${dateFrom}&date_to=${dateTo}`);
+}
+
+export function confirmOccurrence(
+  environment: Environment,
+  definitionId: number,
+  dueDate: string,
+  payload: { transaction_id?: number; amount?: string },
+): Promise<ExpectedOccurrence> {
+  return request(
+    environment,
+    `/recurring/${definitionId}/occurrences/${dueDate}/confirm`,
+    { method: "POST", body: JSON.stringify(payload) },
+    true,
+  );
+}
+
+export function skipOccurrence(
+  environment: Environment,
+  definitionId: number,
+  dueDate: string,
+): Promise<ExpectedOccurrence> {
+  return request(
+    environment,
+    `/recurring/${definitionId}/occurrences/${dueDate}/skip`,
+    { method: "POST" },
+    true,
+  );
+}
+
+export function reopenOccurrence(
+  environment: Environment,
+  definitionId: number,
+  dueDate: string,
+): Promise<void> {
+  return request(
+    environment,
+    `/recurring/${definitionId}/occurrences/${dueDate}/reopen`,
+    { method: "POST" },
+    true,
+  );
 }

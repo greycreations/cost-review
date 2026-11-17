@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.15-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -6,12 +6,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY pyproject.toml ./
+# requirements.lock pins every runtime dependency with hashes
+# (uv pip compile --universal --generate-hashes), so two builds of one tag
+# install exactly the same third-party code.
+COPY pyproject.toml requirements.lock ./
 COPY app ./app
 RUN apt-get update \
     && apt-get install --no-install-recommends -y postgresql-client \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir . \
+    && pip install --no-cache-dir --require-hashes -r requirements.lock \
+    && pip install --no-cache-dir --no-deps . \
     && addgroup --system costreview \
     && adduser --system --ingroup costreview costreview \
     && mkdir -p /app/storage/attachments /app/storage/backups \

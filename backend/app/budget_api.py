@@ -32,8 +32,9 @@ from app.budget_services import (
     update_analysis_group,
     update_budget,
 )
-from app.dependencies import Auth, CsrfAuth, DatabaseSession
+from app.dependencies import Auth, DatabaseSession, WriterAuth
 from app.ledger_schemas import AnalysisPerspective
+from app.sharing import perspective_for_user
 
 router = APIRouter(tags=["analysis-and-budgets"])
 
@@ -47,7 +48,7 @@ def get_analysis_groups(
 
 @router.post("/analysis-groups", response_model=AnalysisGroupRead, status_code=201)
 def post_analysis_group(
-    payload: AnalysisGroupCreate, _: CsrfAuth, db: DatabaseSession
+    payload: AnalysisGroupCreate, _: WriterAuth, db: DatabaseSession
 ) -> dict[str, object]:
     return analysis_group_values(create_analysis_group(db, payload))
 
@@ -56,7 +57,7 @@ def post_analysis_group(
 def patch_analysis_group(
     group_id: int,
     payload: AnalysisGroupUpdate,
-    _: CsrfAuth,
+    _: WriterAuth,
     db: DatabaseSession,
 ) -> dict[str, object]:
     return analysis_group_values(
@@ -65,14 +66,14 @@ def patch_analysis_group(
 
 
 @router.post("/analysis-groups/{group_id}/archive", response_model=AnalysisGroupRead)
-def archive_analysis_group(group_id: int, _: CsrfAuth, db: DatabaseSession) -> dict[str, object]:
+def archive_analysis_group(group_id: int, _: WriterAuth, db: DatabaseSession) -> dict[str, object]:
     return analysis_group_values(
         set_analysis_group_archived(db, get_analysis_group(db, group_id), True)
     )
 
 
 @router.post("/analysis-groups/{group_id}/restore", response_model=AnalysisGroupRead)
-def restore_analysis_group(group_id: int, _: CsrfAuth, db: DatabaseSession) -> dict[str, object]:
+def restore_analysis_group(group_id: int, _: WriterAuth, db: DatabaseSession) -> dict[str, object]:
     return analysis_group_values(
         set_analysis_group_archived(db, get_analysis_group(db, group_id), False)
     )
@@ -86,7 +87,7 @@ def get_budgets(
 
 
 @router.post("/budgets", response_model=BudgetRead, status_code=201)
-def post_budget(payload: BudgetCreate, auth: CsrfAuth, db: DatabaseSession) -> dict[str, object]:
+def post_budget(payload: BudgetCreate, auth: WriterAuth, db: DatabaseSession) -> dict[str, object]:
     return budget_values(create_budget(db, payload, auth.user.settings.base_currency))
 
 
@@ -94,7 +95,7 @@ def post_budget(payload: BudgetCreate, auth: CsrfAuth, db: DatabaseSession) -> d
 def patch_budget(
     budget_id: int,
     payload: BudgetUpdate,
-    auth: CsrfAuth,
+    auth: WriterAuth,
     db: DatabaseSession,
 ) -> dict[str, object]:
     return budget_values(
@@ -108,12 +109,12 @@ def patch_budget(
 
 
 @router.post("/budgets/{budget_id}/archive", response_model=BudgetRead)
-def archive_budget(budget_id: int, _: CsrfAuth, db: DatabaseSession) -> dict[str, object]:
+def archive_budget(budget_id: int, _: WriterAuth, db: DatabaseSession) -> dict[str, object]:
     return budget_values(set_budget_archived(db, get_budget(db, budget_id), True))
 
 
 @router.post("/budgets/{budget_id}/restore", response_model=BudgetRead)
-def restore_budget(budget_id: int, _: CsrfAuth, db: DatabaseSession) -> dict[str, object]:
+def restore_budget(budget_id: int, _: WriterAuth, db: DatabaseSession) -> dict[str, object]:
     return budget_values(set_budget_archived(db, get_budget(db, budget_id), False))
 
 
@@ -132,7 +133,7 @@ def get_budget_outcome(
         date_from,
         date_to,
         auth.user.settings.base_currency,
-        perspective.value,
+        perspective_for_user(db, perspective.value, auth.user.user_id),
     )
 
 
@@ -151,7 +152,7 @@ def get_budget_transactions(
         date_from,
         date_to,
         auth.user.settings.base_currency,
-        perspective.value,
+        perspective_for_user(db, perspective.value, auth.user.user_id),
     )
 
 
@@ -170,5 +171,5 @@ def get_budget_trend(
         through,
         periods,
         auth.user.settings.base_currency,
-        perspective.value,
+        perspective_for_user(db, perspective.value, auth.user.user_id),
     )

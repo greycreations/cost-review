@@ -5,7 +5,7 @@ household economics. Read `docs/PRODUCT_SPECIFICATION.md`,
 `docs/IMPLEMENTATION_BACKLOG.md`, `docs/DESIGN.md`, and `docs/MVP.md` before
 changing product behavior, architecture, or the interface.
 
-`docs/PRODUCT_SPECIFICATION.md` v1.0 is the requirements baseline and takes
+`docs/PRODUCT_SPECIFICATION.md` (currently v1.8) is the requirements baseline and takes
 precedence when an older document conflicts with it.
 
 ## Product guardrails
@@ -77,5 +77,8 @@ precedence when an older document conflicts with it.
 - Before completing a change, run relevant formatting, linting, PostgreSQL
   integration tests, migration upgrade and drift checks, frontend tests/build,
   Compose validation, and isolation tests.
-- Update README and architecture decisions whenever setup, deployment, trust
-  boundaries, backup behavior, or operating requirements change.
+- Update README, `CHANGELOG.md` and architecture decisions whenever setup,
+  deployment, trust boundaries, backup behavior, or operating requirements change.
+- Every Ledger write route requires the member or owner role (`WriterAuth`);
+  household administration, backups and the Demo/Test reset require the owner
+  role. Add new household tables to `HOUSEHOLD_DATA_TABLES`.

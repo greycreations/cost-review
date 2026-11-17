@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from app.config import Settings, get_settings
 from app.main import create_app
+from app.services import HOUSEHOLD_DATA_TABLES
 
 
 @pytest.fixture(scope="session")
@@ -27,22 +28,21 @@ def client(settings: Settings) -> Generator[TestClient]:
         clean_database(app.state.database)
 
 
+@pytest.fixture
+def registration_client(settings: Settings) -> Generator[TestClient]:
+    """A client for an installation that has opted in to self-registration."""
+
+    app = create_app(settings.model_copy(update={"allow_self_registration": True}))
+    with TestClient(app) as test_client:
+        clean_database(app.state.database)
+        yield test_client
+        clean_database(app.state.database)
+
+
 def clean_database(database) -> None:
+    tables = (*HOUSEHOLD_DATA_TABLES, "sessions", "app_settings", "users")
     with database.engine.begin() as connection:
         connection.execute(
-            text(
-                "TRUNCATE TABLE audit_events, investment_positions, "
-                "investment_portfolio_settings, budget_providers, budget_accounts, budget_tags, "
-                "budget_categories, budgets, analysis_group_providers, "
-                "analysis_group_accounts, analysis_group_tags, analysis_group_categories, "
-                "analysis_groups, "
-                "account_snapshots, refund_links, reimbursement_links, "
-                "transfer_links, transaction_split_tags, "
-                "transaction_split_shares, "
-                "transaction_splits, "
-                "transactions, category_links, provider_links, provider_aliases, accounts, "
-                "categories, providers, tags, sharing_parties, sessions, app_settings, users "
-                "RESTART IDENTITY CASCADE"
-            )
+            text(f"TRUNCATE TABLE {', '.join(tables)} RESTART IDENTITY CASCADE")
         )
         connection.execute(text("UPDATE environment_metadata SET reset_generation = 0"))

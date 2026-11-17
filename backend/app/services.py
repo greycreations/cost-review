@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.config import Settings
 from app.errors import ApiError
-from app.models import AppSettings, AuditEvent, EnvironmentMetadata, Session, User
+from app.models import AppSettings, AuditEvent, EnvironmentMetadata, Session, User, UserRole
 from app.schemas import (
     PasswordChangeRequest,
     SettingsInput,
@@ -25,6 +25,51 @@ from app.security import (
     normalize_username,
     verify_password,
 )
+
+# Every table holding household data, in an order that TRUNCATE ... CASCADE
+# accepts. The Demo/Test reset and the test suite share this list so a new table
+# cannot be forgotten by one of them.
+HOUSEHOLD_DATA_TABLES = (
+    "audit_events",
+    "recurring_occurrences",
+    "recurring_versions",
+    "recurring_definitions",
+    "import_rows",
+    "import_batches",
+    "import_profiles",
+    "investment_positions",
+    "investment_portfolio_settings",
+    "budget_providers",
+    "budget_accounts",
+    "budget_tags",
+    "budget_categories",
+    "budgets",
+    "analysis_group_providers",
+    "analysis_group_accounts",
+    "analysis_group_tags",
+    "analysis_group_categories",
+    "analysis_groups",
+    "account_snapshots",
+    "refund_links",
+    "reimbursement_links",
+    "transfer_links",
+    "transaction_split_tags",
+    "transaction_split_shares",
+    "transaction_splits",
+    "transactions",
+    "category_links",
+    "provider_links",
+    "provider_aliases",
+    "accounts",
+    "categories",
+    "providers",
+    "tags",
+    "sharing_parties",
+)
+
+LOGIN_MAX_FAILURES = 5
+LOGIN_LOCKOUT = timedelta(minutes=15)
+DUMMY_PASSWORD_HASH = hash_password("cost-review-timing-equalizer")
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +103,7 @@ def create_initial_user(db: DbSession, payload: SetupRequest) -> User:
         username=payload.username,
         normalized_username=normalize_username(payload.username),
         password_hash=password_hash,
-        is_admin=True,
+        role=UserRole.OWNER,
     )
     user.settings = AppSettings(**settings_values(payload.settings))
     db.add(user)
@@ -72,7 +117,7 @@ def create_user_account(
     payload: UserCreateRequest,
     *,
     actor_user_id: int | None,
-    allow_admin: bool,
+    allow_role: bool,
 ) -> User:
     normalized_username = normalize_username(payload.username)
     password_hash = hash_password(payload.password)
@@ -87,7 +132,7 @@ def create_user_account(
         username=payload.username,
         normalized_username=normalized_username,
         password_hash=password_hash,
-        is_admin=payload.is_admin if allow_admin else False,
+        role=payload.role if allow_role else UserRole.MEMBER,
     )
     user.settings = AppSettings(**settings_values(payload.settings))
     db.add(user)
@@ -102,10 +147,11 @@ def create_user_account(
             entity_id=user.user_id,
             action="created",
             change_source="user",
+            actor_user_id=actor_user_id,
             changes={
                 "actor_user_id": actor_user_id,
                 "username": user.username,
-                "is_admin": user.is_admin,
+                "role": user.role,
             },
         )
     )
@@ -143,11 +189,13 @@ def update_user_account(
         changes["username"] = {"from": user.username, "to": payload.username}
         user.username = payload.username
         user.normalized_username = normalized_username
-    if payload.is_admin is not None and payload.is_admin != user.is_admin:
-        if user.is_admin and not payload.is_admin and _admin_count(db) <= 1:
-            raise ApiError(409, "last_admin_required", "The final administrator cannot be removed.")
-        changes["is_admin"] = {"from": user.is_admin, "to": payload.is_admin}
-        user.is_admin = payload.is_admin
+    if payload.role is not None and payload.role != user.role:
+        if user.is_owner and payload.role != UserRole.OWNER and _owner_count(db) <= 1:
+            raise ApiError(
+                409, "last_owner_required", "The household must keep at least one owner."
+            )
+        changes["role"] = {"from": user.role, "to": str(payload.role)}
+        user.role = payload.role
     if len(changes) == 1:
         return user
     db.add(
@@ -156,6 +204,7 @@ def update_user_account(
             entity_id=user.user_id,
             action="updated",
             change_source="user",
+            actor_user_id=actor_user_id,
             changes=changes,
         )
     )
@@ -192,6 +241,7 @@ def change_password(
             entity_id=user.user_id,
             action="password_changed",
             change_source="user",
+            actor_user_id=user.user_id,
             changes={"actor_user_id": user.user_id, "other_sessions_revoked": revoked or 0},
         )
     )
@@ -219,6 +269,7 @@ def reset_user_password(
             entity_id=user.user_id,
             action="password_reset",
             change_source="user",
+            actor_user_id=actor_user_id,
             changes={"actor_user_id": actor_user_id, "sessions_revoked": revoked or 0},
         )
     )
@@ -240,11 +291,11 @@ def delete_user_account(
         text("SELECT pg_advisory_xact_lock(hashtext(:lock_name))"),
         {"lock_name": "cost-review-user-administration"},
     )
-    if user.is_admin and _admin_count(db) <= 1:
-        raise ApiError(409, "last_admin_required", "The final administrator cannot be removed.")
+    if user.is_owner and _owner_count(db) <= 1:
+        raise ApiError(409, "last_owner_required", "The household must keep at least one owner.")
     user_id = user.user_id
     username = user.username
-    is_admin = user.is_admin
+    role = user.role
     db.delete(user)
     db.flush()
     db.add(
@@ -253,26 +304,68 @@ def delete_user_account(
             entity_id=user_id,
             action="deleted",
             change_source="user",
+            actor_user_id=actor_user_id,
             changes={
                 "actor_user_id": actor_user_id,
                 "username": username,
-                "is_admin": is_admin,
+                "role": role,
             },
         )
     )
     db.commit()
 
 
-def _admin_count(db: DbSession) -> int:
-    return db.scalar(select(func.count(User.user_id)).where(User.is_admin.is_(True))) or 0
+def _owner_count(db: DbSession) -> int:
+    return db.scalar(select(func.count(User.user_id)).where(User.role == UserRole.OWNER)) or 0
 
 
-def authenticate_user(db: DbSession, username: str, password: str) -> User:
+def authenticate_user(
+    db: DbSession,
+    username: str,
+    password: str,
+    *,
+    max_failures: int = LOGIN_MAX_FAILURES,
+    lockout: timedelta = LOGIN_LOCKOUT,
+) -> User:
+    """Verify credentials with uniform cost and a per-account lockout.
+
+    An unknown username still costs one Argon2 verification, so response time
+    does not reveal which accounts exist. After ``max_failures`` consecutive
+    failures an account is locked for ``lockout``; a locked account is rejected
+    before its password is checked.
+    """
+
     user = db.scalar(
-        select(User).where(User.normalized_username == normalize_username(username))
+        select(User)
+        .where(User.normalized_username == normalize_username(username))
+        .with_for_update()
     )
-    if user is None or not verify_password(user.password_hash, password):
+    if user is None:
+        verify_password(DUMMY_PASSWORD_HASH, password)
         raise ApiError(401, "invalid_credentials", "Username or password is incorrect.")
+
+    now = datetime.now(UTC)
+    if user.locked_until is not None and user.locked_until > now:
+        db.rollback()
+        raise ApiError(
+            429,
+            "account_temporarily_locked",
+            "Too many failed sign-in attempts. Try again later.",
+            [{"retry_after_seconds": int((user.locked_until - now).total_seconds()) + 1}],
+        )
+
+    if not verify_password(user.password_hash, password):
+        user.failed_login_count += 1
+        if user.failed_login_count >= max_failures:
+            user.locked_until = now + lockout
+            user.failed_login_count = 0
+        db.commit()
+        raise ApiError(401, "invalid_credentials", "Username or password is incorrect.")
+
+    if user.failed_login_count or user.locked_until is not None:
+        user.failed_login_count = 0
+        user.locked_until = None
+        db.commit()
     return user
 
 
@@ -312,19 +405,7 @@ def reset_test_environment(
 
     metadata = get_environment_metadata(db)
     db.execute(
-        text(
-            "TRUNCATE TABLE audit_events, investment_positions, "
-            "investment_portfolio_settings, budget_providers, budget_accounts, budget_tags, "
-            "budget_categories, budgets, analysis_group_providers, "
-            "analysis_group_accounts, analysis_group_tags, analysis_group_categories, "
-            "analysis_groups, "
-            "account_snapshots, refund_links, reimbursement_links, "
-            "transfer_links, transaction_split_tags, transaction_split_shares, "
-            "transaction_splits, "
-            "transactions, "
-            "category_links, provider_links, provider_aliases, "
-            "accounts, categories, providers, tags, sharing_parties RESTART IDENTITY CASCADE"
-        )
+        text(f"TRUNCATE TABLE {', '.join(HOUSEHOLD_DATA_TABLES)} RESTART IDENTITY CASCADE")
     )
     db.execute(delete(Session).where(Session.session_token_hash != current_session_hash))
     defaults = settings_values(SettingsInput())
