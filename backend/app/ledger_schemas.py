@@ -288,20 +288,21 @@ class TagRead(ArchivedApiModel):
 
 class SharingPartyCreate(BaseModel):
     name: Name120
-    is_self: bool = False
+    user_id: int | None = Field(default=None, gt=0)
     notes: Notes | None = None
 
 
 class SharingPartyUpdate(BaseModel):
     name: Name120 | None = None
-    is_self: bool | None = None
+    user_id: int | None = Field(default=None, gt=0)
     notes: Notes | None = None
 
 
 class SharingPartyRead(ArchivedApiModel):
     sharing_party_id: int
     name: str
-    is_self: bool
+    user_id: int | None
+    username: str | None
     notes: str | None
     created_at: datetime
     updated_at: datetime
@@ -315,7 +316,7 @@ class ShareAllocationInput(BaseModel):
 class ShareAllocationRead(BaseModel):
     sharing_party_id: int
     percentage: Decimal
-    is_self: bool
+    user_id: int | None
 
 
 class TransactionSplitInput(BaseModel):
@@ -508,6 +509,7 @@ class AuditEventRead(ApiModel):
     entity_id: int | None
     action: str
     change_source: str
+    actor_user_id: int | None
     changes: dict[str, object]
     created_at: datetime
 

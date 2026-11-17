@@ -196,20 +196,31 @@ def test_tags_parties_and_test_reset_obey_lifecycle_and_environment_contract(
         "/api/v1/tags", headers=headers, json={"name": "Semester", "color": "#4A67D6"}
     )
     assert tag.status_code == 201
+    owner_id = client.get("/api/v1/auth/session").json()["user_id"]
     party = client.post(
         "/api/v1/sharing-parties",
         headers=headers,
-        json={"name": "Jag", "is_self": True},
+        json={"name": "Jag", "user_id": owner_id},
     )
     assert party.status_code == 201
+    assert party.json()["user_id"] == owner_id
+    assert party.json()["username"] == client.get("/api/v1/auth/session").json()["username"]
 
     other_self = client.post(
         "/api/v1/sharing-parties",
         headers=headers,
-        json={"name": "Också jag", "is_self": True},
+        json={"name": "Också jag", "user_id": owner_id},
     )
     assert other_self.status_code == 409
-    assert other_self.json()["error"]["code"] == "active_self_exists"
+    assert other_self.json()["error"]["code"] == "sharing_party_user_linked"
+
+    unknown_member = client.post(
+        "/api/v1/sharing-parties",
+        headers=headers,
+        json={"name": "Okänd", "user_id": 999_999},
+    )
+    assert unknown_member.status_code == 422
+    assert unknown_member.json()["error"]["code"] == "sharing_party_user_not_found"
 
     reset = client.post(
         "/api/v1/test/reset",

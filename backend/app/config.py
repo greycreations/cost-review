@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     csrf_cookie_name: str = "cost_review_production_csrf"
     cookie_secure: bool = True
     session_ttl_hours: int = Field(default=12, ge=1, le=720)
-    allow_self_registration: bool = True
+    allow_self_registration: bool = False
 
     app_allowed_origins: str = "http://localhost:8080"
     app_allowed_hosts: str = "localhost,127.0.0.1"

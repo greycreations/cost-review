@@ -32,6 +32,7 @@ from app.models import (
     Transaction,
     TransactionSplit,
 )
+from app.sharing import TOTAL, Perspective, share_multiplier
 from app.transaction_services import (
     MONEY_QUANTUM,
     _linked_expense_ids,
@@ -176,7 +177,7 @@ def budget_outcome(
     date_from: date,
     date_to: date,
     base_currency: str,
-    perspective: str = "total",
+    perspective: Perspective = TOTAL,
 ) -> dict[str, Any]:
     if date_to < date_from:
         raise ApiError(422, "date_range_invalid", "date_to must not precede date_from.")
@@ -225,7 +226,7 @@ def budget_outcome(
         "date_from": date_from,
         "date_to": date_to,
         "base_currency": base_currency,
-        "perspective": perspective,
+        "perspective": perspective.kind,
         "target_amount": target,
         "actual_amount": actual,
         "remaining_amount": remaining,
@@ -244,7 +245,7 @@ def budget_transactions(
     date_from: date,
     date_to: date,
     base_currency: str,
-    perspective: str = "total",
+    perspective: Perspective = TOTAL,
 ) -> list[dict[str, Any]]:
     if date_to < date_from:
         raise ApiError(422, "date_range_invalid", "date_to must not precede date_from.")
@@ -261,7 +262,7 @@ def budget_trend(
     through: date,
     period_count: int,
     base_currency: str,
-    perspective: str = "total",
+    perspective: Perspective = TOTAL,
 ) -> dict[str, Any]:
     points: list[dict[str, Any]] = []
     for period_start, period_end in _recent_budget_periods(model, through, period_count):
@@ -282,7 +283,7 @@ def budget_trend(
     return {
         "budget_id": model.budget_id,
         "base_currency": base_currency,
-        "perspective": perspective,
+        "perspective": perspective.kind,
         "points": points,
     }
 
@@ -398,7 +399,7 @@ def _budget_matches(
     date_from: date,
     date_to: date,
     base_currency: str,
-    perspective: str = "total",
+    perspective: Perspective = TOTAL,
 ) -> list[dict[str, Any]]:
     transactions = list(
         db.scalars(
@@ -443,7 +444,7 @@ def _budget_matches(
             components = [
                 (
                     split,
-                    split.converted_amount * _share_multiplier(split, perspective),
+                    split.converted_amount * share_multiplier(split, perspective),
                 )
                 for split in transaction.splits
                 if split.converted_amount is not None
@@ -452,7 +453,7 @@ def _budget_matches(
         else:
             source = originals[links[transaction.transaction_id]]
             components = [
-                (split, amount * _share_multiplier(split, perspective))
+                (split, amount * share_multiplier(split, perspective))
                 for split, amount in allocate_recovery_to_splits(
                     source, transaction.converted_amount
                 )
@@ -507,7 +508,7 @@ def _missing_fx_match_count(
     date_from: date,
     date_to: date,
     base_currency: str,
-    perspective: str = "total",
+    perspective: Perspective = TOTAL,
 ) -> int:
     transactions = list(
         db.scalars(
@@ -555,7 +556,7 @@ def _missing_fx_match_count(
             and _header_matches(source, selection)
             and any(
                 _selection_matches(split, selection)
-                and _share_multiplier(split, perspective) > 0
+                and share_multiplier(split, perspective) > 0
                 for split in source.splits
             )
         ):
@@ -642,7 +643,7 @@ def _rollover_entering(
     selection: CompiledSelection,
     selected_start: date,
     base_currency: str,
-    perspective: str = "total",
+    perspective: Perspective = TOTAL,
 ) -> Decimal:
     prior_end = selected_start - timedelta(days=1)
     periods = _periods_for_budget(model, model.starts_on, prior_end)
@@ -663,19 +664,6 @@ def _rollover_entering(
         Decimal("0"),
     )
     return (model.amount * len(periods) - actual).quantize(MONEY_QUANTUM)
-
-
-def _share_multiplier(split: TransactionSplit, perspective: str) -> Decimal:
-    if perspective == "total" or not split.share_allocations:
-        return Decimal("1")
-    return sum(
-        (
-            allocation.percentage
-            for allocation in split.share_allocations
-            if allocation.sharing_party.is_self
-        ),
-        Decimal("0"),
-    ) / Decimal("100")
 
 
 def _overlapping_budget_ids(

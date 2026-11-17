@@ -55,19 +55,22 @@ def get_auth_context(
     if user is None:
         raise ApiError(401, "authentication_required", "Authentication is required.")
     session.last_seen_at = now
+    # Audit events recorded through this database session are attributed to the
+    # signed-in household member.
+    db.info["actor_user_id"] = user.user_id
     return AuthContext(session=session, user=user)
 
 
 Auth = Annotated[AuthContext, Depends(get_auth_context)]
 
 
-def require_admin(auth: Auth) -> AuthContext:
-    if not auth.user.is_admin:
-        raise ApiError(403, "admin_required", "Administrator access is required.")
+def require_owner(auth: Auth) -> AuthContext:
+    if not auth.user.is_owner:
+        raise ApiError(403, "owner_required", "Household owner access is required.")
     return auth
 
 
-AdminAuth = Annotated[AuthContext, Depends(require_admin)]
+OwnerAuth = Annotated[AuthContext, Depends(require_owner)]
 
 
 def require_csrf(
@@ -90,10 +93,23 @@ def require_csrf(
 CsrfAuth = Annotated[AuthContext, Depends(require_csrf)]
 
 
-def require_admin_csrf(auth: CsrfAuth) -> AuthContext:
-    if not auth.user.is_admin:
-        raise ApiError(403, "admin_required", "Administrator access is required.")
+def require_owner_csrf(auth: CsrfAuth) -> AuthContext:
+    if not auth.user.is_owner:
+        raise ApiError(403, "owner_required", "Household owner access is required.")
     return auth
 
 
-AdminCsrfAuth = Annotated[AuthContext, Depends(require_admin_csrf)]
+OwnerCsrfAuth = Annotated[AuthContext, Depends(require_owner_csrf)]
+
+
+def require_writer_csrf(auth: CsrfAuth) -> AuthContext:
+    if not auth.user.can_write:
+        raise ApiError(
+            403,
+            "read_only_member",
+            "Your household role can view the ledger but not change it.",
+        )
+    return auth
+
+
+WriterAuth = Annotated[AuthContext, Depends(require_writer_csrf)]
