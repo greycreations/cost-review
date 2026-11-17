@@ -10,7 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.16,<2",
   "argon2-cffi>=25.1,<26",
-  "cryptography>=45,<47",
+  "cryptography>=45,<51",
   "fastapi>=0.116,<1",
   "httpx>=0.28,<1",
   "openpyxl>=3.1,<4",
@@ -24,8 +24,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "hypothesis>=6.130,<7",
-  "pytest>=8.4,<9",
-  "pytest-cov>=6.2,<7",
+  "pytest>=8.4,<10",
+  "pytest-cov>=6.2,<8",
   "ruff>=0.12,<1",
 ]
 
