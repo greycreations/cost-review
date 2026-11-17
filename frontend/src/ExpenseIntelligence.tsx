@@ -134,7 +134,7 @@ export function ExpenseIntelligence({
               {currentForecast.budget_risks?.length ? (
                 <div className="table-scroll">
                   <h3>{labels.budgetRisk}</h3>
-                  <table aria-label={labels.budgetRisk}>
+                  <table className="financial-table" aria-label={labels.budgetRisk}>
                     <thead><tr><th>{labels.budget}</th><th>{labels.target}</th><th>{labels.estimate}</th><th>{labels.difference}</th></tr></thead>
                     <tbody>{currentForecast.budget_risks.map((risk) => (
                       <tr key={risk.budget_id}>
@@ -158,15 +158,15 @@ export function ExpenseIntelligence({
             <p className="quiet-copy">{labels.largestIncrease} <strong>{largest.category_name ?? labels.uncategorized} · {money(largest.change, currency, language)}</strong></p>
           ) : null}
           {changes.length === 0 ? <p className="analysis-empty">{labels.noChanges}</p> : (
-            <div className="table-scroll"><table aria-label={labels.changes}>
+            <div className="table-scroll"><table className="financial-table" aria-label={labels.changes}>
               <thead><tr><th>{labels.category}</th><th>{labels.current}<br /><small>{from} – {to}</small></th><th>{labels.previous}<br /><small>{comparison.date_from} – {comparison.date_to}</small></th><th>{labels.difference}</th></tr></thead>
               <tbody>{changes.map((change) => {
                 const name = change.category_name ?? labels.uncategorized;
                 return (
                   <tr key={change.category_id ?? "uncategorized"}>
                     <th scope="row">{name}</th>
-                    <td><button aria-label={`${labels.transactions} · ${name} · ${labels.current} · ${money(change.current_amount, currency, language)}`} className="ghost-button" type="button" onClick={() => selectDetail({ from, to, categoryId: change.category_id })}>{money(change.current_amount, currency, language)}</button></td>
-                    <td><button aria-label={`${labels.transactions} · ${name} · ${labels.previous} · ${money(change.previous_amount, currency, language)}`} className="ghost-button" type="button" onClick={() => selectDetail({ from: comparison.date_from, to: comparison.date_to, categoryId: change.category_id })}>{money(change.previous_amount, currency, language)}</button></td>
+                    <td><button aria-label={`${labels.transactions} · ${name} · ${labels.current} · ${money(change.current_amount, currency, language)}`} className="ghost-button financial-table-link" type="button" onClick={() => selectDetail({ from, to, categoryId: change.category_id })}>{money(change.current_amount, currency, language)}</button></td>
+                    <td><button aria-label={`${labels.transactions} · ${name} · ${labels.previous} · ${money(change.previous_amount, currency, language)}`} className="ghost-button financial-table-link" type="button" onClick={() => selectDetail({ from: comparison.date_from, to: comparison.date_to, categoryId: change.category_id })}>{money(change.previous_amount, currency, language)}</button></td>
                     <td>{money(change.change, currency, language)}</td>
                   </tr>
                 );
@@ -220,7 +220,7 @@ function ExpenseDetail({ detail, environment, language, filters, currency, close
         <p role="alert">{labels.rowError}</p>
       ) : current.page.total === 0 ? <p>{labels.empty}</p> : (
         <>
-          <div className="table-scroll"><table aria-label={labels.transactions}>
+          <div className="table-scroll"><table className="financial-table" aria-label={labels.transactions}>
             <thead><tr><th>{labels.date}</th><th>{labels.description}</th><th>{labels.contribution}</th></tr></thead>
             <tbody>{current.page.items.map((row) => (
               <tr key={row.transaction_id}><td>{row.transaction_date}</td><td>{row.description}</td><td>{money(row.amount, currency, language)}</td></tr>

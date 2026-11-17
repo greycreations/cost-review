@@ -37,7 +37,7 @@ def create_app(runtime_settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title=settings.app_name,
-        version="0.9.0",
+        version="0.9.1",
         description="Cost Review Release 1 platform and ledger API.",
         lifespan=lifespan,
         docs_url=f"{settings.api_prefix}/docs",
