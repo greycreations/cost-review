@@ -37,6 +37,7 @@ from app.models import (
     ProviderLink,
     SharingParty,
     Tag,
+    User,
 )
 
 
@@ -409,14 +410,14 @@ def _replace_tag_references(db: DbSession, source_id: int, target_id: int) -> No
 
 
 def create_sharing_party(db: DbSession, payload: SharingPartyCreate) -> SharingParty:
-    if payload.is_self:
-        _ensure_no_active_self(db)
+    if payload.user_id is not None:
+        _ensure_linkable_user(db, payload.user_id)
     model = SharingParty(
         **payload.model_dump(mode="python"),
         normalized_name=normalize_name(payload.name),
     )
     db.add(model)
-    _commit(db, "active_self_exists")
+    _commit(db, "sharing_party_user_linked")
     db.refresh(model)
     return model
 
@@ -425,13 +426,14 @@ def update_sharing_party(
     db: DbSession, model: SharingParty, payload: SharingPartyUpdate
 ) -> SharingParty:
     values = payload.model_dump(exclude_unset=True, mode="python")
-    _reject_nulls(values, {"name", "is_self"})
-    if values.get("is_self") is True and not model.is_self and model.status == "active":
-        _ensure_no_active_self(db, exclude_id=model.sharing_party_id)
+    _reject_nulls(values, {"name"})
+    new_user_id = values.get("user_id")
+    if new_user_id is not None and new_user_id != model.user_id and model.status == "active":
+        _ensure_linkable_user(db, new_user_id, exclude_id=model.sharing_party_id)
     if "name" in values:
         values["normalized_name"] = normalize_name(values["name"])
     _apply(model, values)
-    _commit(db, "active_self_exists")
+    _commit(db, "sharing_party_user_linked")
     db.refresh(model)
     return model
 
@@ -446,8 +448,8 @@ def archive_model[ModelT](db: DbSession, model: ModelT) -> ModelT:
 
 
 def restore_model[ModelT](db: DbSession, model: ModelT) -> ModelT:
-    if isinstance(model, SharingParty) and model.is_self:
-        _ensure_no_active_self(db, exclude_id=model.sharing_party_id)
+    if isinstance(model, SharingParty) and model.user_id is not None:
+        _ensure_linkable_user(db, model.user_id, exclude_id=model.sharing_party_id)
     if model.status == "archived":  # type: ignore[attr-defined]
         model.status = "active"  # type: ignore[attr-defined]
         model.archived_at = None  # type: ignore[attr-defined]
@@ -461,9 +463,15 @@ def delete_configuration_model(db: DbSession, model: Any) -> None:
     _commit(db)
 
 
-def _ensure_no_active_self(db: DbSession, exclude_id: int | None = None) -> None:
+def _ensure_linkable_user(db: DbSession, user_id: int, exclude_id: int | None = None) -> None:
+    if db.get(User, user_id) is None:
+        raise ApiError(
+            422,
+            "sharing_party_user_not_found",
+            "The household member linked to a sharing party must exist.",
+        )
     statement = select(SharingParty).where(
-        SharingParty.is_self.is_(True),
+        SharingParty.user_id == user_id,
         SharingParty.status == "active",
     )
     if exclude_id is not None:
@@ -471,8 +479,8 @@ def _ensure_no_active_self(db: DbSession, exclude_id: int | None = None) -> None
     if db.scalar(statement) is not None:
         raise ApiError(
             409,
-            "active_self_exists",
-            "Only one active sharing party can represent the signed-in owner.",
+            "sharing_party_user_linked",
+            "That household member is already linked to another active sharing party.",
         )
 
 
