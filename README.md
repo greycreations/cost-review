@@ -155,13 +155,13 @@ unset GHCR_TOKEN
 
 Never copy a development machine's `.env` to another installation.
 
-### Upgrade an existing installation to 0.8.0
+### Upgrade an existing installation to 0.9.0
 
 Keep the existing `.env` so database passwords, backup keys, and installation
 identity remain unchanged. Create a current backup, then change only this line:
 
 ```sh
-COST_REVIEW_VERSION=0.8.0
+COST_REVIEW_VERSION=0.9.0
 ```
 
 Pull and recreate the application containers from the installation folder:
@@ -172,13 +172,9 @@ docker compose up --detach --wait
 docker compose ps
 ```
 
-No new database migration is required when upgrading from 0.7.0. The API containers still apply all
-available migrations independently to
-Production and Demo/Test before they start. The oldest existing account in each data plane becomes
-administrator automatically. Existing stock positions are preserved and marked as stocks; database,
-attachment and backup volumes are unchanged. Add `ALLOW_SELF_REGISTRATION=false` to the existing
-`.env` only if administrator-created accounts are preferred; omission keeps the trusted-network
-default enabled.
+No new database migration is required when upgrading from 0.8.0. The API still
+checks and applies any outstanding migrations independently in Production and
+Demo/Test, and reuses the existing database, attachment, and backup volumes.
 
 ### Build from source for development
 
@@ -470,6 +466,20 @@ contributing filtered transactions. Analysis Groups can now preserve reusable
 category, tag, account, and provider include/exclude selections for budgets.
 Saved views, recurring and amount/currency filtering in Overview, linked-master
 rollups, and named/moveable dashboard layouts remain later Epic 5 slices.
+
+The Overview also shows posted cash flow for current and cash accounts, using
+posting date and the full posted amounts in those accounts. Its breakdown
+distinguishes card settlements, net savings and investment transfers, and debt
+principal. The existing period result retains its transaction-date basis.
+See `docs/adr/0019-posted-cash-flow.md`.
+
+Overview's expense comparison shows changes by category and signed contributing
+amounts for both periods. The same server-side allocation produces the totals
+and transaction detail in Total or My Share. For the current month, the forecast
+uses actual expenses to date plus the median remaining net expenses from the
+last three completed months with usable expense data. With sufficient data, the
+unfiltered view also identifies calendar-month budgets projected to exceed their
+own targets, using each budget's selection and rollover rules.
 
 The Budget view creates calendar-month, salary-cycle, calendar-year, or custom
 budgets with reset/rollover behavior and category/tag/account/provider selection. Outcomes are

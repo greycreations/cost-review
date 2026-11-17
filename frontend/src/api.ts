@@ -439,6 +439,20 @@ export type TransferInput = {
   notes?: string | null;
 };
 
+export type PostedCashFlow = {
+  base_currency: string;
+  account_count: number;
+  missing_fx_count: number;
+  inflows: string;
+  expenses: string;
+  card_payments: string;
+  savings: string;
+  investment: string;
+  debt_repayment: string;
+  other_transfers: string;
+  net_movement: string;
+};
+
 export type LedgerSummary = {
   date_from: string;
   date_to: string;
@@ -477,7 +491,43 @@ export type LedgerAnalysis = {
 
 export type AnalysisComparisonMode = "none" | "previous_period" | "previous_year";
 
+export type ExpenseChange = {
+  category_id: number | null;
+  category_name: string | null;
+  current_amount: string;
+  previous_amount: string;
+  change: string;
+};
+
+export type ExpenseContribution = {
+  transaction_id: number;
+  transaction_date: string;
+  description: string;
+  amount: string;
+};
+
+export type MonthExpenseForecast = {
+  date_from: string;
+  date_to: string;
+  as_of: string;
+  base_currency: string;
+  history_month_count: number;
+  missing_fx_count: number;
+  actual_expenses: string;
+  forecast_expenses: string | null;
+  budget_risks: {
+    budget_id: number;
+    name: string;
+    actual_amount: string;
+    target_amount: string;
+    forecast_amount: string;
+    overrun: string;
+  }[];
+};
+
 export type LedgerComparison = {
+  expense_changes: ExpenseChange[];
+  expense_change_total: string;
   mode: Exclude<AnalysisComparisonMode, "none">;
   date_from: string;
   date_to: string;
@@ -1253,6 +1303,15 @@ export function getLedgerSummary(
   return request(environment, `/transactions/summary?${query.toString()}`);
 }
 
+export function getPostedCashFlow(
+  environment: Environment,
+  dateFrom: string,
+  dateTo: string,
+): Promise<PostedCashFlow> {
+  const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  return request(environment, `/transactions/cash-flow?${query.toString()}`);
+}
+
 export function getLedgerAnalysis(
   environment: Environment,
   dateFrom: string,
@@ -1267,6 +1326,30 @@ export function getLedgerAnalysis(
   });
   appendLedgerFilters(query, filters);
   return request(environment, `/transactions/analysis?${query.toString()}`);
+}
+
+export function getExpenseContributions(
+  environment: Environment,
+  from: string,
+  to: string,
+  filters: LedgerFilters,
+  uncategorized: boolean,
+  offset: number,
+): Promise<Page<ExpenseContribution>> {
+  const query = new URLSearchParams({
+    date_from: from, date_to: to, offset: String(offset), uncategorized: String(uncategorized),
+  });
+  appendLedgerFilters(query, filters);
+  return request(environment, `/transactions/expense-contributions?${query.toString()}`);
+}
+
+export function getMonthExpenseForecast(
+  environment: Environment,
+  filters: LedgerFilters,
+): Promise<MonthExpenseForecast> {
+  const query = new URLSearchParams();
+  appendLedgerFilters(query, filters);
+  return request(environment, `/transactions/month-forecast?${query.toString()}`);
 }
 
 function appendLedgerFilters(query: URLSearchParams, filters: LedgerFilters): void {

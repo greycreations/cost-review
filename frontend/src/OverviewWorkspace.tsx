@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
+import { ExpenseIntelligence, type ExpenseSelection } from "./ExpenseIntelligence";
+
 import {
   getAccounts,
   getCategories,
   getLedgerAnalysis,
   getLedgerSummary,
+  getPostedCashFlow,
   getProviders,
   getTags,
   getTransactions,
@@ -17,6 +20,7 @@ import {
   type LedgerAnalysis,
   type LedgerSummary,
   type LedgerTrendPoint,
+  type PostedCashFlow,
   type Provider,
   type Tag,
   type Transaction,
@@ -33,7 +37,20 @@ const copy = {
     currentMonth: "Denna månad",
     income: "Inkomster",
     expenses: "Utgifter",
-    net: "Netto",
+    net: "Periodresultat",
+    postedFlow: "Bokfört kassaflöde",
+    postedScope: "Bokföringsdatum för vardags- och kontantkonton. Visar totalen för dessa konton.",
+    postedUnavailable: "Det gick inte att hämta det bokförda kassaflödet.",
+    postedEmpty: "Lägg till ett vardags- eller kontantkonto för att se kassaflödet.",
+    postedChange: "Nettoflöde under månaden",
+    postedBreakdown: "Visa hur förändringen räknas fram",
+    postedInflows: "Inkomster och återbetalningar",
+    postedExpenses: "Utgifter betalda från kontona",
+    postedCards: "Kortfakturor",
+    postedSavings: "Sparande, netto",
+    postedInvestments: "Investeringsinsättningar, netto",
+    postedDebt: "Amortering",
+    postedOther: "Övriga överföringar",
     entries: "Registrerade poster",
     cashFlow: "Inkomster och utgifter över månaden",
     cashFlowLead: "Beloppen visas per transaktionsdatum i basvalutan.",
@@ -90,7 +107,20 @@ const copy = {
     currentMonth: "This month",
     income: "Income",
     expenses: "Expenses",
-    net: "Net",
+    net: "Period result",
+    postedFlow: "Posted cash flow",
+    postedScope: "Posting dates for current and cash accounts. Shows the total for these accounts.",
+    postedUnavailable: "Posted cash flow could not be loaded.",
+    postedEmpty: "Add a current or cash account to see posted cash flow.",
+    postedChange: "Net flow this month",
+    postedBreakdown: "Show how the change is calculated",
+    postedInflows: "Income and recoveries",
+    postedExpenses: "Expenses paid from these accounts",
+    postedCards: "Credit card payments",
+    postedSavings: "Net savings transfers",
+    postedInvestments: "Net investment transfers",
+    postedDebt: "Debt principal repayments",
+    postedOther: "Other transfers",
     entries: "Recorded entries",
     cashFlow: "Income and expenses through the month",
     cashFlowLead: "Amounts are shown by transaction date in the base currency.",
@@ -165,16 +195,19 @@ export type OverviewDrilldown = {
 export function OverviewWorkspace({
   environment,
   language,
+  timezone,
   onNavigateAccounts,
   onNavigateTransactions,
 }: {
   environment: Environment;
   language: Language;
+  timezone: string;
   onNavigateAccounts: () => void;
   onNavigateTransactions: (drilldown?: OverviewDrilldown) => void;
 }) {
   const labels = copy[language];
-  const [selectedMonth, setSelectedMonth] = useState(currentMonthKey);
+  const currentMonth = currentMonthKey(timezone);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [comparison, setComparison] = useState<AnalysisComparisonMode>("previous_period");
   const [perspective, setPerspective] = useState<AnalysisPerspective>("total");
   const [filters, setFilters] = useState({
@@ -238,6 +271,8 @@ export function OverviewWorkspace({
     };
   }, [comparison, environment, ledgerFilters, period.from, period.to, requestKey]);
 
+  const [selection, setSelection] = useState<{ key: string; detail: ExpenseSelection } | null>(null);
+  const selectDetail = (detail: ExpenseSelection | null) => setSelection(detail ? { key: requestKey, detail } : null);
   const currentData = data?.key === requestKey ? data : null;
   const summary = currentData?.summary ?? null;
   const analysis = currentData?.analysis ?? null;
@@ -251,7 +286,7 @@ export function OverviewWorkspace({
 
   const accountNames = new Map(accounts.map((account) => [account.account_id, account.name]));
   const providerNames = new Map(providers.map((provider) => [provider.provider_id, provider.name]));
-  const isCurrentMonth = selectedMonth === currentMonthKey();
+  const isCurrentMonth = selectedMonth === currentMonth;
 
   return (
     <section className="workspace-view overview-view" aria-busy={loading} aria-labelledby="overview-title">
@@ -264,7 +299,7 @@ export function OverviewWorkspace({
         <div className="workspace-actions">
           <MonthPicker labels={labels} onChange={setSelectedMonth} selectedMonth={selectedMonth} />
           {!isCurrentMonth ? (
-            <button className="ghost-button" onClick={() => setSelectedMonth(currentMonthKey())} type="button">
+            <button className="ghost-button" onClick={() => setSelectedMonth(currentMonth)} type="button">
               {labels.currentMonth}
             </button>
           ) : null}
@@ -301,6 +336,38 @@ export function OverviewWorkspace({
         </p>
       ) : null}
 
+      <PostedCashFlowPanel
+        key={`${environment}:${period.from}:${period.to}`}
+        environment={environment}
+        from={period.from}
+        to={period.to}
+        labels={labels}
+        language={language}
+      />
+
+      <ExpenseIntelligence
+        key={requestKey}
+        environment={environment}
+        language={language}
+        from={period.from}
+        to={period.to}
+        currency={summary?.base_currency}
+        comparison={analysis?.comparison ?? null}
+        filters={ledgerFilters}
+        showForecast={isCurrentMonth}
+        detail={selection?.key === requestKey ? selection.detail : null}
+        selectDetail={selectDetail}
+        openTransactions={(detail) => onNavigateTransactions({
+          dateFrom: detail.from,
+          dateTo: detail.to,
+          accountId: ledgerFilters.accountId ?? undefined,
+          providerId: ledgerFilters.providerId ?? undefined,
+          categoryId: detail.categoryId ?? undefined,
+          tagId: ledgerFilters.tagId ?? undefined,
+          isBaseCost: ledgerFilters.isBaseCost ?? undefined,
+        })}
+      />
+
       <div className="overview-analysis-grid">
         <CashFlowChart
           comparison={analysis?.comparison ?? null}
@@ -315,15 +382,7 @@ export function OverviewWorkspace({
           currency={summary?.base_currency ?? analysis?.base_currency ?? "SEK"}
           labels={labels}
           language={language}
-          onDrillDown={(categoryId) => onNavigateTransactions({
-            dateFrom: period.from,
-            dateTo: period.to,
-            accountId: ledgerFilters.accountId ?? undefined,
-            providerId: ledgerFilters.providerId ?? undefined,
-            categoryId,
-            tagId: ledgerFilters.tagId ?? undefined,
-            isBaseCost: ledgerFilters.isBaseCost ?? undefined,
-          })}
+          onDrillDown={(categoryId) => selectDetail({ from: period.from, to: period.to, categoryId })}
         />
         <SpendingPaceChart
           comparison={analysis?.comparison ?? null}
@@ -339,15 +398,7 @@ export function OverviewWorkspace({
           currency={summary?.base_currency ?? analysis?.base_currency ?? "SEK"}
           labels={labels}
           language={language}
-          onDrillDown={(categoryId) => onNavigateTransactions({
-            dateFrom: period.from,
-            dateTo: period.to,
-            accountId: ledgerFilters.accountId ?? undefined,
-            providerId: ledgerFilters.providerId ?? undefined,
-            categoryId: categoryId ?? undefined,
-            tagId: ledgerFilters.tagId ?? undefined,
-            isBaseCost: ledgerFilters.isBaseCost ?? undefined,
-          })}
+          onDrillDown={(categoryId) => selectDetail({ from: period.from, to: period.to, categoryId })}
         />
       </div>
 
@@ -393,6 +444,67 @@ export function OverviewWorkspace({
           </div>
         )}
       </section>
+    </section>
+  );
+}
+
+function PostedCashFlowPanel({ environment, from, to, labels, language }: {
+  environment: Environment;
+  from: string;
+  to: string;
+  labels: Labels;
+  language: Language;
+}) {
+  const [result, setResult] = useState<PostedCashFlow | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getPostedCashFlow(environment, from, to)
+      .then((data) => {
+        if (active) setResult(data);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [environment, from, to]);
+
+  const rows = result ? [
+    [labels.postedInflows, result.inflows],
+    [labels.postedExpenses, result.expenses],
+    [labels.postedCards, result.card_payments],
+    [labels.postedSavings, result.savings],
+    [labels.postedInvestments, result.investment],
+    [labels.postedDebt, result.debt_repayment],
+    [labels.postedOther, result.other_transfers],
+  ] : [];
+
+  return (
+    <section className="recent-panel">
+      <div className="recent-heading"><h2>{labels.postedFlow}</h2></div>
+      <p className="quiet-copy">{labels.postedScope}</p>
+      {failed ? <p className="form-error" role="alert">{labels.postedUnavailable}</p> : null}
+      {!result && !failed ? <p className="quiet-copy" role="status">{labels.loading}</p> : null}
+      {result?.account_count === 0 ? <p className="quiet-copy">{labels.postedEmpty}</p> : null}
+      {result && result.account_count > 0 ? (
+        <>
+          <Metric label={labels.postedChange} value={result.net_movement} currency={result.base_currency} language={language} />
+          {result.missing_fx_count > 0 ? (
+            <p className="attention-note">{result.missing_fx_count} {labels.missingFx}</p>
+          ) : null}
+          <details className="chart-data-table">
+            <summary>{labels.postedBreakdown}</summary>
+            <div className="table-scroll"><table aria-label={labels.postedFlow}>
+              <tbody>{rows.map(([label, amount]) => (
+                <tr key={label}><th scope="row">{label}</th><td>{money(amount, result.base_currency, language)}</td></tr>
+              ))}</tbody>
+            </table></div>
+          </details>
+        </>
+      ) : null}
     </section>
   );
 }
@@ -603,7 +715,7 @@ function CategoryChart({ categories, comparisonCategories, currency, labels, lan
       <div className="analysis-panel-heading"><div><h2 id="category-chart-title">{labels.categoryBreakdown}</h2><p>{labels.categoryLead}</p></div></div>
       {categories.length === 0 ? <p className="analysis-empty">{labels.noCategories}</p> : (
         <>
-          <div className="category-bars" role="img" aria-labelledby="category-chart-title category-chart-description">
+          <div className="category-bars" role="group" aria-labelledby="category-chart-title" aria-describedby="category-chart-description">
             <span className="sr-only" id="category-chart-description">{labels.categoryLead}</span>
             {chartCategories.map((category) => {
               const name = category.category_name ?? labels.uncategorized;
@@ -631,9 +743,9 @@ function CategoryChart({ categories, comparisonCategories, currency, labels, lan
   );
 }
 
-function currentMonthKey(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+function currentMonthKey(timeZone: string): string {
+  return new Intl.DateTimeFormat("sv-SE", { year: "numeric", month: "2-digit", timeZone })
+    .format(new Date());
 }
 
 function monthPeriod(month: string): { from: string; to: string } {

@@ -641,6 +641,22 @@ class LedgerSummaryRead(BaseModel):
     perspective: AnalysisPerspective
 
 
+class CashFlowRead(BaseModel):
+    date_from: date
+    date_to: date
+    base_currency: str
+    account_count: int
+    missing_fx_count: int
+    inflows: Decimal
+    expenses: Decimal
+    card_payments: Decimal
+    other_transfers: Decimal
+    savings: Decimal
+    investment: Decimal
+    debt_repayment: Decimal
+    net_movement: Decimal
+
+
 class LedgerTrendPointRead(BaseModel):
     date: date
     income: Decimal
@@ -665,6 +681,42 @@ class LedgerAnalysisRead(BaseModel):
     perspective: AnalysisPerspective
 
 
+class BudgetRiskRead(BaseModel):
+    budget_id: int
+    name: str
+    actual_amount: Decimal
+    target_amount: Decimal
+    forecast_amount: Decimal
+    overrun: Decimal
+
+
+class MonthExpenseForecastRead(BaseModel):
+    date_from: date
+    date_to: date
+    as_of: date
+    base_currency: str
+    history_month_count: int
+    actual_expenses: Decimal
+    forecast_expenses: Decimal | None
+    missing_fx_count: int
+    budget_risks: list[BudgetRiskRead]
+
+
+class LedgerExpenseChangeRead(BaseModel):
+    category_id: int | None
+    category_name: str | None
+    current_amount: Decimal
+    previous_amount: Decimal
+    change: Decimal
+
+
+class LedgerExpenseContributionRead(BaseModel):
+    transaction_id: int
+    transaction_date: date
+    description: str
+    amount: Decimal
+
+
 class LedgerComparisonRead(BaseModel):
     mode: ComparisonMode
     date_from: date
@@ -674,6 +726,8 @@ class LedgerComparisonRead(BaseModel):
     net_cash_flow: Decimal
     daily: list[LedgerTrendPointRead]
     expense_categories: list[LedgerCategoryBreakdownRead]
+    expense_changes: list[LedgerExpenseChangeRead]
+    expense_change_total: Decimal
 
 
 def _validate_lock_dates(start: date | None, end: date | None) -> None:

@@ -69,6 +69,109 @@ def transfer_payload(source_id: int, destination_id: int, **overrides) -> dict:
     return payload
 
 
+def test_posted_cash_flow_reconciles_reference_month(
+    client: TestClient, settings: Settings
+) -> None:
+    headers = authenticate(client, settings)
+    accounts = {
+        kind: create_account(client, headers, name=kind, account_type=kind, currency="SEK")[
+            "account_id"
+        ]
+        for kind in ("current", "cash", "credit_card", "savings", "investment", "loan_debt")
+    }
+
+    def post_transaction(kind, account, amount, **extra):
+        response = client.post(
+            "/api/v1/transactions",
+            headers=headers,
+            json={
+                "account_id": accounts[account],
+                "transaction_kind": kind,
+                "description": kind,
+                "transaction_date": "2026-08-20",
+                "posting_date": "2026-08-21",
+                "original_amount": amount,
+                "original_currency": "SEK",
+                **extra,
+            },
+        )
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    post_transaction("income", "current", "30000")
+    purchase = post_transaction("expense", "credit_card", "1000")
+    post_transaction("expense", "current", "300")
+    post_transaction("expense", "current", "100", original_currency="EUR")
+    refund = client.post(
+        f"/api/v1/transactions/{purchase['transaction_id']}/refunds",
+        headers=headers,
+        json={
+            "account_id": accounts["current"],
+            "description": "Refund",
+            "transaction_date": "2026-08-25",
+            "posting_date": "2026-08-25",
+            "original_amount": "100",
+            "original_currency": "SEK",
+        },
+    )
+    assert refund.status_code == 201, refund.text
+
+    for source, destination, purpose, amount in (
+        ("current", "credit_card", "credit_card_payment", "1000"),
+        ("current", "savings", "savings", "2000"),
+        ("savings", "current", "internal", "200"),
+        ("current", "investment", "investment", "1500"),
+        ("current", "loan_debt", "debt_repayment", "500"),
+        ("current", "cash", "internal", "400"),
+    ):
+        dates = (
+            {"source_posting_date": "2026-08-31", "destination_posting_date": "2026-09-01"}
+            if destination == "cash"
+            else {}
+        )
+        response = client.post(
+            "/api/v1/transfers",
+            headers=headers,
+            json=transfer_payload(
+                accounts[source],
+                accounts[destination],
+                purpose=purpose,
+                source_amount=amount,
+                destination_amount=amount,
+                **dates,
+            ),
+        )
+        assert response.status_code == 201, response.text
+
+    august = "date_from=2026-08-01&date_to=2026-08-31"
+    response = client.get(f"/api/v1/transactions/cash-flow?{august}")
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "date_from": "2026-08-01",
+        "date_to": "2026-08-31",
+        "base_currency": "SEK",
+        "account_count": 2,
+        "missing_fx_count": 1,
+        "inflows": "30100.0000",
+        "expenses": "-300.0000",
+        "card_payments": "-1000.0000",
+        "other_transfers": "-400.0000",
+        "savings": "-1800.0000",
+        "investment": "-1500.0000",
+        "debt_repayment": "-500.0000",
+        "net_movement": "24600.0000",
+    }
+    summary = client.get(f"/api/v1/transactions/summary?{august}").json()
+    assert summary["expenses"] == "1200.0000"
+    assert summary["net_cash_flow"] == "28800.0000"
+    september = client.get(
+        "/api/v1/transactions/cash-flow?date_from=2026-09-01&date_to=2026-09-30"
+    ).json()
+    assert september["other_transfers"] == "400.0000"
+    assert september["net_movement"] == "400.0000"
+
+
+
 def test_credit_card_payment_is_atomic_and_excluded_from_income_expense(
     client: TestClient, settings: Settings
 ) -> None:

@@ -600,6 +600,9 @@ def ledger_analysis(
     comparison_expenses = sum(
         (point["expenses"] for point in comparison["daily"]), Decimal("0")
     ).quantize(MONEY_QUANTUM)
+    expense_changes = _expense_changes(
+        result["expense_categories"], comparison["expense_categories"]
+    )
     result["comparison"] = {
         "mode": comparison_mode,
         "date_from": comparison_from,
@@ -609,8 +612,43 @@ def ledger_analysis(
         "net_cash_flow": (comparison_income - comparison_expenses).quantize(MONEY_QUANTUM),
         "daily": comparison["daily"],
         "expense_categories": comparison["expense_categories"],
+        "expense_changes": expense_changes,
+        "expense_change_total": sum((row["change"] for row in expense_changes), Decimal("0.0000")),
     }
     return result
+
+
+def _expense_changes(current: list[dict], previous: list[dict]) -> list[dict]:
+    current_by_id = {row["category_id"]: row for row in current}
+    previous_by_id = {row["category_id"]: row for row in previous}
+    changes = []
+    for category_id in current_by_id.keys() | previous_by_id.keys():
+        current_row = current_by_id.get(category_id, {})
+        previous_row = previous_by_id.get(category_id, {})
+        current_amount = current_row.get("amount", Decimal("0.0000"))
+        previous_amount = previous_row.get("amount", Decimal("0.0000"))
+        if current_amount != previous_amount:
+            changes.append({
+                "category_id": category_id,
+                "category_name": (current_row or previous_row)["category_name"],
+                "current_amount": current_amount,
+                "previous_amount": previous_amount,
+                "change": current_amount - previous_amount,
+            })
+    return sorted(
+        changes,
+        key=lambda row: (-abs(row["change"]), row["category_name"] or "", row["category_id"] or 0),
+    )
+
+
+def ledger_expense_contributions(
+    db: DbSession, date_from: date, date_to: date, base_currency: str, **filters: Any,
+) -> list[dict]:
+    rows: list[dict] = []
+    _ledger_analysis_period(
+        db, date_from, date_to, base_currency, contribution_rows=rows, **filters,
+    )
+    return rows
 
 
 def _ledger_analysis_period(
@@ -625,7 +663,13 @@ def _ledger_analysis_period(
     tag_id: int | None = None,
     is_base_cost: bool | None = None,
     perspective: str = "total",
+    contribution_rows: list[dict] | None = None,
+    uncategorized: bool = False,
 ) -> dict[str, Any]:
+    split_loading = selectinload(Transaction.splits)
+    options = [split_loading.selectinload(TransactionSplit.tags)]
+    if perspective == "my_share":
+        options.append(split_loading.selectinload(TransactionSplit.share_allocations))
     transactions = list(
         db.scalars(
             select(Transaction)
@@ -646,8 +690,8 @@ def _ledger_analysis_period(
                     is_base_cost=is_base_cost,
                 ),
             )
-            .options(selectinload(Transaction.splits).selectinload(TransactionSplit.tags))
-            .order_by(Transaction.transaction_date)
+            .options(*options)
+            .order_by(Transaction.transaction_date, Transaction.transaction_id)
         )
     )
     links = _linked_expense_ids(db, [model.transaction_id for model in transactions])
@@ -657,7 +701,7 @@ def _ledger_analysis_period(
         for model in db.scalars(
             select(Transaction)
             .where(Transaction.transaction_id.in_(original_ids))
-            .options(selectinload(Transaction.splits).selectinload(TransactionSplit.tags))
+            .options(*options)
         )
     }
     category_ids = {
@@ -672,6 +716,7 @@ def _ledger_analysis_period(
     }
     daily: dict[date, dict[str, Decimal]] = {}
     categories: dict[int | None, dict[str, Any]] = {}
+    cumulative_contribution = Decimal("0.0000")
     for model in transactions:
         assert model.converted_amount is not None
         day = daily.setdefault(
@@ -711,7 +756,19 @@ def _ledger_analysis_period(
                 is_base_cost=is_base_cost,
                 perspective=perspective,
             )
-        day["expenses"] += sign * sum(contributions.values(), Decimal("0"))
+        if uncategorized:
+            contributions = {key: amount for key, amount in contributions.items() if key is None}
+        amount = sign * sum(contributions.values(), Decimal("0"))
+        if contribution_rows is not None and amount:
+            previous_rounded = cumulative_contribution.quantize(MONEY_QUANTUM)
+            cumulative_contribution += amount
+            contribution_rows.append({
+                "transaction_id": model.transaction_id,
+                "transaction_date": model.transaction_date,
+                "description": model.description,
+                "amount": cumulative_contribution.quantize(MONEY_QUANTUM) - previous_rounded,
+            })
+        day["expenses"] += amount
         for contribution_category_id, amount in contributions.items():
             bucket = categories.setdefault(
                 contribution_category_id,
