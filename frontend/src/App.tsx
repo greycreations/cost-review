@@ -1,47 +1,32 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-
+import { useEffect, useState, type FormEvent } from "react";
 import {
   ApiError,
-  backupDownloadUrl,
-  changePassword,
-  createBackup,
-  createUser,
-  deleteUser,
-  getAuditEvents,
-  getBackups,
-  getRecycleBin,
   getSession,
   getSetupStatus,
-  getUsers,
-  importBackup,
   login,
   logout,
   registerAccount,
-  resetTestEnvironment,
-  resetUserPassword,
-  saveSettings,
   setup,
-  updateUser,
-  validateBackup,
-  type AuditEvent,
   type AppSettings,
-  type Backup,
   type Environment,
   type EnvironmentStatus,
   type Language,
-  type RecycleBinItem,
   type Session,
-  type UserAccount,
 } from "./api";
 import { LedgerWorkspace } from "./LedgerWorkspace";
 import { BudgetWorkspace } from "./BudgetWorkspace";
+import { ImportWorkspace } from "./ImportWorkspace";
 import { InvestmentWorkspace } from "./InvestmentWorkspace";
+import { RecurringWorkspace } from "./RecurringWorkspace";
 import { OverviewWorkspace, type OverviewDrilldown } from "./OverviewWorkspace";
-import {
-  TransactionWorkspace,
-  type TransactionInitialFilters,
-} from "./TransactionWorkspace";
+import { TransactionWorkspace, type TransactionInitialFilters } from "./TransactionWorkspace";
 import { applyTheme, readStoredTheme, type Theme } from "./theme";
+import { copy, type Labels } from "./i18n/app";
+import { FormError } from "./components/FormError";
+import { OperationalSafetyPanel } from "./settings/OperationalSafetyPanel";
+import { SettingsPanel, SecurityPanel } from "./settings/AccountSettings";
+import { UserAdministrationPanel } from "./settings/UserAdministrationPanel";
+import { TestResetPanel } from "./settings/TestResetPanel";
 
 type LoadState =
   | { kind: "loading" }
@@ -60,204 +45,6 @@ const defaultSettings: AppSettings = {
   week_start: "monday",
 };
 
-const copy = {
-  sv: {
-    loading: "Ansluter till den valda datamiljön…",
-    production: "Produktion",
-    test: "Demo/Test",
-    switchEnvironment: "Byt datamiljö",
-    setupTitle: "Skapa den första användaren",
-    setupLead: "Inställningen sparas endast i den valda datamiljön.",
-    loginTitle: "Logga in",
-    registerTitle: "Skapa konto",
-    registerLead: "Skapa ett personligt konto i den valda datamiljön.",
-    registerAction: "Skapa konto",
-    showRegister: "Skapa ett nytt konto",
-    showLogin: "Jag har redan ett konto",
-    username: "Användarnamn",
-    password: "Lösenord",
-    language: "Språk",
-    region: "Region",
-    currency: "Basvaluta",
-    timezone: "Tidszon",
-    create: "Skapa och fortsätt",
-    signIn: "Logga in",
-    overview: "Översikt",
-    transactions: "Transaktioner",
-    accounts: "Konton",
-    budget: "Budget",
-    investments: "Investeringar",
-    settings: "Inställningar",
-    attention: "Uppmärksamhet",
-    foundationReady: "Ledger-grunden är aktiv",
-    foundationLead:
-      "Konton och återanvändbar masterdata lagras nu i PostgreSQL med samma hårda dataseparation.",
-    sessionAs: "Inloggad som",
-    signOut: "Logga ut",
-    save: "Spara inställningar",
-    saved: "Sparat",
-    dataPlane: "Dataplan",
-    resetGeneration: "Teståterställningar",
-    testWarning: "Du arbetar med fiktiv och isolerad testdata.",
-    resetTitle: "Radera all testdata",
-    resetLead:
-      "Detta återställer Demo/Test-konfigurationen. Produktions-API:t och produktionsdatabasen är inte åtkomliga från denna operation.",
-    resetPhrase: "Skriv DELETE ALL TEST DATA för att bekräfta",
-    resetAction: "Radera testdata",
-    retry: "Försök igen",
-    backups: "Krypterade säkerhetskopior",
-    backupsLead:
-      "Databas och bilagor paketeras tillsammans. Kopian är låst till den här datamiljön och kan hämtas för extern förvaring.",
-    createBackup: "Skapa säkerhetskopia",
-    restoreBackup: "Återställ från säkerhetskopia",
-    importBackup: "Välj säkerhetskopia",
-    importBackupLead:
-      "Välj en krypterad .crbackup-fil från enheten. Filen laddas upp, dekrypteras och integritetskontrolleras innan den sparas i den valda datamiljön.",
-    importBackupKeyHint:
-      "En backup från en tidigare installation kräver samma backupnyckel i .env. Efter uppladdningen visas den i listan och är förberedd för säker offlineåterställning.",
-    importComplete: "Backupfilen importerades och verifierades",
-    validate: "Validera",
-    download: "Hämta",
-    noBackups: "Inga säkerhetskopior har skapats i denna datamiljö.",
-    lifecycle: "Papperskorg och ändringshistorik",
-    lifecycleLead:
-      "Arkiverade poster ligger kvar och kan återställas. De senaste Ledger-ändringarna visas som ett granskningsspår.",
-    recycleBin: "Arkiverade poster",
-    auditTrail: "Senaste ändringar",
-    noArchived: "Papperskorgen är tom.",
-    noAudit: "Inga ändringar har registrerats ännu.",
-    security: "Säkerhet",
-    securityLead:
-      "Byt lösenord för ditt eget konto. Övriga aktiva sessioner loggas ut automatiskt.",
-    currentPassword: "Nuvarande lösenord",
-    newPassword: "Nytt lösenord",
-    confirmPassword: "Bekräfta nytt lösenord",
-    changePassword: "Byt lösenord",
-    passwordChanged: "Lösenordet är uppdaterat.",
-    passwordMismatch: "De nya lösenorden stämmer inte överens.",
-    userAdministration: "Användare",
-    userAdministrationLead:
-      "Administrera konton i den här datamiljön. Borttagning raderar även användarens personliga inställningar och investeringsportfölj.",
-    addUser: "Lägg till användare",
-    administrator: "Administratör",
-    regularUser: "Användare",
-    role: "Roll",
-    saveAccount: "Spara konto",
-    resetPassword: "Återställ lösenord",
-    removeAccount: "Ta bort konto",
-    removeConfirmation: "Skriv DELETE följt av användarnamnet",
-    confirmRemoval: "Bekräfta borttagning",
-    cancel: "Avbryt",
-    accountCreated: "Kontot skapades.",
-    accountSaved: "Kontot uppdaterades.",
-    accountRemoved: "Kontot togs bort.",
-    passwordReset: "Lösenordet återställdes och användaren loggades ut.",
-    you: "Du",
-    noSelfRegistration: "Nya konton kan endast skapas av en administratör.",
-    lightTheme: "Ljust",
-    darkTheme: "Mörkt",
-    switchToLightTheme: "Byt till ljust tema",
-    switchToDarkTheme: "Byt till mörkt tema",
-  },
-  en: {
-    loading: "Connecting to the selected data environment…",
-    production: "Production",
-    test: "Demo/Test",
-    switchEnvironment: "Switch data environment",
-    setupTitle: "Create the initial user",
-    setupLead: "These settings are stored only in the selected data environment.",
-    loginTitle: "Sign in",
-    registerTitle: "Create account",
-    registerLead: "Create a personal account in the selected data environment.",
-    registerAction: "Create account",
-    showRegister: "Create a new account",
-    showLogin: "I already have an account",
-    username: "Username",
-    password: "Password",
-    language: "Language",
-    region: "Region",
-    currency: "Base currency",
-    timezone: "Timezone",
-    create: "Create and continue",
-    signIn: "Sign in",
-    overview: "Overview",
-    transactions: "Transactions",
-    accounts: "Accounts",
-    budget: "Budget",
-    investments: "Investments",
-    settings: "Settings",
-    attention: "Attention",
-    foundationReady: "Ledger foundation is active",
-    foundationLead:
-      "Accounts and reusable master data now live in PostgreSQL behind the same hard data boundary.",
-    sessionAs: "Signed in as",
-    signOut: "Sign out",
-    save: "Save settings",
-    saved: "Saved",
-    dataPlane: "Data plane",
-    resetGeneration: "Test resets",
-    testWarning: "You are working with fictional and isolated test data.",
-    resetTitle: "Delete all test data",
-    resetLead:
-      "This resets Demo/Test configuration. The Production API and database are not reachable from this operation.",
-    resetPhrase: "Type DELETE ALL TEST DATA to confirm",
-    resetAction: "Delete test data",
-    retry: "Try again",
-    backups: "Encrypted backups",
-    backupsLead:
-      "The database and attachments are bundled together. Each backup is bound to this data plane and can be downloaded for off-site storage.",
-    createBackup: "Create backup",
-    restoreBackup: "Restore from backup",
-    importBackup: "Choose backup file",
-    importBackupLead:
-      "Choose an encrypted .crbackup file from this device. It is uploaded, decrypted, and integrity-checked before being stored in the selected data environment.",
-    importBackupKeyHint:
-      "A backup from an earlier installation requires the same backup key in .env. After upload it appears in the list, ready for a safe offline restore.",
-    importComplete: "The backup was imported and verified",
-    validate: "Validate",
-    download: "Download",
-    noBackups: "No backups have been created in this data plane.",
-    lifecycle: "Recycle bin and change history",
-    lifecycleLead:
-      "Archived records remain recoverable. Recent Ledger changes are shown as an audit trail.",
-    recycleBin: "Archived records",
-    auditTrail: "Recent changes",
-    noArchived: "The recycle bin is empty.",
-    noAudit: "No changes have been recorded yet.",
-    security: "Security",
-    securityLead:
-      "Change the password for your own account. Other active sessions are signed out automatically.",
-    currentPassword: "Current password",
-    newPassword: "New password",
-    confirmPassword: "Confirm new password",
-    changePassword: "Change password",
-    passwordChanged: "Your password has been updated.",
-    passwordMismatch: "The new passwords do not match.",
-    userAdministration: "Users",
-    userAdministrationLead:
-      "Manage accounts in this data environment. Deletion also removes that user's personal settings and investment portfolio.",
-    addUser: "Add user",
-    administrator: "Administrator",
-    regularUser: "User",
-    role: "Role",
-    saveAccount: "Save account",
-    resetPassword: "Reset password",
-    removeAccount: "Delete account",
-    removeConfirmation: "Type DELETE followed by the username",
-    confirmRemoval: "Confirm deletion",
-    cancel: "Cancel",
-    accountCreated: "The account was created.",
-    accountSaved: "The account was updated.",
-    accountRemoved: "The account was deleted.",
-    passwordReset: "The password was reset and the user was signed out.",
-    you: "You",
-    noSelfRegistration: "New accounts can only be created by an administrator.",
-    lightTheme: "Light",
-    darkTheme: "Dark",
-    switchToLightTheme: "Switch to light theme",
-    switchToDarkTheme: "Switch to dark theme",
-  },
-} as const;
 
 function App() {
   const [theme, setTheme] = useState<Theme>(readStoredTheme);
@@ -425,7 +212,6 @@ function App() {
   );
 }
 
-type Labels = (typeof copy)[Language];
 
 function PageFrame({
   environment,
@@ -795,6 +581,20 @@ function ApplicationShell({
             {labels.transactions}
           </a>
           <a
+            className={view === "import" ? "active" : undefined}
+            href="#import"
+            aria-current={view === "import" ? "page" : undefined}
+          >
+            {labels.importNav}
+          </a>
+          <a
+            className={view === "recurring" ? "active" : undefined}
+            href="#recurring"
+            aria-current={view === "recurring" ? "page" : undefined}
+          >
+            {labels.recurringNav}
+          </a>
+          <a
             className={view === "accounts" ? "active" : undefined}
             href="#accounts"
             aria-current={view === "accounts" ? "page" : undefined}
@@ -834,6 +634,9 @@ function ApplicationShell({
       </header>
 
       <main>
+        {session.role === "viewer" ? (
+          <p className="read-only-notice" role="note">{labels.readOnlyNotice}</p>
+        ) : null}
         {view === "overview" ? (
           <OverviewWorkspace
             environment={environment}
@@ -848,6 +651,7 @@ function ApplicationShell({
         {view === "transactions" ? (
           <TransactionWorkspace
             baseCurrency={session.settings.base_currency}
+            currentUserId={session.user_id}
             environment={environment}
             language={session.settings.language}
             initialFilters={transactionFilters}
@@ -862,6 +666,22 @@ function ApplicationShell({
             key={`${environment}-accounts`}
             language={session.settings.language}
             view="accounts"
+          />
+        ) : null}
+        {view === "import" ? (
+          <ImportWorkspace
+            canWrite={session.role !== "viewer"}
+            environment={environment}
+            key={`${environment}-import`}
+            language={session.settings.language}
+          />
+        ) : null}
+        {view === "recurring" ? (
+          <RecurringWorkspace
+            canWrite={session.role !== "viewer"}
+            environment={environment}
+            key={`${environment}-recurring`}
+            language={session.settings.language}
           />
         ) : null}
         {view === "budget" ? (
@@ -898,7 +718,7 @@ function ApplicationShell({
               onSession={onSession}
             />
             <SecurityPanel environment={environment} labels={labels} />
-            {session.is_admin ? (
+            {session.role === "owner" ? (
               <UserAdministrationPanel
                 environment={environment}
                 labels={labels}
@@ -907,6 +727,7 @@ function ApplicationShell({
               />
             ) : null}
             <OperationalSafetyPanel
+              canManageBackups={session.role === "owner"}
               environment={environment}
               labels={labels}
               language={session.settings.language}
@@ -948,7 +769,7 @@ function ApplicationShell({
                 <FormError message={logoutError} />
               </section>
             </div>
-            {environment === "test" ? (
+            {environment === "test" && session.role === "owner" ? (
               <TestResetPanel labels={labels} session={session} onSession={onSession} />
             ) : null}
           </div>
@@ -963,709 +784,37 @@ function ApplicationShell({
   );
 }
 
-function OperationalSafetyPanel({
-  environment,
-  labels,
-  language,
-}: {
-  environment: Environment;
-  labels: Labels;
-  language: Language;
-}) {
-  const [backups, setBackups] = useState<Backup[]>([]);
-  const [archived, setArchived] = useState<RecycleBinItem[]>([]);
-  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
-  const [message, setMessage] = useState<string | null>(null);
-  const [working, setWorking] = useState(false);
-  const importInputId = `backup-import-${environment}`;
-  const importInputRef = useRef<HTMLInputElement>(null);
 
-  const refresh = () =>
-    Promise.all([getBackups(environment), getRecycleBin(environment), getAuditEvents(environment)])
-      .then(([backupItems, recycleItems, auditPage]) => {
-        setBackups(backupItems);
-        setArchived(recycleItems);
-        setAuditEvents(auditPage.items);
-      });
-
-  useEffect(() => {
-    let active = true;
-    void Promise.all([getBackups(environment), getRecycleBin(environment), getAuditEvents(environment)])
-      .then(([backupItems, recycleItems, auditPage]) => {
-        if (!active) return;
-        setBackups(backupItems);
-        setArchived(recycleItems);
-        setAuditEvents(auditPage.items);
-      })
-      .catch((error) => {
-        if (active) setMessage(error instanceof Error ? error.message : "Could not load safety data.");
-      });
-    return () => {
-      active = false;
-    };
-  }, [environment]);
-
-  return (
-    <div className="operations-grid">
-      <section className="settings-section operations-panel">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Backup</p>
-            <h2>{labels.backups}</h2>
-            <p className="quiet-copy">{labels.backupsLead}</p>
-          </div>
-          <div className="backup-actions">
-            <button
-              className="primary-button"
-              disabled={working}
-              onClick={() => {
-                setWorking(true);
-                setMessage(null);
-                void createBackup(environment)
-                  .then((created) => refresh().then(() => setMessage(created.filename)))
-                  .catch((error) => setMessage(error instanceof Error ? error.message : "Backup failed."))
-                  .finally(() => setWorking(false));
-              }}
-              type="button"
-            >
-              {labels.createBackup}
-            </button>
-          </div>
-        </div>
-        <div className="backup-import-panel">
-          <div>
-            <h3>{labels.restoreBackup}</h3>
-            <p className="quiet-copy">{labels.importBackupLead}</p>
-          </div>
-          <button
-            className="secondary-button"
-            disabled={working}
-            onClick={() => importInputRef.current?.click()}
-            type="button"
-          >
-            {labels.importBackup}
-          </button>
-          <input
-            accept=".crbackup,application/octet-stream"
-            data-testid="backup-file-input"
-            disabled={working}
-            hidden
-            id={importInputId}
-            onChange={(event) => {
-              const file = event.currentTarget.files?.[0];
-              event.currentTarget.value = "";
-              if (!file) return;
-              setWorking(true);
-              setMessage(null);
-              void importBackup(environment, file)
-                .then((validation) =>
-                  refresh().then(() =>
-                    setMessage(`${labels.importComplete}: ${validation.filename}`),
-                  ),
-                )
-                .catch((error) =>
-                  setMessage(error instanceof Error ? error.message : "Backup import failed."),
-                )
-                .finally(() => setWorking(false));
-            }}
-            ref={importInputRef}
-            type="file"
-          />
-        </div>
-        <p className="backup-key-hint">{labels.importBackupKeyHint}</p>
-        {backups.length === 0 ? <p className="resource-empty">{labels.noBackups}</p> : null}
-        <div className="operations-list">
-          {backups.map((backup) => (
-            <div className="operation-row" key={backup.filename}>
-              <div>
-                <strong>{new Date(backup.created_at).toLocaleString(language === "sv" ? "sv-SE" : "en-US")}</strong>
-                <span>{backup.kind.replace("_", " ")} · {(backup.size_bytes / 1024).toFixed(1)} kB</span>
-              </div>
-              <div className="row-actions">
-                <button
-                  className="ghost-button"
-                  onClick={() => {
-                    setMessage(null);
-                    void validateBackup(environment, backup.filename)
-                      .then(() => setMessage(`${labels.validate}: ${backup.filename}`))
-                      .catch((error) => setMessage(error instanceof Error ? error.message : "Validation failed."));
-                  }}
-                  type="button"
-                >
-                  {labels.validate}
-                </button>
-                <a className="ghost-button button-link" href={backupDownloadUrl(environment, backup.filename)}>
-                  {labels.download}
-                </a>
-              </div>
-            </div>
-          ))}
-        </div>
-        {message ? <p className="form-message" role="status">{message}</p> : null}
-      </section>
-
-      <section className="settings-section operations-panel">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Ledger safety</p>
-            <h2>{labels.lifecycle}</h2>
-            <p className="quiet-copy">{labels.lifecycleLead}</p>
-          </div>
-        </div>
-        <div className="lifecycle-columns">
-          <div>
-            <h3>{labels.recycleBin}</h3>
-            {archived.length === 0 ? <p className="resource-empty">{labels.noArchived}</p> : null}
-            <div className="operations-list compact-list">
-              {archived.slice(0, 8).map((item) => (
-                <div className="operation-row" key={`${item.entity_type}:${item.entity_id}`}>
-                  <div><strong>{item.label}</strong><span>{item.entity_type}</span></div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div>
-            <h3>{labels.auditTrail}</h3>
-            {auditEvents.length === 0 ? <p className="resource-empty">{labels.noAudit}</p> : null}
-            <div className="operations-list compact-list">
-              {auditEvents.map((event) => (
-                <div className="operation-row" key={event.audit_event_id}>
-                  <div><strong>{event.action.replace("_", " ")}</strong><span>{event.entity_type} #{event.entity_id ?? "—"}</span></div>
-                  <time dateTime={event.created_at}>{new Date(event.created_at).toLocaleDateString(language === "sv" ? "sv-SE" : "en-US")}</time>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-type AppView = "overview" | "transactions" | "accounts" | "budget" | "investments" | "settings";
+type AppView =
+  | "overview"
+  | "transactions"
+  | "import"
+  | "recurring"
+  | "accounts"
+  | "budget"
+  | "investments"
+  | "settings";
 
 function viewFromHash(hash: string): AppView {
   const value = hash.replace("#", "");
-  return value === "transactions" || value === "accounts" || value === "budget" || value === "investments" || value === "settings"
-    ? value
-    : "overview";
+  const views: AppView[] = [
+    "transactions",
+    "import",
+    "recurring",
+    "accounts",
+    "budget",
+    "investments",
+    "settings",
+  ];
+  return (views as string[]).includes(value) ? (value as AppView) : "overview";
 }
 
-function SettingsPanel({
-  environment,
-  labels,
-  session,
-  onSession,
-}: {
-  environment: Environment;
-  labels: Labels;
-  session: Session;
-  onSession: (session: Session) => void;
-}) {
-  const [draft, setDraft] = useState(session.settings);
-  const [status, setStatus] = useState<string | null>(null);
-  const [working, setWorking] = useState(false);
 
-  const update = (field: keyof AppSettings, value: string) => {
-    setDraft((current) => ({ ...current, [field]: value }) as AppSettings);
-  };
 
-  return (
-    <section className="settings-section" id="settings">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">{environment === "test" ? labels.test : labels.production}</p>
-          <h2>{labels.settings}</h2>
-        </div>
-        {status ? <span className="save-status">{status}</span> : null}
-      </div>
-      <form
-        className="settings-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setWorking(true);
-          setStatus(null);
-          void saveSettings(environment, draft)
-            .then((saved) => {
-              onSession({ ...session, settings: saved });
-              setStatus(labels.saved);
-            })
-            .catch((error) => setStatus(error instanceof Error ? error.message : "Save failed."))
-            .finally(() => setWorking(false));
-        }}
-      >
-        <label>
-          {labels.language}
-          <select value={draft.language} onChange={(event) => update("language", event.target.value)}>
-            <option value="sv">Svenska</option>
-            <option value="en">English</option>
-          </select>
-        </label>
-        <label>
-          {labels.region}
-          <input value={draft.region} onChange={(event) => update("region", event.target.value)} />
-        </label>
-        <label>
-          {labels.currency}
-          <input
-            maxLength={3}
-            value={draft.base_currency}
-            onChange={(event) => update("base_currency", event.target.value.toUpperCase())}
-          />
-        </label>
-        <label>
-          {labels.timezone}
-          <input value={draft.timezone} onChange={(event) => update("timezone", event.target.value)} />
-        </label>
-        <button className="primary-button" disabled={working} type="submit">
-          {labels.save}
-        </button>
-      </form>
-    </section>
-  );
-}
 
-function SecurityPanel({
-  environment,
-  labels,
-}: {
-  environment: Environment;
-  labels: Labels;
-}) {
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmation, setConfirmation] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
-  const [working, setWorking] = useState(false);
 
-  return (
-    <section className="settings-section security-section">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Account</p>
-          <h2>{labels.security}</h2>
-          <p className="quiet-copy">{labels.securityLead}</p>
-        </div>
-      </div>
-      <form
-        className="password-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setMessage(null);
-          if (newPassword !== confirmation) {
-            setMessage(labels.passwordMismatch);
-            return;
-          }
-          setWorking(true);
-          void changePassword(environment, currentPassword, newPassword)
-            .then(() => {
-              setCurrentPassword("");
-              setNewPassword("");
-              setConfirmation("");
-              setMessage(labels.passwordChanged);
-            })
-            .catch((error) =>
-              setMessage(error instanceof Error ? error.message : "Password change failed."),
-            )
-            .finally(() => setWorking(false));
-        }}
-      >
-        <label>
-          {labels.currentPassword}
-          <input
-            autoComplete="current-password"
-            onChange={(event) => setCurrentPassword(event.target.value)}
-            required
-            type="password"
-            value={currentPassword}
-          />
-        </label>
-        <label>
-          {labels.newPassword}
-          <input
-            autoComplete="new-password"
-            minLength={12}
-            onChange={(event) => setNewPassword(event.target.value)}
-            required
-            type="password"
-            value={newPassword}
-          />
-        </label>
-        <label>
-          {labels.confirmPassword}
-          <input
-            autoComplete="new-password"
-            minLength={12}
-            onChange={(event) => setConfirmation(event.target.value)}
-            required
-            type="password"
-            value={confirmation}
-          />
-        </label>
-        <button className="primary-button" disabled={working} type="submit">
-          {labels.changePassword}
-        </button>
-      </form>
-      {message ? <p className="form-message" role="status">{message}</p> : null}
-    </section>
-  );
-}
 
-type UserDraft = { username: string; is_admin: boolean; password: string };
 
-function UserAdministrationPanel({
-  environment,
-  labels,
-  session,
-  onSession,
-}: {
-  environment: Environment;
-  labels: Labels;
-  session: Session;
-  onSession: (session: Session) => void;
-}) {
-  const [users, setUsers] = useState<UserAccount[]>([]);
-  const [drafts, setDrafts] = useState<Record<number, UserDraft>>({});
-  const [newUsername, setNewUsername] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [newAdmin, setNewAdmin] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
-  const [deleteConfirmation, setDeleteConfirmation] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
-  const [working, setWorking] = useState(false);
 
-  const installUsers = useCallback((items: UserAccount[]) => {
-    setUsers(items);
-    setDrafts(
-      Object.fromEntries(
-        items.map((user) => [
-          user.user_id,
-          { username: user.username, is_admin: user.is_admin, password: "" },
-        ]),
-      ),
-    );
-  }, []);
-
-  const refresh = () => getUsers(environment).then(installUsers);
-
-  useEffect(() => {
-    let active = true;
-    void getUsers(environment)
-      .then((items) => {
-        if (active) installUsers(items);
-      })
-      .catch((error) => {
-        if (active) setMessage(error instanceof Error ? error.message : "Could not load users.");
-      });
-    return () => {
-      active = false;
-    };
-  }, [environment, installUsers]);
-
-  const updateDraft = (userId: number, values: Partial<UserDraft>) => {
-    setDrafts((current) => ({
-      ...current,
-      [userId]: { ...current[userId], ...values },
-    }));
-  };
-
-  return (
-    <section className="settings-section user-administration-section">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Admin</p>
-          <h2>{labels.userAdministration}</h2>
-          <p className="quiet-copy">{labels.userAdministrationLead}</p>
-        </div>
-      </div>
-
-      <form
-        className="user-create-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setWorking(true);
-          setMessage(null);
-          void createUser(
-            environment,
-            newUsername,
-            newPassword,
-            newAdmin,
-            session.settings,
-          )
-            .then(() => refresh())
-            .then(() => {
-              setNewUsername("");
-              setNewPassword("");
-              setNewAdmin(false);
-              setMessage(labels.accountCreated);
-            })
-            .catch((error) =>
-              setMessage(error instanceof Error ? error.message : "Account creation failed."),
-            )
-            .finally(() => setWorking(false));
-        }}
-      >
-        <label>
-          {labels.username}
-          <input
-            autoComplete="off"
-            minLength={3}
-            maxLength={64}
-            onChange={(event) => setNewUsername(event.target.value)}
-            required
-            value={newUsername}
-          />
-        </label>
-        <label>
-          {labels.password}
-          <input
-            autoComplete="new-password"
-            minLength={12}
-            onChange={(event) => setNewPassword(event.target.value)}
-            required
-            type="password"
-            value={newPassword}
-          />
-        </label>
-        <label className="checkbox-field admin-checkbox">
-          <input
-            checked={newAdmin}
-            onChange={(event) => setNewAdmin(event.target.checked)}
-            type="checkbox"
-          />
-          {labels.administrator}
-        </label>
-        <button className="primary-button" disabled={working} type="submit">
-          {labels.addUser}
-        </button>
-      </form>
-
-      <div className="user-account-list">
-        {users.map((user) => {
-          const draft = drafts[user.user_id];
-          if (!draft) return null;
-          const isCurrent = user.username === session.username;
-          const confirmingDelete = deleteTarget === user.user_id;
-          return (
-            <article className="user-account-card" key={user.user_id}>
-              <div className="user-account-heading">
-                <div>
-                  <strong>{user.username}</strong>
-                  <span>
-                    {user.is_admin ? labels.administrator : labels.regularUser}
-                    {isCurrent ? ` · ${labels.you}` : ""}
-                  </span>
-                </div>
-              </div>
-              <div className="user-account-fields">
-                <label>
-                  {labels.username}
-                  <input
-                    maxLength={64}
-                    minLength={3}
-                    onChange={(event) => updateDraft(user.user_id, { username: event.target.value })}
-                    value={draft.username}
-                  />
-                </label>
-                <label>
-                  {labels.role}
-                  <select
-                    onChange={(event) =>
-                      updateDraft(user.user_id, { is_admin: event.target.value === "admin" })
-                    }
-                    value={draft.is_admin ? "admin" : "user"}
-                  >
-                    <option value="user">{labels.regularUser}</option>
-                    <option value="admin">{labels.administrator}</option>
-                  </select>
-                </label>
-                <button
-                  className="secondary-button"
-                  disabled={working}
-                  onClick={() => {
-                    setWorking(true);
-                    setMessage(null);
-                    void updateUser(environment, user.user_id, {
-                      username: draft.username,
-                      is_admin: draft.is_admin,
-                    })
-                      .then((updated) => {
-                        if (isCurrent) {
-                          onSession({
-                            ...session,
-                            username: updated.username,
-                            is_admin: updated.is_admin,
-                          });
-                        }
-                        return refresh();
-                      })
-                      .then(() => setMessage(labels.accountSaved))
-                      .catch((error) =>
-                        setMessage(error instanceof Error ? error.message : "Account save failed."),
-                      )
-                      .finally(() => setWorking(false));
-                  }}
-                  type="button"
-                >
-                  {labels.saveAccount}
-                </button>
-              </div>
-              {!isCurrent ? (
-                <div className="user-account-actions">
-                  <label>
-                    {labels.newPassword}
-                    <input
-                      autoComplete="new-password"
-                      minLength={12}
-                      onChange={(event) => updateDraft(user.user_id, { password: event.target.value })}
-                      type="password"
-                      value={draft.password}
-                    />
-                  </label>
-                  <button
-                    className="secondary-button"
-                    disabled={working || draft.password.length < 12}
-                    onClick={() => {
-                      setWorking(true);
-                      setMessage(null);
-                      void resetUserPassword(environment, user.user_id, draft.password)
-                        .then(() => {
-                          updateDraft(user.user_id, { password: "" });
-                          setMessage(labels.passwordReset);
-                        })
-                        .catch((error) =>
-                          setMessage(error instanceof Error ? error.message : "Reset failed."),
-                        )
-                        .finally(() => setWorking(false));
-                    }}
-                    type="button"
-                  >
-                    {labels.resetPassword}
-                  </button>
-                  {!confirmingDelete ? (
-                    <button
-                      className="destructive-button"
-                      disabled={working}
-                      onClick={() => {
-                        setDeleteTarget(user.user_id);
-                        setDeleteConfirmation("");
-                      }}
-                      type="button"
-                    >
-                      {labels.removeAccount}
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-              {confirmingDelete ? (
-                <div className="user-delete-confirmation">
-                  <label>
-                    {labels.removeConfirmation}: <code>DELETE {user.username}</code>
-                    <input
-                      onChange={(event) => setDeleteConfirmation(event.target.value)}
-                      value={deleteConfirmation}
-                    />
-                  </label>
-                  <div className="row-actions">
-                    <button
-                      className="destructive-button"
-                      disabled={working || deleteConfirmation !== `DELETE ${user.username}`}
-                      onClick={() => {
-                        setWorking(true);
-                        setMessage(null);
-                        void deleteUser(environment, user.user_id, deleteConfirmation)
-                          .then(() => refresh())
-                          .then(() => {
-                            setDeleteTarget(null);
-                            setDeleteConfirmation("");
-                            setMessage(labels.accountRemoved);
-                          })
-                          .catch((error) =>
-                            setMessage(error instanceof Error ? error.message : "Deletion failed."),
-                          )
-                          .finally(() => setWorking(false));
-                      }}
-                      type="button"
-                    >
-                      {labels.confirmRemoval}
-                    </button>
-                    <button
-                      className="secondary-button"
-                      disabled={working}
-                      onClick={() => setDeleteTarget(null)}
-                      type="button"
-                    >
-                      {labels.cancel}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </article>
-          );
-        })}
-      </div>
-      {message ? <p className="form-message" role="status">{message}</p> : null}
-    </section>
-  );
-}
-
-function TestResetPanel({
-  labels,
-  session,
-  onSession,
-}: {
-  labels: Labels;
-  session: Session;
-  onSession: (session: Session) => void;
-}) {
-  const [confirmation, setConfirmation] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
-  const [working, setWorking] = useState(false);
-  const canReset = confirmation === "DELETE ALL TEST DATA";
-
-  return (
-    <section className="danger-section" id="attention">
-      <div>
-        <p className="eyebrow">DEMO / TEST</p>
-        <h2>{labels.resetTitle}</h2>
-        <p>{labels.resetLead}</p>
-      </div>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          setWorking(true);
-          setMessage(null);
-          void resetTestEnvironment(confirmation)
-            .then(async (result) => {
-              const refreshed = await getSession("test");
-              onSession(refreshed);
-              setConfirmation("");
-              setMessage(`${result.message} #${result.reset_generation}`);
-            })
-            .catch((error) => setMessage(error instanceof Error ? error.message : "Reset failed."))
-            .finally(() => setWorking(false));
-        }}
-      >
-        <label>
-          {labels.resetPhrase}
-          <input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
-        </label>
-        <button className="destructive-button" disabled={!canReset || working} type="submit">
-          {labels.resetAction}
-        </button>
-        {message ? <p className="form-message">{message}</p> : null}
-      </form>
-      <span className="sr-only">{session.data_plane_id}</span>
-    </section>
-  );
-}
-
-function FormError({ message }: { message: string | null }) {
-  return message ? (
-    <p className="form-error" role="alert">
-      {message}
-    </p>
-  ) : null;
-}
 
 export default App;

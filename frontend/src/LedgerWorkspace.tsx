@@ -13,6 +13,7 @@ import {
   getCategories,
   getProviders,
   getSharingParties,
+  getHouseholdMembers,
   getTags,
   mergeTag,
   setAccountArchived,
@@ -27,162 +28,12 @@ import {
   type Environment,
   type Language,
   type Provider,
+  type HouseholdMember,
   type SharingParty,
   type Tag,
 } from "./api";
+import { copy } from "./i18n/ledger";
 
-const copy = {
-  sv: {
-    eyebrow: "Sprint 2 · Ledger",
-    accountsTitle: "Konton",
-    masterDataTitle: "Kategorier och register",
-    masterDataLead:
-      "Återanvändbara kategorier, providers, taggar och delningsparter hanteras här – utanför det dagliga transaktionsflödet.",
-    lead: "Öppningssaldo är en startpunkt för saldot och bokförs aldrig som inkomst.",
-    showArchived: "Visa arkiverade",
-    accounts: "Konton",
-    accountName: "Kontonamn",
-    accountType: "Kontotyp",
-    openingBalance: "Öppningssaldo",
-    effectiveDate: "Gäller från",
-    currency: "Valuta",
-    addAccount: "Lägg till konto",
-    noAccounts: "Inga konton ännu.",
-    currentValue: "Aktuellt värde",
-    reconciledBalance: "Avstämt saldo",
-    registerValue: "Registrera aktuellt värde",
-    registerBalance: "Stäm av saldo",
-    balanceDate: "Datum",
-    amount: "Belopp",
-    noteOptional: "Anteckning (valfritt)",
-    saveValue: "Spara värde",
-    saveBalance: "Spara saldo",
-    openingBalanceLabel: "Öppningssaldo",
-    calculatedBalance: "Beräknat saldo",
-    difference: "Avvikelse",
-    unavailable: "Ej tillgängligt",
-    valueHistory: "Värdehistorik",
-    balanceHistory: "Saldohistorik",
-    noSnapshots: "Inga senare saldon har registrerats ännu.",
-    snapshotHelp:
-      "Varje datum sparas som en historisk observation. Öppningssaldot och transaktionerna ändras inte.",
-    adjustmentTitle: "Bokför saldoförändring",
-    adjustmentLead:
-      "Skapa en separat justeringspost för avvikelsen. Historiken bevaras och posten räknas inte som inkomst eller utgift.",
-    adjustmentPhrase: "Skriv CREATE BALANCE ADJUSTMENT för att bekräfta",
-    createAdjustment: "Skapa justeringspost",
-    adjustmentCreated: "Justeringspost skapad.",
-    categories: "Kategorier",
-    categoryName: "Kategorinamn",
-    categoryKind: "Typ",
-    parent: "Överordnad kategori",
-    noParent: "Ingen – toppnivå",
-    expense: "Utgift",
-    income: "Inkomst",
-    addCategory: "Lägg till kategori",
-    providers: "Providers",
-    providerName: "Provider-namn",
-    website: "Webbplats (valfritt)",
-    addProvider: "Lägg till provider",
-    tags: "Taggar",
-    tagName: "Taggnamn",
-    color: "Färg",
-    addTag: "Lägg till tagg",
-    mergeTags: "Slå ihop taggar",
-    mergeTagsLead:
-      "Alla referenser flyttas till måltaggen och källtaggen arkiveras. Motstridiga budget- eller analysval stoppas.",
-    sourceTag: "Källtagg",
-    targetTag: "Måltagg",
-    chooseTag: "Välj tagg",
-    mergeConfirmation: "Skriv MERGE TAG för att bekräfta",
-    mergeTagAction: "Slå ihop taggar",
-    parties: "Delningsparter",
-    partyName: "Namn",
-    isSelf: "Representerar mig",
-    addParty: "Lägg till part",
-    archive: "Arkivera",
-    restore: "Återställ",
-    active: "Aktiv",
-    archived: "Arkiverad",
-    empty: "Inga poster ännu.",
-    loading: "Läser Ledger-data…",
-  },
-  en: {
-    eyebrow: "Sprint 2 · Ledger",
-    accountsTitle: "Accounts",
-    masterDataTitle: "Categories and registers",
-    masterDataLead:
-      "Reusable categories, providers, tags, and sharing parties are managed here, outside the daily transaction flow.",
-    lead: "An opening balance is a balance starting point and is never recorded as income.",
-    showArchived: "Show archived",
-    accounts: "Accounts",
-    accountName: "Account name",
-    accountType: "Account type",
-    openingBalance: "Opening balance",
-    effectiveDate: "Effective date",
-    currency: "Currency",
-    addAccount: "Add account",
-    noAccounts: "No accounts yet.",
-    currentValue: "Current value",
-    reconciledBalance: "Reconciled balance",
-    registerValue: "Record current value",
-    registerBalance: "Reconcile balance",
-    balanceDate: "Date",
-    amount: "Amount",
-    noteOptional: "Note (optional)",
-    saveValue: "Save value",
-    saveBalance: "Save balance",
-    openingBalanceLabel: "Opening balance",
-    calculatedBalance: "Calculated balance",
-    difference: "Difference",
-    unavailable: "Unavailable",
-    valueHistory: "Value history",
-    balanceHistory: "Balance history",
-    noSnapshots: "No later balances have been recorded yet.",
-    snapshotHelp:
-      "Each date is preserved as a historical observation. The opening balance and transactions are unchanged.",
-    adjustmentTitle: "Post balance adjustment",
-    adjustmentLead:
-      "Create a separate adjustment entry for the difference. History is preserved and the entry is not treated as income or expense.",
-    adjustmentPhrase: "Type CREATE BALANCE ADJUSTMENT to confirm",
-    createAdjustment: "Create adjustment entry",
-    adjustmentCreated: "Adjustment entry created.",
-    categories: "Categories",
-    categoryName: "Category name",
-    categoryKind: "Type",
-    parent: "Parent category",
-    noParent: "None – top level",
-    expense: "Expense",
-    income: "Income",
-    addCategory: "Add category",
-    providers: "Providers",
-    providerName: "Provider name",
-    website: "Website (optional)",
-    addProvider: "Add provider",
-    tags: "Tags",
-    tagName: "Tag name",
-    color: "Color",
-    addTag: "Add tag",
-    mergeTags: "Merge tags",
-    mergeTagsLead:
-      "All references move to the target tag and the source is archived. Conflicting budget or analysis selections are stopped.",
-    sourceTag: "Source tag",
-    targetTag: "Target tag",
-    chooseTag: "Choose tag",
-    mergeConfirmation: "Type MERGE TAG to confirm",
-    mergeTagAction: "Merge tags",
-    parties: "Sharing parties",
-    partyName: "Name",
-    isSelf: "Represents me",
-    addParty: "Add party",
-    archive: "Archive",
-    restore: "Restore",
-    active: "Active",
-    archived: "Archived",
-    empty: "No records yet.",
-    loading: "Loading ledger data…",
-  },
-} as const;
 
 const accountTypes: AccountType[] = [
   "current",
@@ -1019,17 +870,34 @@ function PartyPanel({
   mutate: Mutate;
 }) {
   const [name, setName] = useState("");
-  const [isSelf, setIsSelf] = useState(false);
+  const [linkedUserId, setLinkedUserId] = useState("");
+  const [members, setMembers] = useState<HouseholdMember[]>([]);
+  useEffect(() => {
+    let active = true;
+    void getHouseholdMembers(environment)
+      .then((items) => {
+        if (active) setMembers(items);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [environment]);
   return (
     <ResourcePanel title={labels.parties} count={parties.length}>
       <form
         className="stacked-resource-form"
         onSubmit={(event) => {
           event.preventDefault();
-          void mutate(() => createSharingParty(environment, { name, is_self: isSelf }))
+          void mutate(() =>
+            createSharingParty(environment, {
+              name,
+              user_id: linkedUserId ? Number(linkedUserId) : null,
+            }),
+          )
             .then(() => {
               setName("");
-              setIsSelf(false);
+              setLinkedUserId("");
             })
             .catch(() => undefined);
         }}
@@ -1038,13 +906,16 @@ function PartyPanel({
           {labels.partyName}
           <input required value={name} onChange={(event) => setName(event.target.value)} />
         </label>
-        <label className="checkbox-field">
-          <input
-            checked={isSelf}
-            onChange={(event) => setIsSelf(event.target.checked)}
-            type="checkbox"
-          />
-          {labels.isSelf}
+        <label>
+          {labels.linkedMember}
+          <select value={linkedUserId} onChange={(event) => setLinkedUserId(event.target.value)}>
+            <option value="">{labels.noLinkedMember}</option>
+            {members.map((member) => (
+              <option key={member.user_id} value={member.user_id}>
+                {member.username}
+              </option>
+            ))}
+          </select>
         </label>
         <button className="secondary-button" type="submit">
           {labels.addParty}
@@ -1055,7 +926,7 @@ function PartyPanel({
         items={parties.map((party) => ({
           id: party.sharing_party_id,
           label: party.name,
-          meta: party.is_self ? labels.isSelf : "—",
+          meta: party.username ?? "—",
           archived: party.status === "archived",
           onLifecycle: () =>
             mutate(() =>

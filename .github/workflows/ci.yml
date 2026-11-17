@@ -93,9 +93,26 @@ jobs:
           test -f docker-compose.yml
           test -f .env.example
           test "$(grep -c '^.*=$' .env.example)" = "6"
+          test -f backend/requirements.lock
       - run: docker compose -f docker-compose.yml --env-file .env.example config --quiet
       - run: docker compose config --quiet
       - run: docker compose up --build --detach --wait
+      - name: Scan the API image for fixable critical vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: cost-review-api-prod
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Scan the frontend image for fixable critical vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: cost-review-frontend
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
       - run: python backend/tests/compose_isolation.py
       - run: python backend/tests/compose_backup_restore.py
       - name: Prove Test API cannot resolve or connect to Production database

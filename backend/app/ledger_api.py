@@ -15,7 +15,7 @@ from app.account_snapshot_services import (
     update_account_snapshot,
 )
 from app.audit_services import list_audit_events
-from app.dependencies import Auth, CsrfAuth, DatabaseSession
+from app.dependencies import Auth, DatabaseSession, WriterAuth
 from app.errors import ApiError
 from app.ledger_safety_services import (
     create_balance_adjustment,
@@ -110,6 +110,7 @@ from app.recovery_services import (
     recovery_values,
     set_recovery_archived,
 )
+from app.sharing import perspective_for_user
 from app.transaction_services import (
     create_manual_transaction,
     get_manual_transaction,
@@ -203,7 +204,7 @@ def get_transactions(
 
 @router.post("/transactions", response_model=TransactionRead, status_code=201)
 def post_transaction(
-    payload: TransactionCreate, auth: CsrfAuth, db: DatabaseSession
+    payload: TransactionCreate, auth: WriterAuth, db: DatabaseSession
 ) -> dict[str, object]:
     return transaction_values(
         create_manual_transaction(db, payload, auth.user.settings.base_currency)
@@ -234,7 +235,7 @@ def get_transaction_summary(
         category_id=category_id,
         tag_id=tag_id,
         is_base_cost=is_base_cost,
-        perspective=perspective.value,
+        perspective=perspective_for_user(db, perspective.value, auth.user.user_id),
     )
 
 
@@ -264,7 +265,7 @@ def get_transaction_analysis(
         category_id=category_id,
         tag_id=tag_id,
         is_base_cost=is_base_cost,
-        perspective=perspective.value,
+        perspective=perspective_for_user(db, perspective.value, auth.user.user_id),
     )
 
 
@@ -279,7 +280,7 @@ def get_transaction_by_id(
 def patch_transaction(
     transaction_id: int,
     payload: TransactionUpdate,
-    _: CsrfAuth,
+    _: WriterAuth,
     db: DatabaseSession,
 ) -> dict[str, object]:
     return transaction_values(
@@ -289,14 +290,14 @@ def patch_transaction(
 
 @router.post("/transactions/{transaction_id}/archive", response_model=TransactionRead)
 def archive_transaction(
-    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+    transaction_id: int, _: WriterAuth, db: DatabaseSession
 ) -> dict[str, object]:
     return transaction_values(archive_model(db, get_manual_transaction(db, transaction_id)))
 
 
 @router.post("/transactions/{transaction_id}/restore", response_model=TransactionRead)
 def restore_transaction(
-    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+    transaction_id: int, _: WriterAuth, db: DatabaseSession
 ) -> dict[str, object]:
     return transaction_values(restore_model(db, get_manual_transaction(db, transaction_id)))
 
@@ -305,7 +306,7 @@ def restore_transaction(
     "/transactions/{expense_id}/refunds", response_model=TransactionRead, status_code=201
 )
 def post_refund(
-    expense_id: int, payload: RecoveryCreate, auth: CsrfAuth, db: DatabaseSession
+    expense_id: int, payload: RecoveryCreate, auth: WriterAuth, db: DatabaseSession
 ) -> dict[str, object]:
     expense = get_model(db, Transaction, expense_id, "Transaction")
     model = create_recovery(
@@ -320,7 +321,7 @@ def post_refund(
     status_code=201,
 )
 def post_reimbursement(
-    expense_id: int, payload: RecoveryCreate, auth: CsrfAuth, db: DatabaseSession
+    expense_id: int, payload: RecoveryCreate, auth: WriterAuth, db: DatabaseSession
 ) -> dict[str, object]:
     expense = get_model(db, Transaction, expense_id, "Transaction")
     model = create_recovery(
@@ -335,7 +336,7 @@ def post_reimbursement(
 
 @router.post("/recoveries/{transaction_id}/archive", response_model=TransactionRead)
 def archive_recovery(
-    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+    transaction_id: int, _: WriterAuth, db: DatabaseSession
 ) -> dict[str, object]:
     model, _ = get_recovery(db, transaction_id)
     return recovery_values(db, set_recovery_archived(db, model, archived=True))
@@ -343,7 +344,7 @@ def archive_recovery(
 
 @router.post("/recoveries/{transaction_id}/restore", response_model=TransactionRead)
 def restore_recovery(
-    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+    transaction_id: int, _: WriterAuth, db: DatabaseSession
 ) -> dict[str, object]:
     model, _ = get_recovery(db, transaction_id)
     return recovery_values(db, set_recovery_archived(db, model, archived=False))
@@ -378,7 +379,7 @@ def get_transfers(
 
 @router.post("/transfers", response_model=TransferRead, status_code=201)
 def post_transfer(
-    payload: TransferCreate, auth: CsrfAuth, db: DatabaseSession
+    payload: TransferCreate, auth: WriterAuth, db: DatabaseSession
 ) -> dict[str, object]:
     return transfer_values(create_transfer(db, payload, auth.user.settings.base_currency))
 
@@ -394,7 +395,7 @@ def get_transfer_by_id(
 def patch_transfer(
     transfer_link_id: int,
     payload: TransferUpdate,
-    auth: CsrfAuth,
+    auth: WriterAuth,
     db: DatabaseSession,
 ) -> dict[str, object]:
     return transfer_values(
@@ -409,7 +410,7 @@ def patch_transfer(
 
 @router.post("/transfers/{transfer_link_id}/archive", response_model=TransferRead)
 def archive_transfer(
-    transfer_link_id: int, _: CsrfAuth, db: DatabaseSession
+    transfer_link_id: int, _: WriterAuth, db: DatabaseSession
 ) -> dict[str, object]:
     return transfer_values(
         set_transfer_archived(db, get_transfer(db, transfer_link_id), archived=True)
@@ -418,7 +419,7 @@ def archive_transfer(
 
 @router.post("/transfers/{transfer_link_id}/restore", response_model=TransferRead)
 def restore_transfer(
-    transfer_link_id: int, _: CsrfAuth, db: DatabaseSession
+    transfer_link_id: int, _: WriterAuth, db: DatabaseSession
 ) -> dict[str, object]:
     return transfer_values(
         set_transfer_archived(db, get_transfer(db, transfer_link_id), archived=False)
@@ -445,7 +446,7 @@ def list_accounts(
 
 
 @router.post("/accounts", response_model=AccountRead, status_code=201)
-def post_account(payload: AccountCreate, _: CsrfAuth, db: DatabaseSession) -> Account:
+def post_account(payload: AccountCreate, _: WriterAuth, db: DatabaseSession) -> Account:
     return create_account(db, payload)
 
 
@@ -456,18 +457,18 @@ def get_account(account_id: int, _: Auth, db: DatabaseSession) -> Account:
 
 @router.patch("/accounts/{account_id}", response_model=AccountRead)
 def patch_account(
-    account_id: int, payload: AccountUpdate, _: CsrfAuth, db: DatabaseSession
+    account_id: int, payload: AccountUpdate, _: WriterAuth, db: DatabaseSession
 ) -> Account:
     return update_account(db, get_model(db, Account, account_id, "Account"), payload)
 
 
 @router.post("/accounts/{account_id}/archive", response_model=AccountRead)
-def archive_account(account_id: int, _: CsrfAuth, db: DatabaseSession) -> Account:
+def archive_account(account_id: int, _: WriterAuth, db: DatabaseSession) -> Account:
     return archive_model(db, get_model(db, Account, account_id, "Account"))
 
 
 @router.post("/accounts/{account_id}/restore", response_model=AccountRead)
-def restore_account(account_id: int, _: CsrfAuth, db: DatabaseSession) -> Account:
+def restore_account(account_id: int, _: WriterAuth, db: DatabaseSession) -> Account:
     return restore_model(db, get_model(db, Account, account_id, "Account"))
 
 
@@ -488,7 +489,7 @@ def get_account_snapshots(
 def post_account_snapshot(
     account_id: int,
     payload: AccountSnapshotCreate,
-    auth: CsrfAuth,
+    auth: WriterAuth,
     db: DatabaseSession,
 ) -> dict[str, object]:
     account = get_model(db, Account, account_id, "Account")
@@ -503,7 +504,7 @@ def post_account_snapshot(
 def post_balance_adjustment(
     snapshot_id: int,
     payload: BalanceAdjustmentCreate,
-    _: CsrfAuth,
+    _: WriterAuth,
     db: DatabaseSession,
 ) -> dict[str, object]:
     snapshot = get_model(db, AccountSnapshot, snapshot_id, "Account snapshot")
@@ -517,7 +518,7 @@ def post_balance_adjustment(
 
 @router.post("/adjustments/{transaction_id}/archive", response_model=TransactionRead)
 def archive_adjustment(
-    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+    transaction_id: int, _: WriterAuth, db: DatabaseSession
 ) -> dict[str, object]:
     model = get_model(db, Transaction, transaction_id, "Balance adjustment")
     return transaction_values(set_adjustment_archived(db, model, archived=True))
@@ -525,7 +526,7 @@ def archive_adjustment(
 
 @router.post("/adjustments/{transaction_id}/restore", response_model=TransactionRead)
 def restore_adjustment(
-    transaction_id: int, _: CsrfAuth, db: DatabaseSession
+    transaction_id: int, _: WriterAuth, db: DatabaseSession
 ) -> dict[str, object]:
     model = get_model(db, Transaction, transaction_id, "Balance adjustment")
     return transaction_values(set_adjustment_archived(db, model, archived=False))
@@ -535,7 +536,7 @@ def restore_adjustment(
 def patch_account_snapshot(
     snapshot_id: int,
     payload: AccountSnapshotUpdate,
-    _: CsrfAuth,
+    _: WriterAuth,
     db: DatabaseSession,
 ) -> dict[str, object]:
     model = get_model(db, AccountSnapshot, snapshot_id, "Account snapshot")
@@ -545,7 +546,7 @@ def patch_account_snapshot(
 
 @router.post("/account-snapshots/{snapshot_id}/archive", response_model=AccountSnapshotRead)
 def archive_account_snapshot(
-    snapshot_id: int, _: CsrfAuth, db: DatabaseSession
+    snapshot_id: int, _: WriterAuth, db: DatabaseSession
 ) -> dict[str, object]:
     model = archive_model(db, get_model(db, AccountSnapshot, snapshot_id, "Account snapshot"))
     account = get_model(db, Account, model.account_id, "Account")
@@ -554,7 +555,7 @@ def archive_account_snapshot(
 
 @router.post("/account-snapshots/{snapshot_id}/restore", response_model=AccountSnapshotRead)
 def restore_account_snapshot(
-    snapshot_id: int, _: CsrfAuth, db: DatabaseSession
+    snapshot_id: int, _: WriterAuth, db: DatabaseSession
 ) -> dict[str, object]:
     model = restore_model(db, get_model(db, AccountSnapshot, snapshot_id, "Account snapshot"))
     account = get_model(db, Account, model.account_id, "Account")
@@ -581,7 +582,7 @@ def list_categories(
 
 
 @router.post("/categories", response_model=CategoryRead, status_code=201)
-def post_category(payload: CategoryCreate, _: CsrfAuth, db: DatabaseSession) -> Category:
+def post_category(payload: CategoryCreate, _: WriterAuth, db: DatabaseSession) -> Category:
     return create_category(db, payload)
 
 
@@ -592,18 +593,18 @@ def get_category(category_id: int, _: Auth, db: DatabaseSession) -> Category:
 
 @router.patch("/categories/{category_id}", response_model=CategoryRead)
 def patch_category(
-    category_id: int, payload: CategoryUpdate, _: CsrfAuth, db: DatabaseSession
+    category_id: int, payload: CategoryUpdate, _: WriterAuth, db: DatabaseSession
 ) -> Category:
     return update_category(db, get_model(db, Category, category_id, "Category"), payload)
 
 
 @router.post("/categories/{category_id}/archive", response_model=CategoryRead)
-def post_archive_category(category_id: int, _: CsrfAuth, db: DatabaseSession) -> Category:
+def post_archive_category(category_id: int, _: WriterAuth, db: DatabaseSession) -> Category:
     return archive_category(db, get_model(db, Category, category_id, "Category"))
 
 
 @router.post("/categories/{category_id}/restore", response_model=CategoryRead)
-def restore_category(category_id: int, _: CsrfAuth, db: DatabaseSession) -> Category:
+def restore_category(category_id: int, _: WriterAuth, db: DatabaseSession) -> Category:
     return restore_category_model(db, get_model(db, Category, category_id, "Category"))
 
 
@@ -616,13 +617,13 @@ def list_category_links(
 
 @router.post("/category-links", response_model=CategoryLinkRead, status_code=201)
 def post_category_link(
-    payload: CategoryLinkCreate, _: CsrfAuth, db: DatabaseSession
+    payload: CategoryLinkCreate, _: WriterAuth, db: DatabaseSession
 ) -> CategoryLink:
     return create_category_link(db, payload)
 
 
 @router.delete("/category-links/{link_id}", status_code=204)
-def delete_category_link(link_id: int, _: CsrfAuth, db: DatabaseSession) -> Response:
+def delete_category_link(link_id: int, _: WriterAuth, db: DatabaseSession) -> Response:
     delete_configuration_model(db, get_model(db, CategoryLink, link_id, "Category link"))
     return Response(status_code=204)
 
@@ -647,7 +648,7 @@ def list_providers(
 
 
 @router.post("/providers", response_model=ProviderRead, status_code=201)
-def post_provider(payload: ProviderCreate, _: CsrfAuth, db: DatabaseSession) -> Provider:
+def post_provider(payload: ProviderCreate, _: WriterAuth, db: DatabaseSession) -> Provider:
     return create_provider(db, payload)
 
 
@@ -658,18 +659,18 @@ def get_provider(provider_id: int, _: Auth, db: DatabaseSession) -> Provider:
 
 @router.patch("/providers/{provider_id}", response_model=ProviderRead)
 def patch_provider(
-    provider_id: int, payload: ProviderUpdate, _: CsrfAuth, db: DatabaseSession
+    provider_id: int, payload: ProviderUpdate, _: WriterAuth, db: DatabaseSession
 ) -> Provider:
     return update_provider(db, get_model(db, Provider, provider_id, "Provider"), payload)
 
 
 @router.post("/providers/{provider_id}/archive", response_model=ProviderRead)
-def archive_provider(provider_id: int, _: CsrfAuth, db: DatabaseSession) -> Provider:
+def archive_provider(provider_id: int, _: WriterAuth, db: DatabaseSession) -> Provider:
     return archive_model(db, get_model(db, Provider, provider_id, "Provider"))
 
 
 @router.post("/providers/{provider_id}/restore", response_model=ProviderRead)
-def restore_provider(provider_id: int, _: CsrfAuth, db: DatabaseSession) -> Provider:
+def restore_provider(provider_id: int, _: WriterAuth, db: DatabaseSession) -> Provider:
     return restore_model(db, get_model(db, Provider, provider_id, "Provider"))
 
 
@@ -689,7 +690,7 @@ def list_provider_aliases(
 
 @router.post("/providers/{provider_id}/aliases", response_model=ProviderAliasRead, status_code=201)
 def post_provider_alias(
-    provider_id: int, payload: ProviderAliasCreate, _: CsrfAuth, db: DatabaseSession
+    provider_id: int, payload: ProviderAliasCreate, _: WriterAuth, db: DatabaseSession
 ) -> ProviderAlias:
     provider = get_model(db, Provider, provider_id, "Provider")
     return create_provider_alias(db, provider, payload)
@@ -697,7 +698,7 @@ def post_provider_alias(
 
 @router.patch("/provider-aliases/{alias_id}", response_model=ProviderAliasRead)
 def patch_provider_alias(
-    alias_id: int, payload: ProviderAliasUpdate, _: CsrfAuth, db: DatabaseSession
+    alias_id: int, payload: ProviderAliasUpdate, _: WriterAuth, db: DatabaseSession
 ) -> ProviderAlias:
     return update_provider_alias(
         db, get_model(db, ProviderAlias, alias_id, "Provider alias"), payload
@@ -705,7 +706,7 @@ def patch_provider_alias(
 
 
 @router.delete("/provider-aliases/{alias_id}", status_code=204)
-def delete_provider_alias(alias_id: int, _: CsrfAuth, db: DatabaseSession) -> Response:
+def delete_provider_alias(alias_id: int, _: WriterAuth, db: DatabaseSession) -> Response:
     delete_configuration_model(db, get_model(db, ProviderAlias, alias_id, "Provider alias"))
     return Response(status_code=204)
 
@@ -719,13 +720,13 @@ def list_provider_links(
 
 @router.post("/provider-links", response_model=ProviderLinkRead, status_code=201)
 def post_provider_link(
-    payload: ProviderLinkCreate, _: CsrfAuth, db: DatabaseSession
+    payload: ProviderLinkCreate, _: WriterAuth, db: DatabaseSession
 ) -> ProviderLink:
     return create_provider_link(db, payload)
 
 
 @router.delete("/provider-links/{link_id}", status_code=204)
-def delete_provider_link(link_id: int, _: CsrfAuth, db: DatabaseSession) -> Response:
+def delete_provider_link(link_id: int, _: WriterAuth, db: DatabaseSession) -> Response:
     delete_configuration_model(db, get_model(db, ProviderLink, link_id, "Provider link"))
     return Response(status_code=204)
 
@@ -750,7 +751,7 @@ def list_tags(
 
 
 @router.post("/tags", response_model=TagRead, status_code=201)
-def post_tag(payload: TagCreate, _: CsrfAuth, db: DatabaseSession) -> Tag:
+def post_tag(payload: TagCreate, _: WriterAuth, db: DatabaseSession) -> Tag:
     return create_tag(db, payload)
 
 
@@ -760,23 +761,23 @@ def get_tag(tag_id: int, _: Auth, db: DatabaseSession) -> Tag:
 
 
 @router.patch("/tags/{tag_id}", response_model=TagRead)
-def patch_tag(tag_id: int, payload: TagUpdate, _: CsrfAuth, db: DatabaseSession) -> Tag:
+def patch_tag(tag_id: int, payload: TagUpdate, _: WriterAuth, db: DatabaseSession) -> Tag:
     return update_tag(db, get_model(db, Tag, tag_id, "Tag"), payload)
 
 
 @router.post("/tags/{tag_id}/archive", response_model=TagRead)
-def archive_tag(tag_id: int, _: CsrfAuth, db: DatabaseSession) -> Tag:
+def archive_tag(tag_id: int, _: WriterAuth, db: DatabaseSession) -> Tag:
     return archive_model(db, get_model(db, Tag, tag_id, "Tag"))
 
 
 @router.post("/tags/{tag_id}/restore", response_model=TagRead)
-def restore_tag(tag_id: int, _: CsrfAuth, db: DatabaseSession) -> Tag:
+def restore_tag(tag_id: int, _: WriterAuth, db: DatabaseSession) -> Tag:
     return restore_model(db, get_model(db, Tag, tag_id, "Tag"))
 
 
 @router.post("/tags/{tag_id}/merge", response_model=TagRead)
 def merge_tag_route(
-    tag_id: int, payload: TagMergeRequest, _: CsrfAuth, db: DatabaseSession
+    tag_id: int, payload: TagMergeRequest, _: WriterAuth, db: DatabaseSession
 ) -> Tag:
     return merge_tag(db, get_model(db, Tag, tag_id, "Tag"), payload)
 
@@ -802,7 +803,7 @@ def list_sharing_parties(
 
 @router.post("/sharing-parties", response_model=SharingPartyRead, status_code=201)
 def post_sharing_party(
-    payload: SharingPartyCreate, _: CsrfAuth, db: DatabaseSession
+    payload: SharingPartyCreate, _: WriterAuth, db: DatabaseSession
 ) -> SharingParty:
     return create_sharing_party(db, payload)
 
@@ -814,18 +815,18 @@ def get_sharing_party(party_id: int, _: Auth, db: DatabaseSession) -> SharingPar
 
 @router.patch("/sharing-parties/{party_id}", response_model=SharingPartyRead)
 def patch_sharing_party(
-    party_id: int, payload: SharingPartyUpdate, _: CsrfAuth, db: DatabaseSession
+    party_id: int, payload: SharingPartyUpdate, _: WriterAuth, db: DatabaseSession
 ) -> SharingParty:
     return update_sharing_party(db, get_model(db, SharingParty, party_id, "Sharing party"), payload)
 
 
 @router.post("/sharing-parties/{party_id}/archive", response_model=SharingPartyRead)
-def archive_sharing_party(party_id: int, _: CsrfAuth, db: DatabaseSession) -> SharingParty:
+def archive_sharing_party(party_id: int, _: WriterAuth, db: DatabaseSession) -> SharingParty:
     return archive_model(db, get_model(db, SharingParty, party_id, "Sharing party"))
 
 
 @router.post("/sharing-parties/{party_id}/restore", response_model=SharingPartyRead)
-def restore_sharing_party(party_id: int, _: CsrfAuth, db: DatabaseSession) -> SharingParty:
+def restore_sharing_party(party_id: int, _: WriterAuth, db: DatabaseSession) -> SharingParty:
     return restore_model(db, get_model(db, SharingParty, party_id, "Sharing party"))
 
 

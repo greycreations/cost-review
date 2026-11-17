@@ -4,13 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 
-let sessionIsAdmin = false;
+let sessionRole: "owner" | "member" | "viewer" = "member";
 let sessionUnavailable = false;
 let userAccounts: object[] = [];
 
 const session = (environment: "production" | "test") => ({
+  user_id: 1,
   username: `${environment}-owner`,
-  is_admin: sessionIsAdmin,
+  role: sessionRole,
   environment,
   environment_label: environment === "production" ? "Production" : "Demo/Test",
   data_plane_id: environment === "production" ? "prod-plane" : "test-plane",
@@ -75,7 +76,7 @@ describe("App", () => {
     providerItems = [];
     sharingPartyItems = [];
     tagItems = [];
-    sessionIsAdmin = false;
+    sessionRole = "member";
     sessionUnavailable = false;
     userAccounts = [];
     investmentPositions = [
@@ -163,6 +164,11 @@ describe("App", () => {
           body = [];
         } else if (path.endsWith("/users") && !init?.method) {
           body = userAccounts;
+        } else if (path.endsWith("/household/members")) {
+          body = [
+            { user_id: 1, username: "production-owner", role: "owner" },
+            { user_id: 2, username: "household-member", role: "member" },
+          ];
         } else if (path.includes("/audit-events?")) {
           body = { items: [], total: 0, limit: 10, offset: 0 };
         } else if (path.endsWith("/budgets") && init?.method === "POST") {
@@ -434,19 +440,19 @@ describe("App", () => {
   });
 
   it("changes the signed-in user's password and shows admin-only account controls", async () => {
-    sessionIsAdmin = true;
+    sessionRole = "owner";
     userAccounts = [
       {
         user_id: 1,
         username: "production-owner",
-        is_admin: true,
+        role: "owner",
         created_at: "2026-09-12T08:00:00Z",
         updated_at: "2026-09-12T08:00:00Z",
       },
       {
         user_id: 2,
         username: "household-member",
-        is_admin: false,
+        role: "member",
         created_at: "2026-09-12T09:00:00Z",
         updated_at: "2026-09-12T09:00:00Z",
       },
@@ -457,8 +463,8 @@ describe("App", () => {
 
     await screen.findByText(/Your finances ·/);
     await user.click(screen.getByRole("link", { name: "Settings" }));
-    expect(await screen.findByRole("heading", { name: "Users" })).toBeInTheDocument();
-    expect(await screen.findByText("household-member")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Household members" })).toBeInTheDocument();
+    expect((await screen.findAllByText("household-member")).length).toBeGreaterThan(0);
 
     await user.type(screen.getByLabelText("Current password"), "old account password");
     const newPasswordFields = screen.getAllByLabelText("New password");
@@ -728,7 +734,28 @@ describe("App", () => {
     ).toHaveAttribute("href", "https://www.avanza.se/aktier/lista.html");
   });
 
+  it("hides backup controls from household members who are not owners", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText(/Your finances ·/);
+    await user.click(screen.getByRole("link", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Recycle bin and change history" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Encrypted backups" })).not.toBeInTheDocument();
+    expect(
+      vi.mocked(fetch).mock.calls.some(([input]) => input.toString().endsWith("/backups")),
+    ).toBe(false);
+  });
+
+  it("shows a view-only notice to household viewers", async () => {
+    sessionRole = "viewer";
+    render(<App />);
+
+    expect(await screen.findByRole("note")).toHaveTextContent("view-only access");
+  });
+
   it("shows pilot data safety controls in Settings", async () => {
+    sessionRole = "owner";
     const user = userEvent.setup();
     render(<App />);
 
@@ -1114,7 +1141,8 @@ describe("App", () => {
       {
         sharing_party_id: 11,
         name: "Alex",
-        is_self: true,
+        user_id: 1,
+        username: "production-owner",
         notes: null,
         status: "active",
         archived_at: null,
@@ -1124,7 +1152,8 @@ describe("App", () => {
       {
         sharing_party_id: 12,
         name: "Sam",
-        is_self: false,
+        user_id: null,
+        username: null,
         notes: null,
         status: "active",
         archived_at: null,
@@ -1141,7 +1170,7 @@ describe("App", () => {
     await user.type(screen.getByLabelText("Description"), "Shared groceries");
     await user.type(screen.getByLabelText("Amount"), "1000");
     await user.click(screen.getByLabelText("Not shared – 100% counts as mine"));
-    const myPercentage = screen.getByRole("spinbutton", { name: /Alex · me/ });
+    const myPercentage = screen.getByRole("spinbutton", { name: /Alex · production-owner/ });
     await user.clear(myPercentage);
     await user.type(myPercentage, "40");
     await user.type(screen.getByRole("spinbutton", { name: /Sam/ }), "60");
