@@ -155,13 +155,13 @@ unset GHCR_TOKEN
 
 Never copy a development machine's `.env` to another installation.
 
-### Upgrade an existing installation to 0.9.0
+### Upgrade an existing installation to 0.9.1
 
 Keep the existing `.env` so database passwords, backup keys, and installation
 identity remain unchanged. Create a current backup, then change only this line:
 
 ```sh
-COST_REVIEW_VERSION=0.9.0
+COST_REVIEW_VERSION=0.9.1
 ```
 
 Pull and recreate the application containers from the installation folder:
