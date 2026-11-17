@@ -471,6 +471,12 @@ category, tag, account, and provider include/exclude selections for budgets.
 Saved views, recurring and amount/currency filtering in Overview, linked-master
 rollups, and named/moveable dashboard layouts remain later Epic 5 slices.
 
+The Overview also shows posted cash flow for current and cash accounts, using
+posting date and the full posted amounts in those accounts. Its breakdown
+distinguishes card settlements, net savings and investment transfers, and debt
+principal. The existing period result retains its transaction-date basis.
+See `docs/adr/0019-posted-cash-flow.md`.
+
 The Budget view creates calendar-month, salary-cycle, calendar-year, or custom
 budgets with reset/rollover behavior and category/tag/account/provider selection. Outcomes are
 calculated by the API from canonical split components; linked refunds and

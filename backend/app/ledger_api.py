@@ -15,6 +15,7 @@ from app.account_snapshot_services import (
     update_account_snapshot,
 )
 from app.audit_services import list_audit_events
+from app.cash_flow_services import available_cash_flow
 from app.dependencies import Auth, CsrfAuth, DatabaseSession
 from app.errors import ApiError
 from app.ledger_safety_services import (
@@ -32,6 +33,7 @@ from app.ledger_schemas import (
     AnalysisPerspective,
     AuditEventRead,
     BalanceAdjustmentCreate,
+    CashFlowRead,
     CategoryCreate,
     CategoryLinkCreate,
     CategoryLinkRead,
@@ -236,6 +238,14 @@ def get_transaction_summary(
         is_base_cost=is_base_cost,
         perspective=perspective.value,
     )
+
+
+@router.get("/transactions/cash-flow", response_model=CashFlowRead)
+def get_cash_flow(
+    auth: Auth, db: DatabaseSession, date_from: date, date_to: date
+) -> dict[str, object]:
+    _validate_date_range(date_from, date_to)
+    return available_cash_flow(db, date_from, date_to, auth.user.settings.base_currency)
 
 
 @router.get("/transactions/analysis", response_model=LedgerAnalysisRead)

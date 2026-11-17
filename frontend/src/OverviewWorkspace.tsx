@@ -5,6 +5,7 @@ import {
   getCategories,
   getLedgerAnalysis,
   getLedgerSummary,
+  getPostedCashFlow,
   getProviders,
   getTags,
   getTransactions,
@@ -17,6 +18,7 @@ import {
   type LedgerAnalysis,
   type LedgerSummary,
   type LedgerTrendPoint,
+  type PostedCashFlow,
   type Provider,
   type Tag,
   type Transaction,
@@ -33,7 +35,20 @@ const copy = {
     currentMonth: "Denna månad",
     income: "Inkomster",
     expenses: "Utgifter",
-    net: "Netto",
+    net: "Periodresultat",
+    postedFlow: "Bokfört kassaflöde",
+    postedScope: "Bokföringsdatum för vardags- och kontantkonton. Visar totalen för dessa konton.",
+    postedUnavailable: "Det gick inte att hämta det bokförda kassaflödet.",
+    postedEmpty: "Lägg till ett vardags- eller kontantkonto för att se kassaflödet.",
+    postedChange: "Nettoflöde under månaden",
+    postedBreakdown: "Visa hur förändringen räknas fram",
+    postedInflows: "Inkomster och återbetalningar",
+    postedExpenses: "Utgifter betalda från kontona",
+    postedCards: "Kortfakturor",
+    postedSavings: "Sparande, netto",
+    postedInvestments: "Investeringsinsättningar, netto",
+    postedDebt: "Amortering",
+    postedOther: "Övriga överföringar",
     entries: "Registrerade poster",
     cashFlow: "Inkomster och utgifter över månaden",
     cashFlowLead: "Beloppen visas per transaktionsdatum i basvalutan.",
@@ -90,7 +105,20 @@ const copy = {
     currentMonth: "This month",
     income: "Income",
     expenses: "Expenses",
-    net: "Net",
+    net: "Period result",
+    postedFlow: "Posted cash flow",
+    postedScope: "Posting dates for current and cash accounts. Shows the total for these accounts.",
+    postedUnavailable: "Posted cash flow could not be loaded.",
+    postedEmpty: "Add a current or cash account to see posted cash flow.",
+    postedChange: "Net flow this month",
+    postedBreakdown: "Show how the change is calculated",
+    postedInflows: "Income and recoveries",
+    postedExpenses: "Expenses paid from these accounts",
+    postedCards: "Credit card payments",
+    postedSavings: "Net savings transfers",
+    postedInvestments: "Net investment transfers",
+    postedDebt: "Debt principal repayments",
+    postedOther: "Other transfers",
     entries: "Recorded entries",
     cashFlow: "Income and expenses through the month",
     cashFlowLead: "Amounts are shown by transaction date in the base currency.",
@@ -301,6 +329,15 @@ export function OverviewWorkspace({
         </p>
       ) : null}
 
+      <PostedCashFlowPanel
+        key={`${environment}:${period.from}:${period.to}`}
+        environment={environment}
+        from={period.from}
+        to={period.to}
+        labels={labels}
+        language={language}
+      />
+
       <div className="overview-analysis-grid">
         <CashFlowChart
           comparison={analysis?.comparison ?? null}
@@ -393,6 +430,67 @@ export function OverviewWorkspace({
           </div>
         )}
       </section>
+    </section>
+  );
+}
+
+function PostedCashFlowPanel({ environment, from, to, labels, language }: {
+  environment: Environment;
+  from: string;
+  to: string;
+  labels: Labels;
+  language: Language;
+}) {
+  const [result, setResult] = useState<PostedCashFlow | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getPostedCashFlow(environment, from, to)
+      .then((data) => {
+        if (active) setResult(data);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [environment, from, to]);
+
+  const rows = result ? [
+    [labels.postedInflows, result.inflows],
+    [labels.postedExpenses, result.expenses],
+    [labels.postedCards, result.card_payments],
+    [labels.postedSavings, result.savings],
+    [labels.postedInvestments, result.investment],
+    [labels.postedDebt, result.debt_repayment],
+    [labels.postedOther, result.other_transfers],
+  ] : [];
+
+  return (
+    <section className="recent-panel">
+      <div className="recent-heading"><h2>{labels.postedFlow}</h2></div>
+      <p className="quiet-copy">{labels.postedScope}</p>
+      {failed ? <p className="form-error" role="alert">{labels.postedUnavailable}</p> : null}
+      {!result && !failed ? <p className="quiet-copy" role="status">{labels.loading}</p> : null}
+      {result?.account_count === 0 ? <p className="quiet-copy">{labels.postedEmpty}</p> : null}
+      {result && result.account_count > 0 ? (
+        <>
+          <Metric label={labels.postedChange} value={result.net_movement} currency={result.base_currency} language={language} />
+          {result.missing_fx_count > 0 ? (
+            <p className="attention-note">{result.missing_fx_count} {labels.missingFx}</p>
+          ) : null}
+          <details className="chart-data-table">
+            <summary>{labels.postedBreakdown}</summary>
+            <div className="table-scroll"><table aria-label={labels.postedFlow}>
+              <tbody>{rows.map(([label, amount]) => (
+                <tr key={label}><th scope="row">{label}</th><td>{money(amount, result.base_currency, language)}</td></tr>
+              ))}</tbody>
+            </table></div>
+          </details>
+        </>
+      ) : null}
     </section>
   );
 }

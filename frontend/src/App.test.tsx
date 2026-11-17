@@ -221,6 +221,20 @@ describe("App", () => {
           body = { items: [], total: 0, limit: 50, offset: 0 };
         } else if (path.includes("/transactions/analysis?")) {
           body = analysisData;
+        } else if (path.includes("/transactions/cash-flow?")) {
+          body = {
+            base_currency: "SEK",
+            account_count: 1,
+            missing_fx_count: 0,
+            inflows: "30000.0000",
+            expenses: "-300.0000",
+            card_payments: "-1000.0000",
+            savings: "-1800.0000",
+            investment: "-1500.0000",
+            debt_repayment: "-500.0000",
+            other_transfers: "0.0000",
+            net_movement: "24900.0000",
+          };
         } else if (path.includes("/transactions/summary?")) {
           body = {
             date_from: "2026-08-01",
@@ -851,6 +865,18 @@ describe("App", () => {
         ),
       ).toBe(true);
     });
+  });
+
+  it("shows the posted cash-flow breakdown independently of period result", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const panel = (await screen.findByRole("heading", { name: "Posted cash flow" })).closest("section")!;
+    expect(await within(panel).findByText(/24[\s,]900/)).toBeInTheDocument();
+    await user.click(within(panel).getByText("Show how the change is calculated"));
+    const table = within(panel).getByRole("table", { name: "Posted cash flow" });
+    expect(within(table).getByRole("rowheader", { name: "Credit card payments" })).toBeInTheDocument();
+    expect(within(table).getByRole("rowheader", { name: "Net investment transfers" })).toBeInTheDocument();
   });
 
   it("renders truthful daily and category analysis with accessible data tables", async () => {

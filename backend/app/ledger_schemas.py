@@ -641,6 +641,22 @@ class LedgerSummaryRead(BaseModel):
     perspective: AnalysisPerspective
 
 
+class CashFlowRead(BaseModel):
+    date_from: date
+    date_to: date
+    base_currency: str
+    account_count: int
+    missing_fx_count: int
+    inflows: Decimal
+    expenses: Decimal
+    card_payments: Decimal
+    other_transfers: Decimal
+    savings: Decimal
+    investment: Decimal
+    debt_repayment: Decimal
+    net_movement: Decimal
+
+
 class LedgerTrendPointRead(BaseModel):
     date: date
     income: Decimal

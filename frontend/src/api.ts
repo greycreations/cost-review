@@ -439,6 +439,20 @@ export type TransferInput = {
   notes?: string | null;
 };
 
+export type PostedCashFlow = {
+  base_currency: string;
+  account_count: number;
+  missing_fx_count: number;
+  inflows: string;
+  expenses: string;
+  card_payments: string;
+  savings: string;
+  investment: string;
+  debt_repayment: string;
+  other_transfers: string;
+  net_movement: string;
+};
+
 export type LedgerSummary = {
   date_from: string;
   date_to: string;
@@ -1251,6 +1265,15 @@ export function getLedgerSummary(
   const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
   appendLedgerFilters(query, filters);
   return request(environment, `/transactions/summary?${query.toString()}`);
+}
+
+export function getPostedCashFlow(
+  environment: Environment,
+  dateFrom: string,
+  dateTo: string,
+): Promise<PostedCashFlow> {
+  const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  return request(environment, `/transactions/cash-flow?${query.toString()}`);
 }
 
 export function getLedgerAnalysis(
