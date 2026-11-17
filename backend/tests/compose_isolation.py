@@ -89,7 +89,7 @@ def main() -> int:
         {
             "username": "production-member",
             "password": "production member password",
-            "is_admin": False,
+            "role": "member",
         },
         prod_csrf,
     )
@@ -100,7 +100,7 @@ def main() -> int:
         {
             "username": "test-member",
             "password": "test member password",
-            "is_admin": False,
+            "role": "member",
         },
         test_csrf,
     )

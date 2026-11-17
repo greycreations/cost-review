@@ -31,14 +31,26 @@ from app.models import (
     TransactionSplit,
     TransactionSplitShare,
 )
+from app.sharing import TOTAL, Perspective, share_allocation_values, share_multiplier
 
 MONEY_QUANTUM = Decimal("0.0001")
 RATE_QUANTUM = Decimal("0.0000000001")
 
 
 def create_manual_transaction(
-    db: DbSession, payload: TransactionCreate, base_currency: str
+    db: DbSession,
+    payload: TransactionCreate,
+    base_currency: str,
+    *,
+    source_type: str = "manual",
+    commit: bool = True,
 ) -> Transaction:
+    """Create one income or expense event.
+
+    Imports pass ``source_type="import"`` and ``commit=False`` so a whole
+    reviewed batch becomes Ledger history in one database transaction.
+    """
+
     original_amount = payload.original_amount.quantize(MONEY_QUANTUM)
     account = _active_model(db, Account, payload.account_id, "Account")
     provider = (
@@ -68,7 +80,7 @@ def create_manual_transaction(
         base_currency=base_currency,
         fx_rate=fx_rate,
         fx_rate_status=fx_rate_status,
-        source_type="manual",
+        source_type=source_type,
         source_reference=payload.source_reference,
         notes=payload.notes,
     )
@@ -89,7 +101,8 @@ def create_manual_transaction(
         fx_rate,
     )
     db.add(model)
-    _commit(db)
+    if commit:
+        _commit(db)
     return model
 
 
@@ -444,7 +457,7 @@ def ledger_summary(
     category_id: int | None = None,
     tag_id: int | None = None,
     is_base_cost: bool | None = None,
-    perspective: str = "total",
+    perspective: Perspective = TOTAL,
 ) -> dict[str, Any]:
     in_period = [
         Transaction.status == "active",
@@ -525,7 +538,7 @@ def ledger_summary(
         category_id is not None
         or tag_id is not None
         or is_base_cost is not None
-        or perspective == "my_share"
+        or not perspective.is_total
     ):
         filtered_analysis = _ledger_analysis_period(
             db,
@@ -555,7 +568,7 @@ def ledger_summary(
         "net_cash_flow": (income_value - expense_value).quantize(MONEY_QUANTUM),
         "transaction_count": transaction_count,
         "missing_fx_count": missing_fx_count,
-        "perspective": perspective,
+        "perspective": perspective.kind,
     }
 
 
@@ -571,7 +584,7 @@ def ledger_analysis(
     category_id: int | None = None,
     tag_id: int | None = None,
     is_base_cost: bool | None = None,
-    perspective: str = "total",
+    perspective: Perspective = TOTAL,
 ) -> dict[str, Any]:
     filter_options = {
         "account_id": account_id,
@@ -584,7 +597,7 @@ def ledger_analysis(
     result = _ledger_analysis_period(
         db, date_from, date_to, base_currency, **filter_options
     )
-    result["perspective"] = perspective
+    result["perspective"] = perspective.kind
     if comparison_mode == "none":
         result["comparison"] = None
         return result
@@ -624,7 +637,7 @@ def _ledger_analysis_period(
     category_id: int | None = None,
     tag_id: int | None = None,
     is_base_cost: bool | None = None,
-    perspective: str = "total",
+    perspective: Perspective = TOTAL,
 ) -> dict[str, Any]:
     transactions = list(
         db.scalars(
@@ -775,7 +788,7 @@ def transaction_values(
     is_split = len(model.splits) > 1
     split = model.splits[0] if not is_split else None
     top_level_allocations = (
-        _share_allocation_values(split) if split is not None else []
+        share_allocation_values(split) if split is not None else []
     )
     return {
         "transaction_id": model.transaction_id,
@@ -809,7 +822,7 @@ def transaction_values(
                 "tag_ids": sorted(tag.tag_id for tag in component.tags),
                 "is_base_cost": component.is_base_cost,
                 "memo": component.memo,
-                "sharing_allocations": _share_allocation_values(component),
+                "sharing_allocations": share_allocation_values(component),
             }
             for component in model.splits
         ],
@@ -852,7 +865,7 @@ def _split_category_amounts(
     category_id: int | None = None,
     tag_id: int | None = None,
     is_base_cost: bool | None = None,
-    perspective: str = "total",
+    perspective: Perspective = TOTAL,
 ) -> dict[int | None, Decimal]:
     amounts: dict[int | None, Decimal] = {}
     for split in model.splits:
@@ -863,7 +876,7 @@ def _split_category_amounts(
             is_base_cost=is_base_cost,
         ):
             continue
-        amount = split.converted_amount * _share_multiplier(split, perspective)
+        amount = split.converted_amount * share_multiplier(split, perspective)
         amounts[split.category_id] = amounts.get(split.category_id, Decimal("0")) + amount
     return amounts
 
@@ -875,7 +888,7 @@ def _allocate_recovery_to_categories(
     category_id: int | None = None,
     tag_id: int | None = None,
     is_base_cost: bool | None = None,
-    perspective: str = "total",
+    perspective: Perspective = TOTAL,
 ) -> dict[int | None, Decimal]:
     allocations: dict[int | None, Decimal] = {}
     for split, amount in allocate_recovery_to_splits(original, recovery_amount):
@@ -888,38 +901,12 @@ def _allocate_recovery_to_categories(
             continue
         allocations[split.category_id] = allocations.get(
             split.category_id, Decimal("0")
-        ) + amount * _share_multiplier(split, perspective)
+        ) + amount * share_multiplier(split, perspective)
     return allocations
 
 
-def _share_multiplier(split: TransactionSplit, perspective: str) -> Decimal:
-    if perspective == "total" or not split.share_allocations:
-        return Decimal("1")
-    return sum(
-        (
-            allocation.percentage
-            for allocation in split.share_allocations
-            if allocation.sharing_party.is_self
-        ),
-        Decimal("0"),
-    ) / Decimal("100")
-
-
-def _share_allocation_values(split: TransactionSplit) -> list[dict[str, Any]]:
-    return [
-        {
-            "sharing_party_id": allocation.sharing_party_id,
-            "percentage": allocation.percentage,
-            "is_self": allocation.sharing_party.is_self,
-        }
-        for allocation in sorted(
-            split.share_allocations, key=lambda item: item.sharing_party_id
-        )
-    ]
-
-
 def _transaction_share_snapshot(model: Transaction) -> list[list[dict[str, Any]]]:
-    return [_share_allocation_values(split) for split in model.splits]
+    return [share_allocation_values(split) for split in model.splits]
 
 
 def allocate_recovery_to_splits(

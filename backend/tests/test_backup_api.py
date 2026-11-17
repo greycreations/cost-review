@@ -75,7 +75,7 @@ def test_backup_api_encrypts_lists_downloads_and_detects_tampering(
 
         downloaded = client.get(f"/api/v1/backups/{item['filename']}/download")
         assert downloaded.status_code == 200
-        assert downloaded.content.startswith(backup_services.MAGIC)
+        assert downloaded.content.startswith(backup_services.MAGIC_V2)
 
         path = backup_root / item["filename"]
         path.unlink()

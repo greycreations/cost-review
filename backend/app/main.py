@@ -18,9 +18,11 @@ from app.database import Database, ensure_environment_identity
 from app.dividend_services import AvanzaDividendOpportunityService
 from app.errors import ApiError
 from app.fund_services import AvanzaFundDataService
+from app.import_api import router as import_router
 from app.investment_api import router as investment_router
 from app.investment_services import create_market_data_service
 from app.ledger_api import router as ledger_router
+from app.recurring_api import router as recurring_router
 
 
 def create_app(runtime_settings: Settings | None = None) -> FastAPI:
@@ -37,7 +39,7 @@ def create_app(runtime_settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title=settings.app_name,
-        version="0.8.0",
+        version="0.9.0",
         description="Cost Review Release 1 platform and ledger API.",
         lifespan=lifespan,
         docs_url=f"{settings.api_prefix}/docs",
@@ -111,6 +113,8 @@ def create_app(runtime_settings: Settings | None = None) -> FastAPI:
     app.include_router(backup_router, prefix=settings.api_prefix)
     app.include_router(ledger_router, prefix=settings.api_prefix)
     app.include_router(budget_router, prefix=settings.api_prefix)
+    app.include_router(import_router, prefix=settings.api_prefix)
+    app.include_router(recurring_router, prefix=settings.api_prefix)
     app.include_router(investment_router, prefix=settings.api_prefix)
     if settings.app_environment == "test":
         app.include_router(test_router, prefix=settings.api_prefix)

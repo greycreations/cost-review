@@ -6,38 +6,18 @@ and household economics. Product behavior is defined by
 `docs/PRODUCT_SPECIFICATION.md` v1.8 and delivered in the order described by
 `docs/IMPLEMENTATION_BACKLOG.md`.
 
-Sprint 1 established the Platform Foundation: PostgreSQL, migrations, first-run
-setup, local authentication, independent locale settings, reverse-proxy safety,
-and a persistent hard boundary between Production and Demo/Test. The current
-pilot slice adds accounts, reusable ledger master data, manual income and
-expense entry, historical FX persistence, real period summaries, and dated
-account balance/value snapshots. Refunds and reimbursements are now preserved
-as linked events that reduce net cost without weakening that boundary or being
-misclassified as income. Transactions can be split across categories, tags,
-base-cost classifications, and sharing parties. The full event is preserved
-while Overview can switch between Total and My Share, including proportional
-refunds and reimbursements. The same perspective controls budget outcome,
-trends, and underlying entries. Overview applies the same filters to totals,
-charts, comparison periods, and transaction drill-down. It also adds
-explicit reconciliation adjustments, an audit-backed Recycle Bin, and encrypted
-database/configuration/attachment backups with offline restore. Version 0.6.0
-adds a dynamically discovered Yahoo Finance universe of Stockholm-traded shares
-to the Investments tab, with persisted holdings, dividend estimates, and
-whole-share purchase planning. Version 0.7.0 adds network self-registration,
-self-service password changes, and administrator-controlled user creation,
-renaming, role assignment, password reset and deletion. The same release also
-separates temporary screener selection from durable investment holdings, expands
-the holdings table and calendar, and adds a clearly labelled historical
-dividend-yield comparison.
-It also adds searchable Swedish fund-market data through Avanza's public, read-only fund
-information, decimal fund units and a combined stock/fund purchase plan. The full application has
-been tightened for narrow mobile screens; dense financial tables remain horizontally swipeable
-without widening the surrounding page. Every saved holding now has a direct remove action in
-addition to bulk selection, the application offers a device-persistent light/dark theme, and every
-named column in the Investments tables can be sorted descending or ascending from its header.
-Version 0.8.0 consolidates those portfolio and appearance refinements and replaces the preliminary
-Yahoo-only dividend ranking with a separately validated ordinary-dividend comparison. Exact ticker,
-current payout and two comparable payout cycles are checked against Avanza before a share may rank.
+Each installation is one household with one shared Ledger. Household members
+have a role: **owners** manage members and backups, **members** record and change
+the economy, and **viewers** can only look. Cost Review covers accounts and
+dated balance snapshots, income and expenses with splits, sharing between
+household members (Total and personal My Share), transfers, refunds and
+reimbursements, budgets, an analytical Overview, CSV/XLSX bank import with
+review before anything is recorded, recurring income and expenses as Expected
+events, an audit trail with Recycle Bin, and encrypted backups with offline
+restore. An optional Investments tab plans Stockholm share and fund holdings
+from delayed public market data.
+
+Release history is in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Architecture
 
@@ -104,12 +84,19 @@ Open `http://192.168.1.41:8080`. Store a recovery copy of the completed `.env`,
 especially both `BACKUP_*_ENCRYPTION_KEY` values, away from the Docker host;
 encrypted backups cannot be restored without their original keys.
 
-The first account created in each data environment is its administrator. With
-`ALLOW_SELF_REGISTRATION=true` (the default), anyone who can reach the sign-in
-page can create a regular account. Set it to `false` and recreate the API
-containers if accounts should only be created by an administrator. Disable it
-or enforce authentication at the reverse proxy before exposing an installation
-beyond a trusted network.
+The first account created in each data environment is its owner. Owners add
+household members under **Settings → Household members** and choose each
+member's role (owner, member or viewer). Self-registration is off by default.
+Setting `ALLOW_SELF_REGISTRATION=true` lets anyone who can reach the sign-in page
+join the household as a member with full read and write access, so enable it
+only on a trusted network.
+
+Five consecutive failed sign-ins lock an account for 15 minutes, and the gateway
+limits sign-in, registration and setup requests per client address.
+
+`COMPOSE_PROFILES=demo-test` in `.env` runs the separate Demo/Test data plane
+next to Production. Remove the value to run Production only; the Demo/Test
+volumes are kept and return when the profile is enabled again.
 
 The Investments tab uses delayed Yahoo Finance closing prices and dividend history for its initial
 Nasdaq Stockholm universe. No API key is required. The default configuration is:
@@ -155,14 +142,18 @@ unset GHCR_TOKEN
 
 Never copy a development machine's `.env` to another installation.
 
-### Upgrade an existing installation to 0.8.0
+### Upgrade an existing installation to 0.9.0
 
 Keep the existing `.env` so database passwords, backup keys, and installation
-identity remain unchanged. Create a current backup, then change only this line:
+identity remain unchanged. Create and download a current backup, then change
+the version line and add the Demo/Test profile line:
 
 ```sh
-COST_REVIEW_VERSION=0.8.0
+COST_REVIEW_VERSION=0.9.0
+COMPOSE_PROFILES=demo-test
 ```
+
+Without `COMPOSE_PROFILES=demo-test` only Production starts after the upgrade.
 
 Pull and recreate the application containers from the installation folder:
 
@@ -172,13 +163,18 @@ docker compose up --detach --wait
 docker compose ps
 ```
 
-No new database migration is required when upgrading from 0.7.0. The API containers still apply all
-available migrations independently to
-Production and Demo/Test before they start. The oldest existing account in each data plane becomes
-administrator automatically. Existing stock positions are preserved and marked as stocks; database,
-attachment and backup volumes are unchanged. Add `ALLOW_SELF_REGISTRATION=false` to the existing
-`.env` only if administrator-created accounts are preferred; omission keeps the trusted-network
-default enabled.
+The API containers apply three migrations independently to Production and
+Demo/Test before they start:
+
+- administrators become **owners** and other accounts **members**;
+- the sharing party marked "represents me" is linked to the oldest owner, so
+  My Share stays the same for that person; link other members' parties under
+  **Settings → Master data → Sharing parties** to give them a personal My Share;
+- tables for imports and recurring items are added.
+
+Self-registration is now off unless `ALLOW_SELF_REGISTRATION=true` is set. Only
+owners can create, download or upload backups. Backups made by 0.9.0 use backup
+format 2 and cannot be read by 0.8.0; 0.9.0 still restores older backups.
 
 ### Build from source for development
 
@@ -237,9 +233,11 @@ Compose creates six named volumes:
 Each `.crbackup` includes the applicable PostgreSQL database (including
 configuration), the data plane's attachments, a manifest, and checksums. The
 archive is authenticated and encrypted using that data plane's installation
-key. Manual copying of PostgreSQL volume files is not a supported backup method.
+key. Backup format 2 encrypts the archive in authenticated 1 MiB
+chunks, so backup and restore need constant memory; older format 1 archives can
+still be restored. A backup from a newer release is refused. Manual copying of PostgreSQL volume files is not a supported backup method.
 
-Manual backups can be created, validated, downloaded, and uploaded from a local
+Owners can create, validate, download, and upload manual backups from a local
 `.crbackup` file under **Settings → Restore from backup → Choose backup file**.
 The upload streams the file, verifies
 authenticated decryption and every embedded checksum, rejects a backup for the
@@ -427,7 +425,16 @@ Each backend exposes `/api/v1`; the gateway adds `/api/production` or
 | GET | `/api/v1/investments/fund-data` | Search public fund information by name/ISIN or enrich saved fund ISINs |
 | GET | `/api/v1/investments/dividend-opportunities` | Cached, separately validated ordinary-dividend comparison for a bounded set of Stockholm candidates |
 | GET/PUT | `/api/v1/investments/portfolio` | Read or save typed stock/fund holdings, decimal quantities, budget and target allocation |
-| GET/POST | `/api/v1/backups` | List or create encrypted backups |
+| GET | `/api/v1/household/members` | Household members and roles (any signed-in member) |
+| POST | `/api/v1/imports/preview` | Read a CSV/XLSX export and suggest a column mapping |
+| GET/POST | `/api/v1/imports` | List imports or stage a file for review |
+| GET/PATCH/POST | `/api/v1/imports/{id}/rows[...]` | Review, correct, approve, skip and categorise staged rows |
+| POST | `/api/v1/imports/{id}/commit`, `/api/v1/imports/{id}/undo` | Record approved rows or undo a committed import |
+| GET/PATCH/POST | `/api/v1/import-profiles[...]` | Saved bank layouts |
+| GET/POST/PATCH | `/api/v1/recurring[...]` | Recurring items, amount versions, archive/restore |
+| GET | `/api/v1/recurring/expected` | Expected occurrences with suggested matching transactions |
+| POST | `/api/v1/recurring/{id}/occurrences/{date}/confirm`, `/skip`, `/reopen` | Turn an Expected occurrence into an Actual event, or skip it |
+| GET/POST | `/api/v1/backups` | List or create encrypted backups (owners) |
 | POST/GET | `/api/v1/backups/{filename}/validate`, `/download` | Validate or download one archive |
 
 Ledger list endpoints return `{ items, total, limit, offset }`, support bounded
@@ -439,7 +446,10 @@ Dependency-aware permanent deletion and bulk-edit grouping remain later Ledger
 slices. See `docs/adr/0002-ledger-master-data-invariants.md`,
 `docs/adr/0009-pilot-data-safety-and-offline-restore.md`, and
 `docs/adr/0010-transaction-sharing-perspectives.md`. Release packaging is
-defined in `docs/adr/0011-published-container-release.md`.
+defined in `docs/adr/0011-published-container-release.md`. Household roles, backup format 2, imports and recurring items are described
+in `docs/adr/0019-household-roles-and-personal-share.md`,
+`docs/adr/0020-streaming-backup-format.md`, `docs/adr/0021-staged-file-import.md`
+and `docs/adr/0022-recurring-and-expected-events.md`.
 
 Transactions store an immutable economic date separately from posting and
 system timestamps. Original amount/currency and the converted base-currency
