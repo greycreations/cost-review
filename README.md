@@ -477,6 +477,14 @@ distinguishes card settlements, net savings and investment transfers, and debt
 principal. The existing period result retains its transaction-date basis.
 See `docs/adr/0019-posted-cash-flow.md`.
 
+Overview's expense comparison shows changes by category and signed contributing
+amounts for both periods. The same server-side allocation produces the totals
+and transaction detail in Total or My Share. For the current month, the forecast
+uses actual expenses to date plus the median remaining net expenses from the
+last three completed months with usable expense data. With sufficient data, the
+unfiltered view also identifies calendar-month budgets projected to exceed their
+own targets, using each budget's selection and rollover rules.
+
 The Budget view creates calendar-month, salary-cycle, calendar-year, or custom
 budgets with reset/rollover behavior and category/tag/account/provider selection. Outcomes are
 calculated by the API from canonical split components; linked refunds and

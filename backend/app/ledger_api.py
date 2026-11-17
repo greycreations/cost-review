@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query, Response
 from sqlalchemy import func, select
@@ -18,6 +19,7 @@ from app.audit_services import list_audit_events
 from app.cash_flow_services import available_cash_flow
 from app.dependencies import Auth, CsrfAuth, DatabaseSession
 from app.errors import ApiError
+from app.forecast_services import month_expense_forecast
 from app.ledger_safety_services import (
     create_balance_adjustment,
     list_recycle_bin,
@@ -41,8 +43,10 @@ from app.ledger_schemas import (
     CategoryUpdate,
     ComparisonMode,
     LedgerAnalysisRead,
+    LedgerExpenseContributionRead,
     LedgerSummaryRead,
     LedgerTransactionKind,
+    MonthExpenseForecastRead,
     Page,
     ProviderAliasCreate,
     ProviderAliasRead,
@@ -116,6 +120,7 @@ from app.transaction_services import (
     create_manual_transaction,
     get_manual_transaction,
     ledger_analysis,
+    ledger_expense_contributions,
     ledger_summary,
     list_transactions,
     transaction_values,
@@ -276,6 +281,62 @@ def get_transaction_analysis(
         is_base_cost=is_base_cost,
         perspective=perspective.value,
     )
+
+
+@router.get("/transactions/month-forecast", response_model=MonthExpenseForecastRead)
+def get_month_expense_forecast(
+    auth: Auth,
+    db: DatabaseSession,
+    account_id: int | None = Query(default=None, gt=0),
+    provider_id: int | None = Query(default=None, gt=0),
+    category_id: int | None = Query(default=None, gt=0),
+    tag_id: int | None = Query(default=None, gt=0),
+    is_base_cost: bool | None = None,
+    perspective: AnalysisPerspective = AnalysisPerspective.TOTAL,
+) -> dict[str, object]:
+    settings = auth.user.settings
+    return month_expense_forecast(
+        db, datetime.now(ZoneInfo(settings.timezone)).date(), settings.base_currency,
+        account_id=account_id, provider_id=provider_id, category_id=category_id,
+        tag_id=tag_id, is_base_cost=is_base_cost, perspective=perspective.value,
+    )
+
+
+@router.get(
+    "/transactions/expense-contributions",
+    response_model=Page[LedgerExpenseContributionRead],
+)
+def get_expense_contributions(
+    auth: Auth,
+    db: DatabaseSession,
+    date_from: date,
+    date_to: date,
+    account_id: int | None = Query(default=None, gt=0),
+    provider_id: int | None = Query(default=None, gt=0),
+    category_id: int | None = Query(default=None, gt=0),
+    tag_id: int | None = Query(default=None, gt=0),
+    is_base_cost: bool | None = None,
+    uncategorized: bool = False,
+    perspective: AnalysisPerspective = AnalysisPerspective.TOTAL,
+    limit: Limit = 50,
+    offset: Offset = 0,
+) -> dict[str, object]:
+    _validate_date_range(date_from, date_to)
+    if uncategorized and category_id is not None:
+        raise ApiError(422, "category_selection_conflict", "Choose one category selection.")
+    rows = ledger_expense_contributions(
+        db, date_from, date_to, auth.user.settings.base_currency,
+        account_id=account_id, provider_id=provider_id, category_id=category_id,
+        tag_id=tag_id, is_base_cost=is_base_cost, uncategorized=uncategorized,
+        perspective=perspective.value,
+    )
+    rows.reverse()
+    return {
+        "items": rows[offset : offset + limit],
+        "total": len(rows),
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.get("/transactions/{transaction_id}", response_model=TransactionRead)

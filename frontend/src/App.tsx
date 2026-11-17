@@ -838,6 +838,7 @@ function ApplicationShell({
           <OverviewWorkspace
             environment={environment}
             language={session.settings.language}
+            timezone={session.settings.timezone}
             onNavigateAccounts={() => navigate("accounts")}
             onNavigateTransactions={(drilldown?: OverviewDrilldown) => {
               setTransactionFilters(drilldown ?? null);

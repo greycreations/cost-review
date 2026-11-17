@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
+import { ExpenseIntelligence, type ExpenseSelection } from "./ExpenseIntelligence";
+
 import {
   getAccounts,
   getCategories,
@@ -193,16 +195,19 @@ export type OverviewDrilldown = {
 export function OverviewWorkspace({
   environment,
   language,
+  timezone,
   onNavigateAccounts,
   onNavigateTransactions,
 }: {
   environment: Environment;
   language: Language;
+  timezone: string;
   onNavigateAccounts: () => void;
   onNavigateTransactions: (drilldown?: OverviewDrilldown) => void;
 }) {
   const labels = copy[language];
-  const [selectedMonth, setSelectedMonth] = useState(currentMonthKey);
+  const currentMonth = currentMonthKey(timezone);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [comparison, setComparison] = useState<AnalysisComparisonMode>("previous_period");
   const [perspective, setPerspective] = useState<AnalysisPerspective>("total");
   const [filters, setFilters] = useState({
@@ -266,6 +271,8 @@ export function OverviewWorkspace({
     };
   }, [comparison, environment, ledgerFilters, period.from, period.to, requestKey]);
 
+  const [selection, setSelection] = useState<{ key: string; detail: ExpenseSelection } | null>(null);
+  const selectDetail = (detail: ExpenseSelection | null) => setSelection(detail ? { key: requestKey, detail } : null);
   const currentData = data?.key === requestKey ? data : null;
   const summary = currentData?.summary ?? null;
   const analysis = currentData?.analysis ?? null;
@@ -279,7 +286,7 @@ export function OverviewWorkspace({
 
   const accountNames = new Map(accounts.map((account) => [account.account_id, account.name]));
   const providerNames = new Map(providers.map((provider) => [provider.provider_id, provider.name]));
-  const isCurrentMonth = selectedMonth === currentMonthKey();
+  const isCurrentMonth = selectedMonth === currentMonth;
 
   return (
     <section className="workspace-view overview-view" aria-busy={loading} aria-labelledby="overview-title">
@@ -292,7 +299,7 @@ export function OverviewWorkspace({
         <div className="workspace-actions">
           <MonthPicker labels={labels} onChange={setSelectedMonth} selectedMonth={selectedMonth} />
           {!isCurrentMonth ? (
-            <button className="ghost-button" onClick={() => setSelectedMonth(currentMonthKey())} type="button">
+            <button className="ghost-button" onClick={() => setSelectedMonth(currentMonth)} type="button">
               {labels.currentMonth}
             </button>
           ) : null}
@@ -338,6 +345,29 @@ export function OverviewWorkspace({
         language={language}
       />
 
+      <ExpenseIntelligence
+        key={requestKey}
+        environment={environment}
+        language={language}
+        from={period.from}
+        to={period.to}
+        currency={summary?.base_currency}
+        comparison={analysis?.comparison ?? null}
+        filters={ledgerFilters}
+        showForecast={isCurrentMonth}
+        detail={selection?.key === requestKey ? selection.detail : null}
+        selectDetail={selectDetail}
+        openTransactions={(detail) => onNavigateTransactions({
+          dateFrom: detail.from,
+          dateTo: detail.to,
+          accountId: ledgerFilters.accountId ?? undefined,
+          providerId: ledgerFilters.providerId ?? undefined,
+          categoryId: detail.categoryId ?? undefined,
+          tagId: ledgerFilters.tagId ?? undefined,
+          isBaseCost: ledgerFilters.isBaseCost ?? undefined,
+        })}
+      />
+
       <div className="overview-analysis-grid">
         <CashFlowChart
           comparison={analysis?.comparison ?? null}
@@ -352,15 +382,7 @@ export function OverviewWorkspace({
           currency={summary?.base_currency ?? analysis?.base_currency ?? "SEK"}
           labels={labels}
           language={language}
-          onDrillDown={(categoryId) => onNavigateTransactions({
-            dateFrom: period.from,
-            dateTo: period.to,
-            accountId: ledgerFilters.accountId ?? undefined,
-            providerId: ledgerFilters.providerId ?? undefined,
-            categoryId,
-            tagId: ledgerFilters.tagId ?? undefined,
-            isBaseCost: ledgerFilters.isBaseCost ?? undefined,
-          })}
+          onDrillDown={(categoryId) => selectDetail({ from: period.from, to: period.to, categoryId })}
         />
         <SpendingPaceChart
           comparison={analysis?.comparison ?? null}
@@ -376,15 +398,7 @@ export function OverviewWorkspace({
           currency={summary?.base_currency ?? analysis?.base_currency ?? "SEK"}
           labels={labels}
           language={language}
-          onDrillDown={(categoryId) => onNavigateTransactions({
-            dateFrom: period.from,
-            dateTo: period.to,
-            accountId: ledgerFilters.accountId ?? undefined,
-            providerId: ledgerFilters.providerId ?? undefined,
-            categoryId: categoryId ?? undefined,
-            tagId: ledgerFilters.tagId ?? undefined,
-            isBaseCost: ledgerFilters.isBaseCost ?? undefined,
-          })}
+          onDrillDown={(categoryId) => selectDetail({ from: period.from, to: period.to, categoryId })}
         />
       </div>
 
@@ -701,7 +715,7 @@ function CategoryChart({ categories, comparisonCategories, currency, labels, lan
       <div className="analysis-panel-heading"><div><h2 id="category-chart-title">{labels.categoryBreakdown}</h2><p>{labels.categoryLead}</p></div></div>
       {categories.length === 0 ? <p className="analysis-empty">{labels.noCategories}</p> : (
         <>
-          <div className="category-bars" role="img" aria-labelledby="category-chart-title category-chart-description">
+          <div className="category-bars" role="group" aria-labelledby="category-chart-title" aria-describedby="category-chart-description">
             <span className="sr-only" id="category-chart-description">{labels.categoryLead}</span>
             {chartCategories.map((category) => {
               const name = category.category_name ?? labels.uncategorized;
@@ -729,9 +743,9 @@ function CategoryChart({ categories, comparisonCategories, currency, labels, lan
   );
 }
 
-function currentMonthKey(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+function currentMonthKey(timeZone: string): string {
+  return new Intl.DateTimeFormat("sv-SE", { year: "numeric", month: "2-digit", timeZone })
+    .format(new Date());
 }
 
 function monthPeriod(month: string): { from: string; to: string } {

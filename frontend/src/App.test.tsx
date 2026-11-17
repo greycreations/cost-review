@@ -219,6 +219,18 @@ describe("App", () => {
           body = { items: tagItems, total: tagItems.length, limit: 50, offset: 0 };
         } else if (path.includes("/categories?")) {
           body = { items: [], total: 0, limit: 50, offset: 0 };
+        } else if (path.includes("/transactions/month-forecast?")) {
+          const month = new Intl.DateTimeFormat("sv-SE", {
+            year: "numeric", month: "2-digit", timeZone: "Europe/Stockholm",
+          }).format(new Date());
+          body = {
+            date_from: `${month}-01`, as_of: `${month}-15`, base_currency: "SEK",
+            history_month_count: 3, missing_fx_count: 0,
+            actual_expenses: "200", forecast_expenses: "450",
+            budget_risks: [{ budget_id: 1, name: "Groceries budget", target_amount: "400", forecast_amount: "450", overrun: "50" }],
+          };
+        } else if (path.includes("/transactions/expense-contributions?")) {
+          body = { items: [{ transaction_id: 1, transaction_date: "2026-08-12", description: "Grocery purchase", amount: "260" }], total: 1, offset: 0, limit: 50 };
         } else if (path.includes("/transactions/analysis?")) {
           body = analysisData;
         } else if (path.includes("/transactions/cash-flow?")) {
@@ -867,6 +879,13 @@ describe("App", () => {
     });
   });
 
+  it("shows the monthly forecast and names the affected budget", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Monthly expense forecast" })).toBeInTheDocument();
+    const risks = await screen.findByRole("table", { name: "Monthly budgets projected to overspend" });
+    expect(within(risks).getByRole("rowheader", { name: "Groceries budget" })).toBeInTheDocument();
+  });
+
   it("shows the posted cash-flow breakdown independently of period result", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -890,6 +909,12 @@ describe("App", () => {
         { category_id: 1, category_name: "Groceries", amount: "650.0000", transaction_count: 2 },
         { category_id: 2, category_name: "Transport", amount: "350.0000", transaction_count: 1 },
       ],
+      comparison: {
+        date_from: "2026-07-01", date_to: "2026-07-31", daily: [], expense_categories: [],
+        expense_changes: [{ category_id: 1, category_name: "Groceries", current_amount: "650",
+          previous_amount: "400", change: "250" }],
+        expense_change_total: "250",
+      },
     };
     const user = userEvent.setup();
     render(<App />);
@@ -897,6 +922,8 @@ describe("App", () => {
     expect((await screen.findAllByText("Groceries")).length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: "Where does the money go?" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Cumulative expenses" })).toBeInTheDocument();
+    const varianceTable = screen.getByRole("table", { name: "What changed net expenses?" });
+    expect(within(varianceTable).getByRole("rowheader", { name: "Net change" })).toBeInTheDocument();
 
     const distributionTable = screen.getByRole("table", { hidden: true, name: "Where does the money go?" });
     const distributionPanel = screen.getByRole("heading", { name: "Where does the money go?" }).closest("section");
@@ -910,14 +937,16 @@ describe("App", () => {
     const categoryTable = screen.getByRole("table", { name: "Expenses by category" });
     expect(within(categoryTable).getByRole("columnheader", { name: "Category" })).toBeInTheDocument();
     expect(within(categoryTable).getByRole("cell", { name: "2" })).toBeInTheDocument();
-    await user.click(within(categoryPanel as HTMLElement).getByRole("button", { name: "View contributing transactions: Groceries" }));
-    expect(await screen.findByRole("heading", { name: "Transactions" })).toBeInTheDocument();
-    await waitFor(() => {
-      expect(vi.mocked(fetch).mock.calls.some(([input]) => {
-        const path = input.toString();
-        return path.includes("/transactions?") && path.includes("category_id=1");
-      })).toBe(true);
-    });
+
+    await user.selectOptions(screen.getByLabelText("Perspective"), "my_share");
+    const updatedCategoryPanel = (await screen.findByRole("heading", { name: "Expenses by category" })).closest("section")!;
+    await user.click(await within(updatedCategoryPanel).findByRole("button", { name: "View contributing transactions: Groceries" }));
+    expect(await screen.findByRole("heading", { name: "Contributing transactions" })).toBeInTheDocument();
+    expect(await screen.findByText("Grocery purchase")).toBeInTheDocument();
+    expect(vi.mocked(fetch).mock.calls.some(([input]) => {
+      const path = input.toString();
+      return path.includes("/transactions/expense-contributions?") && path.includes("category_id=1") && path.includes("perspective=my_share");
+    })).toBe(true);
   });
 
   it("keeps daily entry and account setup in separate views", async () => {

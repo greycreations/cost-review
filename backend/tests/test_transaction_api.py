@@ -351,6 +351,27 @@ def test_sharing_allocations_drive_total_and_my_share_analysis(
     ).json()
     assert mine_after_refund["expenses"] == "20.0000"
 
+    category_id = data["expense"]["category_id"]
+    query = (
+        "date_from=2026-08-01&date_to=2026-08-31&perspective=my_share"
+        f"&category_id={category_id}"
+    )
+    contributions = client.get(f"/api/v1/transactions/expense-contributions?{query}&limit=1")
+    assert contributions.status_code == 200, contributions.text
+    assert contributions.json()["total"] == 2
+    assert contributions.json()["items"][0]["amount"] == "-5.0000"
+    next_page = client.get(f"/api/v1/transactions/expense-contributions?{query}&limit=1&offset=1")
+    assert next_page.json()["items"][0]["amount"] == "25.0000"
+    comparison = client.get(f"/api/v1/transactions/analysis?{query}&comparison=previous_period")
+    assert comparison.status_code == 200, comparison.text
+    assert comparison.json()["comparison"]["expense_changes"] == [{
+        "category_id": category_id,
+        "category_name": "Mat",
+        "current_amount": "20.0000",
+        "previous_amount": "0.0000",
+        "change": "20.0000",
+    }]
+
     budget = client.post(
         "/api/v1/budgets",
         headers=headers,
@@ -541,6 +562,10 @@ def test_split_transactions_comparison_and_category_filter_share_one_semantics(
     assert result["comparison"]["date_from"] == "2026-07-19"
     assert result["comparison"]["date_to"] == "2026-08-09"
     assert result["comparison"]["expenses"] == "300.0000"
+    assert result["comparison"]["expense_change_total"] == "600.0000"
+    assert [
+        (row["category_name"], row["change"]) for row in result["comparison"]["expense_changes"]
+    ] == [("Resor", "360.0000"), ("Mat", "240.0000")]
 
     filtered_summary = client.get(
         "/api/v1/transactions/summary?date_from=2026-08-10&date_to=2026-08-31"
