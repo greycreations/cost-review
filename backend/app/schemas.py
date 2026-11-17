@@ -14,7 +14,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.models import DateFormat, Language, NumberFormat, WeekStart
+from app.models import DateFormat, Language, NumberFormat, UserRole, WeekStart
 
 Username = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=64)]
 Password = Annotated[str, StringConstraints(min_length=12, max_length=1024)]
@@ -128,17 +128,17 @@ class PasswordChangeRequest(BaseModel):
 class UserCreateRequest(BaseModel):
     username: Username
     password: Password
-    is_admin: bool = False
+    role: UserRole = UserRole.MEMBER
     settings: SettingsInput = Field(default_factory=SettingsInput)
 
 
 class UserUpdateRequest(BaseModel):
     username: Username | None = None
-    is_admin: bool | None = None
+    role: UserRole | None = None
 
     @model_validator(mode="after")
     def require_change(self) -> UserUpdateRequest:
-        if self.username is None and self.is_admin is None:
+        if self.username is None and self.role is None:
             raise ValueError("at least one account field must be supplied")
         return self
 
@@ -154,14 +154,21 @@ class UserDeleteRequest(BaseModel):
 class UserRead(ApiModel):
     user_id: int
     username: str
-    is_admin: bool
+    role: UserRole
     created_at: datetime
     updated_at: datetime
 
 
-class SessionRead(BaseModel):
+class HouseholdMemberRead(ApiModel):
+    user_id: int
     username: str
-    is_admin: bool
+    role: UserRole
+
+
+class SessionRead(BaseModel):
+    user_id: int
+    username: str
+    role: UserRole
     environment: str
     environment_label: str
     data_plane_id: UUID

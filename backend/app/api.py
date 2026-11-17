@@ -7,11 +7,11 @@ from sqlalchemy import select, text
 
 from app.config import Settings
 from app.dependencies import (
-    AdminAuth,
-    AdminCsrfAuth,
     Auth,
     CsrfAuth,
     DatabaseSession,
+    OwnerAuth,
+    OwnerCsrfAuth,
     RuntimeSettings,
 )
 from app.errors import ApiError
@@ -20,6 +20,7 @@ from app.schemas import (
     AppSettingsRead,
     EnvironmentRead,
     HealthRead,
+    HouseholdMemberRead,
     LoginRequest,
     PasswordChangeRequest,
     PasswordResetRequest,
@@ -127,7 +128,7 @@ def register(
             settings=payload.settings,
         ),
         actor_user_id=None,
-        allow_admin=False,
+        allow_role=False,
     )
     issued = issue_session(db, user, settings)
     set_session_cookies(response, issued, settings)
@@ -174,8 +175,15 @@ def patch_password(
     return response
 
 
+@router.get(
+    "/household/members", response_model=list[HouseholdMemberRead], tags=["household"]
+)
+def read_household_members(_: Auth, db: DatabaseSession) -> list[HouseholdMemberRead]:
+    return [HouseholdMemberRead.model_validate(user) for user in list_users(db)]
+
+
 @router.get("/users", response_model=list[UserRead], tags=["user-administration"])
-def read_users(auth: AdminAuth, db: DatabaseSession) -> list[UserRead]:
+def read_users(auth: OwnerAuth, db: DatabaseSession) -> list[UserRead]:
     return [UserRead.model_validate(user) for user in list_users(db)]
 
 
@@ -187,14 +195,14 @@ def read_users(auth: AdminAuth, db: DatabaseSession) -> list[UserRead]:
 )
 def create_user(
     payload: UserCreateRequest,
-    auth: AdminCsrfAuth,
+    auth: OwnerCsrfAuth,
     db: DatabaseSession,
 ) -> UserRead:
     user = create_user_account(
         db,
         payload,
         actor_user_id=auth.user.user_id,
-        allow_admin=True,
+        allow_role=True,
     )
     return UserRead.model_validate(user)
 
@@ -203,7 +211,7 @@ def create_user(
 def patch_user(
     user_id: int,
     payload: UserUpdateRequest,
-    auth: AdminCsrfAuth,
+    auth: OwnerCsrfAuth,
     db: DatabaseSession,
 ) -> UserRead:
     user = get_user_or_404(db, user_id)
@@ -221,7 +229,7 @@ def admin_reset_password(
     user_id: int,
     payload: PasswordResetRequest,
     response: Response,
-    auth: AdminCsrfAuth,
+    auth: OwnerCsrfAuth,
     db: DatabaseSession,
 ) -> Response:
     reset_user_password(
@@ -239,7 +247,7 @@ def delete_user(
     user_id: int,
     payload: UserDeleteRequest,
     response: Response,
-    auth: AdminCsrfAuth,
+    auth: OwnerCsrfAuth,
     db: DatabaseSession,
 ) -> Response:
     delete_user_account(
@@ -270,7 +278,7 @@ def patch_settings(
 @test_router.post("/reset", response_model=TestResetRead)
 def reset_test(
     payload: TestResetRequest,
-    auth: CsrfAuth,
+    auth: OwnerCsrfAuth,
     db: DatabaseSession,
     settings: RuntimeSettings,
 ) -> TestResetRead:
@@ -313,8 +321,9 @@ def session_read(
         raise RuntimeError("authenticated user has no application settings")
     metadata = get_environment_metadata(db)
     return SessionRead(
+        user_id=user.user_id,
         username=user.username,
-        is_admin=user.is_admin,
+        role=user.role,
         environment=metadata.environment,
         environment_label=settings.app_environment_label,
         data_plane_id=metadata.data_plane_id,

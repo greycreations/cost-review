@@ -1,5 +1,9 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   createCategory,
   createProvider,
@@ -14,9 +18,6 @@ import {
   getTags,
   getTransfers,
   getTransactions,
-  setTransferArchived,
-  setRecoveryArchived,
-  setTransactionArchived,
   updateTransfer,
   updateTransaction,
   type Account,
@@ -24,289 +25,31 @@ import {
   type Environment,
   type Language,
   type LedgerSummary,
-  type ManualTransactionKind,
   type Provider,
   type RecoveryKind,
   type SharingParty,
   type Tag,
   type Transfer,
   type TransferInput,
-  type TransferPurpose,
   type Transaction,
   type TransactionInput,
-  type TransactionKind,
 } from "./api";
-
-const copy = {
-  sv: {
-    eyebrow: "Dagligt arbete",
-    title: "Transaktioner",
-    lead: "Registrera verkliga inkomster, utgifter och överföringar mellan dina egna konton.",
-    newTransaction: "Ny transaktion",
-    newTransfer: "Ny överföring",
-    editTransaction: "Redigera transaktion",
-    editTransfer: "Redigera överföring",
-    expense: "Utgift",
-    income: "Inkomst",
-    transfer: "Överföring",
-    refund: "Återbetalning",
-    reimbursement: "Ersättning",
-    addRefund: "Registrera återbetalning",
-    addReimbursement: "Registrera ersättning",
-    recoveryLead: "Den ursprungliga kostnaden bevaras. Beloppet dras av i nettokostnad och analys.",
-    linkedExpense: "Hör till kostnad",
-    transferLead: "Flytta pengar mellan egna konton utan att skapa en falsk inkomst eller utgift.",
-    fromAccount: "Från konto",
-    toAccount: "Till konto",
-    sourcePostingDate: "Bokföringsdatum från",
-    destinationPostingDate: "Bokföringsdatum till",
-    receivedAmount: "Mottaget belopp",
-    transferPurpose: "Syfte",
-    purposeInternal: "Intern överföring",
-    purposeSavings: "Sparande",
-    purposeInvestment: "Investering",
-    purposeCard: "Betalning av kreditkort",
-    purposeDebt: "Amortering",
-    transferValueHelp: "Beloppen i basvaluta måste motsvara samma ekonomiska värde. Avgifter registreras separat som utgift.",
-    twoAccountsNeeded: "Du behöver minst två aktiva konton för en överföring.",
-    date: "Transaktionsdatum",
-    postingDate: "Bokföringsdatum",
-    account: "Konto",
-    chooseAccount: "Välj konto",
-    description: "Beskrivning",
-    amount: "Belopp",
-    currency: "Valuta",
-    category: "Kategori",
-    noCategory: "Ingen kategori ännu",
-    provider: "Provider",
-    noProvider: "Ingen provider",
-    addProvider: "Ny provider",
-    addCategory: "Ny kategori",
-    name: "Namn",
-    add: "Lägg till",
-    cancel: "Avbryt",
-    save: "Spara transaktion",
-    saveTransfer: "Spara överföring",
-    update: "Spara ändringar",
-    optional: "Fler uppgifter",
-    convertedAmount: "Belopp i basvaluta",
-    convertedHelp: "Lämna tomt om historisk valutakurs saknas. Posten sparas och markeras för uppmärksamhet.",
-    notes: "Anteckning",
-    reference: "Referens",
-    baseCost: "Baskostnad",
-    tags: "Taggar",
-    splitTransaction: "Dela upp transaktionen",
-    splitLead: "Fördela beloppet mellan flera kategorier utan att skapa flera kontohändelser.",
-    splitPart: "Del",
-    splitMemo: "Beskrivning för delen",
-    addSplit: "Lägg till del",
-    removeSplit: "Ta bort del",
-    remaining: "Kvar att fördela",
-    parts: "delar",
-    filters: "Filter",
-    search: "Sök beskrivning",
-    allKinds: "Alla typer",
-    allAccounts: "Alla konton",
-    allCategories: "Alla kategorier",
-    allProviders: "Alla providers",
-    allTags: "Alla taggar",
-    baseCostsOnly: "Endast baskostnader",
-    showArchived: "Visa arkiverade",
-    apply: "Tillämpa",
-    clear: "Rensa",
-    empty: "Inga transaktioner i vald period.",
-    emptyLead: "Skapa den första posten för att börja bygga din verkliga ekonomiska historik.",
-    accountNeeded: "Du behöver först skapa minst ett konto.",
-    goAccounts: "Gå till Konton",
-    archive: "Arkivera",
-    restore: "Återställ",
-    edit: "Redigera",
-    missingFx: "Saknar valutakurs",
-    loading: "Läser transaktioner…",
-    count: "poster",
-    periodIncome: "Inkomster",
-    periodExpenses: "Utgifter",
-    periodNet: "Netto",
-    sharing: "Delad ekonomi",
-    sharingLead: "Fördela posten i procent. Totalt måste alltid bli 100 %.",
-    notShared: "Inte delad – 100 % räknas som min",
-    allocationTotal: "Fördelat",
-    self: "jag",
-  },
-  en: {
-    eyebrow: "Daily work",
-    title: "Transactions",
-    lead: "Record real income, expenses, and transfers between your own accounts.",
-    newTransaction: "New transaction",
-    newTransfer: "New transfer",
-    editTransaction: "Edit transaction",
-    editTransfer: "Edit transfer",
-    expense: "Expense",
-    income: "Income",
-    transfer: "Transfer",
-    refund: "Refund",
-    reimbursement: "Reimbursement",
-    addRefund: "Record refund",
-    addReimbursement: "Record reimbursement",
-    recoveryLead: "The original gross expense is preserved. This amount reduces net cost and analysis.",
-    linkedExpense: "Linked expense",
-    transferLead: "Move money between owned accounts without creating false income or expense.",
-    fromAccount: "From account",
-    toAccount: "To account",
-    sourcePostingDate: "Posting date from",
-    destinationPostingDate: "Posting date to",
-    receivedAmount: "Received amount",
-    transferPurpose: "Purpose",
-    purposeInternal: "Internal transfer",
-    purposeSavings: "Savings",
-    purposeInvestment: "Investment",
-    purposeCard: "Credit-card payment",
-    purposeDebt: "Debt repayment",
-    transferValueHelp: "Base-currency values must represent the same economic value. Record fees separately as an expense.",
-    twoAccountsNeeded: "You need at least two active accounts for a transfer.",
-    date: "Transaction date",
-    postingDate: "Posting date",
-    account: "Account",
-    chooseAccount: "Choose account",
-    description: "Description",
-    amount: "Amount",
-    currency: "Currency",
-    category: "Category",
-    noCategory: "No category yet",
-    provider: "Provider",
-    noProvider: "No provider",
-    addProvider: "New provider",
-    addCategory: "New category",
-    name: "Name",
-    add: "Add",
-    cancel: "Cancel",
-    save: "Save transaction",
-    saveTransfer: "Save transfer",
-    update: "Save changes",
-    optional: "More details",
-    convertedAmount: "Amount in base currency",
-    convertedHelp: "Leave blank when the historical FX rate is unknown. The entry is saved and flagged for attention.",
-    notes: "Note",
-    reference: "Reference",
-    baseCost: "Base cost",
-    tags: "Tags",
-    splitTransaction: "Split transaction",
-    splitLead: "Allocate the amount across categories without creating multiple account events.",
-    splitPart: "Split",
-    splitMemo: "Split description",
-    addSplit: "Add split",
-    removeSplit: "Remove split",
-    remaining: "Remaining to allocate",
-    parts: "splits",
-    filters: "Filters",
-    search: "Search description",
-    allKinds: "All types",
-    allAccounts: "All accounts",
-    allCategories: "All categories",
-    allProviders: "All providers",
-    allTags: "All tags",
-    baseCostsOnly: "Base costs only",
-    showArchived: "Show archived",
-    apply: "Apply",
-    clear: "Clear",
-    empty: "No transactions in the selected period.",
-    emptyLead: "Create the first entry to begin building your real economic history.",
-    accountNeeded: "Create at least one account first.",
-    goAccounts: "Go to Accounts",
-    archive: "Archive",
-    restore: "Restore",
-    edit: "Edit",
-    missingFx: "Missing FX rate",
-    loading: "Loading transactions…",
-    count: "entries",
-    periodIncome: "Income",
-    periodExpenses: "Expenses",
-    periodNet: "Net",
-    sharing: "Shared finances",
-    sharingLead: "Allocate the entry by percentage. The total must always be 100%.",
-    notShared: "Not shared – 100% counts as mine",
-    allocationTotal: "Allocated",
-    self: "me",
-  },
-} as const;
-
-type Draft = {
-  accountId: string;
-  providerId: string;
-  kind: ManualTransactionKind;
-  transactionDate: string;
-  postingDate: string;
-  description: string;
-  amount: string;
-  currency: string;
-  convertedAmount: string;
-  categoryId: string;
-  tagIds: number[];
-  isBaseCost: boolean;
-  sourceReference: string;
-  notes: string;
-  splitMode: boolean;
-  splits: SplitDraft[];
-  sharingAllocations: ShareDraft[];
-};
-
-type ShareDraft = { partyId: string; percentage: string };
-
-type SplitDraft = {
-  key: string;
-  amount: string;
-  categoryId: string;
-  tagIds: number[];
-  isBaseCost: boolean;
-  memo: string;
-  sharingAllocations: ShareDraft[];
-};
-
-type TransferDraft = {
-  sourceAccountId: string;
-  destinationAccountId: string;
-  purpose: TransferPurpose;
-  transactionDate: string;
-  sourcePostingDate: string;
-  destinationPostingDate: string;
-  description: string;
-  sourceAmount: string;
-  destinationAmount: string;
-  sourceConvertedAmount: string;
-  destinationConvertedAmount: string;
-  sourceReference: string;
-  notes: string;
-};
-
-type EntryKind = TransactionKind | "transfer";
-
-type RecoveryDraft = {
-  kind: RecoveryKind;
-  expenseId: number;
-  accountId: string;
-  providerId: string;
-  transactionDate: string;
-  postingDate: string;
-  description: string;
-  amount: string;
-  currency: string;
-  convertedAmount: string;
-  sourceReference: string;
-  notes: string;
-};
-
-type Filters = {
-  dateFrom: string;
-  dateTo: string;
-  kind: EntryKind | "";
-  accountId: string;
-  providerId: string;
-  categoryId: string;
-  tagId: string;
-  baseCostOnly: boolean;
-  search: string;
-  showArchived: boolean;
-};
+import { copy } from "./i18n/transactions";
+import {
+  type RecoveryDraft,
+  type Filters,
+  shareAllocationPayload,
+  emptyDraft,
+  initialSplits,
+  emptyTransferDraft,
+  currentMonth,
+  localDate,
+  numberOrNull,
+  normalizeDecimalInput,
+} from "./transactions/model";
+import { SummaryStrip, TransactionForm, RecoveryForm } from "./transactions/TransactionForm";
+import { TransferForm } from "./transactions/TransferForm";
+import { EntryList } from "./transactions/EntryList";
 
 export type TransactionInitialFilters = {
   dateFrom: string;
@@ -324,12 +67,14 @@ export function TransactionWorkspace({
   baseCurrency,
   onNavigateAccounts,
   initialFilters,
+  currentUserId,
 }: {
   environment: Environment;
   language: Language;
   baseCurrency: string;
   onNavigateAccounts: () => void;
   initialFilters?: TransactionInitialFilters | null;
+  currentUserId?: number;
 }) {
   const labels = copy[language];
   const period = useMemo(() => currentMonth(), []);
@@ -338,6 +83,15 @@ export function TransactionWorkspace({
   const [providers, setProviders] = useState<Provider[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [sharingParties, setSharingParties] = useState<SharingParty[]>([]);
+  // The signed-in member's own party is listed first and preselected when sharing.
+  const orderedParties = useMemo(
+    () =>
+      [...sharingParties].sort(
+        (first, second) =>
+          Number(second.user_id === currentUserId) - Number(first.user_id === currentUserId),
+      ),
+    [sharingParties, currentUserId],
+  );
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [summary, setSummary] = useState<LedgerSummary | null>(null);
@@ -777,7 +531,7 @@ export function TransactionWorkspace({
           newCategory={newCategory}
           newProvider={newProvider}
           providers={providers}
-          sharingParties={sharingParties}
+          sharingParties={orderedParties}
           setDraft={setDraft}
           setNewCategory={setNewCategory}
           setNewProvider={setNewProvider}
@@ -978,681 +732,22 @@ export function TransactionWorkspace({
   );
 }
 
-type Labels = (typeof copy)[Language];
 
-function SummaryStrip({ labels, language, summary }: { labels: Labels; language: Language; summary: LedgerSummary | null }) {
-  const cards = [
-    [labels.periodIncome, summary?.income],
-    [labels.periodExpenses, summary?.expenses],
-    [labels.periodNet, summary?.net_cash_flow],
-  ] as const;
-  return (
-    <div className="summary-strip" aria-label={`${labels.title} summary`}>
-      {cards.map(([label, value]) => (
-        <div className="summary-card" key={label}>
-          <span>{label}</span>
-          <strong>{summary && value !== undefined ? formatMoney(value, summary.base_currency, language) : "—"}</strong>
-        </div>
-      ))}
-      {summary?.missing_fx_count ? <div className="attention-note">{summary.missing_fx_count} · {labels.missingFx}</div> : null}
-    </div>
-  );
-}
 
-function TransactionForm({
-  accounts, availableCategories, baseCurrency, categories, draft, editing, labels,
-  language,
-  newCategory, newProvider, providers, sharingParties, setDraft, setNewCategory, setNewProvider,
-  setShowNewCategory, setShowNewProvider, showNewCategory, showNewProvider, tags,
-  working, onCancel, onCreateCategory, onCreateProvider, onSubmit,
-}: {
-  accounts: Account[]; availableCategories: Category[]; baseCurrency: string; categories: Category[];
-  draft: Draft; editing: boolean; environment: Environment; labels: Labels; newCategory: string;
-  language: Language;
-  newProvider: string; providers: Provider[]; setDraft: React.Dispatch<React.SetStateAction<Draft>>;
-  sharingParties: SharingParty[];
-  setNewCategory: (value: string) => void; setNewProvider: (value: string) => void;
-  setShowNewCategory: (value: boolean) => void; setShowNewProvider: (value: boolean) => void;
-  showNewCategory: boolean; showNewProvider: boolean; tags: Tag[]; working: boolean;
-  onCancel: () => void; onCreateCategory: () => Promise<void>; onCreateProvider: () => Promise<void>;
-  onSubmit: (event: FormEvent) => void;
-}) {
-  const splitRemaining = draft.splitMode
-    ? Number(normalizeDecimalInput(draft.amount) || 0)
-      - draft.splits.reduce(
-        (total, split) => total + Number(normalizeDecimalInput(split.amount) || 0),
-        0,
-      )
-    : 0;
-  const splitBalanced = !draft.splitMode || Math.abs(splitRemaining) < 0.00005;
-  const sharingBalanced = draft.splitMode
-    ? draft.splits.every((split) => allocationsBalanced(split.sharingAllocations))
-    : allocationsBalanced(draft.sharingAllocations);
-  return (
-    <form className="transaction-editor" onSubmit={onSubmit}>
-      <div className="editor-title"><h2>{editing ? labels.editTransaction : labels.newTransaction}</h2><button className="ghost-button" onClick={onCancel} type="button">{labels.cancel}</button></div>
-      <div className="kind-switch" role="group" aria-label={labels.allKinds}>
-        {(["expense", "income"] as const).map((kind) => <button className={draft.kind === kind ? "active" : ""} key={kind} onClick={() => setDraft((current) => ({ ...current, kind, categoryId: categories.some((category) => category.category_id === Number(current.categoryId) && category.category_kind === kind) ? current.categoryId : "" }))} type="button">{kind === "expense" ? labels.expense : labels.income}</button>)}
-      </div>
-      <label className="checkbox-field split-toggle"><input checked={draft.splitMode} onChange={(event) => setDraft({ ...draft, splitMode: event.target.checked, splits: event.target.checked && draft.splits.length < 2 ? initialSplits() : draft.splits })} type="checkbox" />{labels.splitTransaction}</label>
-      <div className="transaction-form-grid">
-        <label>{labels.date}<input onChange={(event) => setDraft({ ...draft, transactionDate: event.target.value })} required type="date" value={draft.transactionDate} /></label>
-        <label>{labels.postingDate}<input onChange={(event) => setDraft({ ...draft, postingDate: event.target.value })} required type="date" value={draft.postingDate} /></label>
-        <label>{labels.account}<select onChange={(event) => setDraft({ ...draft, accountId: event.target.value })} required value={draft.accountId}><option value="">{labels.chooseAccount}</option>{accounts.map((account) => <option key={account.account_id} value={account.account_id}>{account.name}</option>)}</select></label>
-        <label className="description-field">{labels.description}<input autoFocus onChange={(event) => setDraft({ ...draft, description: event.target.value })} required value={draft.description} /></label>
-        <label>{labels.amount}<input inputMode="decimal" onChange={(event) => setDraft({ ...draft, amount: event.target.value })} pattern="[0-9]+([.,][0-9]{1,4})?" required value={draft.amount} /></label>
-        <label>{labels.currency}<input maxLength={3} minLength={3} onChange={(event) => setDraft({ ...draft, currency: event.target.value.toUpperCase() })} pattern="[A-Z]{3}" required value={draft.currency} /></label>
-        {!draft.splitMode ? <label>{labels.category}<select onChange={(event) => setDraft({ ...draft, categoryId: event.target.value })} value={draft.categoryId}><option value="">{labels.noCategory}</option>{availableCategories.map((category) => <option key={category.category_id} value={category.category_id}>{category.name}</option>)}</select><button className="inline-add" onClick={() => setShowNewCategory(!showNewCategory)} type="button">+ {labels.addCategory}</button></label> : null}
-        <label>{labels.provider}<select onChange={(event) => setDraft({ ...draft, providerId: event.target.value })} value={draft.providerId}><option value="">{labels.noProvider}</option>{providers.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.name}</option>)}</select><button className="inline-add" onClick={() => setShowNewProvider(!showNewProvider)} type="button">+ {labels.addProvider}</button></label>
-      </div>
-      {draft.splitMode ? <SplitEditor availableCategories={availableCategories} currency={draft.currency} draft={draft} labels={labels} language={language} setDraft={setDraft} sharingParties={sharingParties} tags={tags} /> : <SharingEditor allocations={draft.sharingAllocations} labels={labels} onChange={(sharingAllocations) => setDraft({ ...draft, sharingAllocations })} parties={sharingParties} />}
-      {showNewCategory ? <InlineCreate label={labels.addCategory} name={newCategory} labels={labels} onChange={setNewCategory} onCreate={onCreateCategory} /> : null}
-      {showNewProvider ? <InlineCreate label={labels.addProvider} name={newProvider} labels={labels} onChange={setNewProvider} onCreate={onCreateProvider} /> : null}
-      {draft.currency !== baseCurrency ? <label className="conversion-field">{labels.convertedAmount} ({baseCurrency})<input inputMode="decimal" onChange={(event) => setDraft({ ...draft, convertedAmount: event.target.value })} pattern="[0-9]+([.,][0-9]{1,4})?" value={draft.convertedAmount} /><small>{labels.convertedHelp}</small></label> : null}
-      <details className="optional-fields"><summary>{labels.optional}</summary><div className="optional-grid"><label>{labels.reference}<input onChange={(event) => setDraft({ ...draft, sourceReference: event.target.value })} value={draft.sourceReference} /></label><label>{labels.notes}<input onChange={(event) => setDraft({ ...draft, notes: event.target.value })} value={draft.notes} /></label>{!draft.splitMode ? <><fieldset><legend>{labels.tags}</legend>{tags.map((tag) => <label className="checkbox-field" key={tag.tag_id}><input checked={draft.tagIds.includes(tag.tag_id)} onChange={(event) => setDraft({ ...draft, tagIds: event.target.checked ? [...draft.tagIds, tag.tag_id] : draft.tagIds.filter((id) => id !== tag.tag_id) })} type="checkbox" />{tag.name}</label>)}</fieldset><label className="checkbox-field"><input checked={draft.isBaseCost} onChange={(event) => setDraft({ ...draft, isBaseCost: event.target.checked })} type="checkbox" />{labels.baseCost}</label></> : null}</div></details>
-      <div className="editor-actions"><button className="secondary-button" onClick={onCancel} type="button">{labels.cancel}</button><button className="primary-button" disabled={working || !splitBalanced || !sharingBalanced} type="submit">{editing ? labels.update : labels.save}</button></div>
-    </form>
-  );
-}
 
-function SplitEditor({
-  availableCategories,
-  currency,
-  draft,
-  labels,
-  language,
-  setDraft,
-  sharingParties,
-  tags,
-}: {
-  availableCategories: Category[];
-  currency: string;
-  draft: Draft;
-  labels: Labels;
-  language: Language;
-  setDraft: React.Dispatch<React.SetStateAction<Draft>>;
-  sharingParties: SharingParty[];
-  tags: Tag[];
-}) {
-  const allocated = draft.splits.reduce(
-    (total, split) => total + Number(normalizeDecimalInput(split.amount) || 0),
-    0,
-  );
-  const remaining = Number(normalizeDecimalInput(draft.amount) || 0) - allocated;
-  const updateSplit = (key: string, values: Partial<SplitDraft>) => {
-    setDraft((current) => ({
-      ...current,
-      splits: current.splits.map((split) =>
-        split.key === key ? { ...split, ...values } : split,
-      ),
-    }));
-  };
-  return (
-    <section className="split-editor" aria-labelledby="split-editor-title">
-      <div className="split-editor-heading">
-        <div>
-          <h3 id="split-editor-title">{labels.splitTransaction}</h3>
-          <p>{labels.splitLead}</p>
-        </div>
-        <strong className={Math.abs(remaining) < 0.00005 ? "balanced" : "unbalanced"}>
-          {labels.remaining}: {formatMoney(String(remaining), currency || "SEK", language)}
-        </strong>
-      </div>
-      <div className="split-list">
-        {draft.splits.map((split, index) => (
-          <fieldset className="split-row" key={split.key}>
-            <legend>{labels.splitPart} {index + 1}</legend>
-            <label>{labels.amount}<input aria-label={`${labels.splitPart} ${index + 1} · ${labels.amount}`} inputMode="decimal" onChange={(event) => updateSplit(split.key, { amount: event.target.value })} pattern="[0-9]+([.,][0-9]{1,4})?" required value={split.amount} /></label>
-            <label>{labels.category}<select aria-label={`${labels.splitPart} ${index + 1} · ${labels.category}`} onChange={(event) => updateSplit(split.key, { categoryId: event.target.value })} value={split.categoryId}><option value="">{labels.noCategory}</option>{availableCategories.map((category) => <option key={category.category_id} value={category.category_id}>{category.name}</option>)}</select></label>
-            <label>{labels.splitMemo}<input onChange={(event) => updateSplit(split.key, { memo: event.target.value })} value={split.memo} /></label>
-            <label className="checkbox-field"><input checked={split.isBaseCost} onChange={(event) => updateSplit(split.key, { isBaseCost: event.target.checked })} type="checkbox" />{labels.baseCost}</label>
-            {tags.length ? <details className="split-tags"><summary>{labels.tags}</summary>{tags.map((tag) => <label className="checkbox-field" key={tag.tag_id}><input checked={split.tagIds.includes(tag.tag_id)} onChange={(event) => updateSplit(split.key, { tagIds: event.target.checked ? [...split.tagIds, tag.tag_id] : split.tagIds.filter((id) => id !== tag.tag_id) })} type="checkbox" />{tag.name}</label>)}</details> : null}
-            <SharingEditor allocations={split.sharingAllocations} labels={labels} onChange={(sharingAllocations) => updateSplit(split.key, { sharingAllocations })} parties={sharingParties} />
-            <button className="ghost-button" disabled={draft.splits.length <= 2} onClick={() => setDraft((current) => ({ ...current, splits: current.splits.filter((item) => item.key !== split.key) }))} type="button">{labels.removeSplit}</button>
-          </fieldset>
-        ))}
-      </div>
-      <button className="secondary-button" disabled={draft.splits.length >= 100} onClick={() => setDraft((current) => ({ ...current, splits: [...current.splits, newSplitDraft()] }))} type="button">+ {labels.addSplit}</button>
-    </section>
-  );
-}
 
-function SharingEditor({
-  allocations,
-  labels,
-  onChange,
-  parties,
-}: {
-  allocations: ShareDraft[];
-  labels: Labels;
-  onChange: (allocations: ShareDraft[]) => void;
-  parties: SharingParty[];
-}) {
-  const [enabled, setEnabled] = useState(allocations.length > 0);
-  if (!parties.length) return null;
-  const total = allocationTotal(allocations);
-  const setPercentage = (partyId: number, percentage: string) => {
-    const withoutParty = allocations.filter(
-      (allocation) => allocation.partyId !== String(partyId),
-    );
-    onChange([...withoutParty, { partyId: String(partyId), percentage }]);
-  };
-  return (
-    <fieldset className="sharing-editor">
-      <legend>{labels.sharing}</legend>
-      <label className="checkbox-field">
-        <input
-          checked={enabled}
-          onChange={(event) => {
-            if (!event.target.checked) {
-              setEnabled(false);
-              onChange([]);
-              return;
-            }
-            setEnabled(true);
-            const initialParty = parties.find((party) => party.is_self) ?? parties[0];
-            onChange([
-              { partyId: String(initialParty.sharing_party_id), percentage: "100" },
-            ]);
-          }}
-          type="checkbox"
-        />
-        {enabled ? labels.sharingLead : labels.notShared}
-      </label>
-      {enabled ? (
-        <div className="sharing-grid">
-          {parties.map((party) => (
-            <label key={party.sharing_party_id}>
-              {party.name}{party.is_self ? ` · ${labels.self}` : ""}
-              <span className="percentage-input">
-                <input
-                  inputMode="decimal"
-                  min="0"
-                  max="100"
-                  onChange={(event) =>
-                    setPercentage(party.sharing_party_id, event.target.value)
-                  }
-                  step="0.0001"
-                  type="number"
-                  value={
-                    allocations.find(
-                      (allocation) =>
-                        allocation.partyId === String(party.sharing_party_id),
-                    )?.percentage ?? ""
-                  }
-                />
-                <span>%</span>
-              </span>
-            </label>
-          ))}
-          <strong className={Math.abs(total - 100) < 0.00005 ? "balanced" : "unbalanced"}>
-            {labels.allocationTotal}: {total.toLocaleString(undefined, { maximumFractionDigits: 4 })}%
-          </strong>
-        </div>
-      ) : null}
-    </fieldset>
-  );
-}
 
-function allocationTotal(allocations: ShareDraft[]): number {
-  return allocations.reduce(
-    (total, allocation) =>
-      total + Number(normalizeDecimalInput(allocation.percentage) || 0),
-    0,
-  );
-}
 
-function shareAllocationPayload(allocations: ShareDraft[]) {
-  return allocations
-    .filter(
-      (allocation) =>
-        Number(normalizeDecimalInput(allocation.percentage) || 0) > 0,
-    )
-    .map((allocation) => ({
-      sharing_party_id: Number(allocation.partyId),
-      percentage: normalizeDecimalInput(allocation.percentage),
-    }));
-}
 
-function allocationsBalanced(allocations: ShareDraft[]): boolean {
-  return allocations.length === 0 || Math.abs(allocationTotal(allocations) - 100) < 0.00005;
-}
 
-function RecoveryForm({
-  accounts,
-  baseCurrency,
-  draft,
-  expense,
-  labels,
-  language,
-  providers,
-  setDraft,
-  working,
-  onCancel,
-  onSubmit,
-}: {
-  accounts: Account[];
-  baseCurrency: string;
-  draft: RecoveryDraft;
-  expense: Transaction | undefined;
-  labels: Labels;
-  language: Language;
-  providers: Provider[];
-  setDraft: (draft: RecoveryDraft) => void;
-  working: boolean;
-  onCancel: () => void;
-  onSubmit: (event: FormEvent) => void;
-}) {
-  return (
-    <form className="transaction-editor recovery-editor" onSubmit={onSubmit}>
-      <div className="editor-title">
-        <div>
-          <h2>{draft.kind === "refund" ? labels.addRefund : labels.addReimbursement}</h2>
-          <p>{labels.recoveryLead}</p>
-        </div>
-        <button className="ghost-button" onClick={onCancel} type="button">
-          {labels.cancel}
-        </button>
-      </div>
-      <p className="linked-event-note">
-        <strong>{labels.linkedExpense}:</strong> {expense?.description ?? `#${draft.expenseId}`}
-        {expense ? ` · ${formatMoney(expense.original_amount, expense.original_currency, language)}` : ""}
-      </p>
-      <div className="transaction-form-grid">
-        <label>{labels.date}<input min={expense?.transaction_date} onChange={(event) => setDraft({ ...draft, transactionDate: event.target.value })} required type="date" value={draft.transactionDate} /></label>
-        <label>{labels.postingDate}<input onChange={(event) => setDraft({ ...draft, postingDate: event.target.value })} required type="date" value={draft.postingDate} /></label>
-        <label>{labels.account}<select onChange={(event) => setDraft({ ...draft, accountId: event.target.value })} required value={draft.accountId}><option value="">{labels.chooseAccount}</option>{accounts.map((account) => <option key={account.account_id} value={account.account_id}>{account.name}</option>)}</select></label>
-        <label className="description-field">{labels.description}<input autoFocus onChange={(event) => setDraft({ ...draft, description: event.target.value })} required value={draft.description} /></label>
-        <label>{labels.amount}<input inputMode="decimal" onChange={(event) => setDraft({ ...draft, amount: event.target.value })} pattern="[0-9]+([.,][0-9]{1,4})?" required value={draft.amount} /></label>
-        <label>{labels.currency}<input maxLength={3} minLength={3} onChange={(event) => setDraft({ ...draft, currency: event.target.value.toUpperCase() })} pattern="[A-Z]{3}" required value={draft.currency} /></label>
-        <label>{labels.provider}<select onChange={(event) => setDraft({ ...draft, providerId: event.target.value })} value={draft.providerId}><option value="">{labels.noProvider}</option>{providers.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.name}</option>)}</select></label>
-      </div>
-      {draft.currency !== baseCurrency ? <label className="conversion-field">{labels.convertedAmount} ({baseCurrency})<input inputMode="decimal" onChange={(event) => setDraft({ ...draft, convertedAmount: event.target.value })} pattern="[0-9]+([.,][0-9]{1,4})?" value={draft.convertedAmount} /><small>{labels.convertedHelp}</small></label> : null}
-      <details className="optional-fields"><summary>{labels.optional}</summary><div className="optional-grid"><label>{labels.reference}<input onChange={(event) => setDraft({ ...draft, sourceReference: event.target.value })} value={draft.sourceReference} /></label><label>{labels.notes}<input onChange={(event) => setDraft({ ...draft, notes: event.target.value })} value={draft.notes} /></label></div></details>
-      <div className="editor-actions"><button className="secondary-button" onClick={onCancel} type="button">{labels.cancel}</button><button className="primary-button" disabled={working} type="submit">{draft.kind === "refund" ? labels.addRefund : labels.addReimbursement}</button></div>
-    </form>
-  );
-}
 
-function TransferForm({
-  accounts,
-  baseCurrency,
-  draft,
-  editing,
-  labels,
-  setDraft,
-  working,
-  onCancel,
-  onSubmit,
-}: {
-  accounts: Account[];
-  baseCurrency: string;
-  draft: TransferDraft;
-  editing: boolean;
-  labels: Labels;
-  setDraft: React.Dispatch<React.SetStateAction<TransferDraft>>;
-  working: boolean;
-  onCancel: () => void;
-  onSubmit: (event: FormEvent) => void;
-}) {
-  const sourceAccount = accounts.find(
-    (account) => account.account_id === Number(draft.sourceAccountId),
-  );
-  const destinationAccount = accounts.find(
-    (account) => account.account_id === Number(draft.destinationAccountId),
-  );
-  const sameCurrency = Boolean(
-    sourceAccount && destinationAccount && sourceAccount.currency === destinationAccount.currency,
-  );
-  return (
-    <form className="transaction-editor transfer-editor" onSubmit={onSubmit}>
-      <div className="editor-title">
-        <div>
-          <h2>{editing ? labels.editTransfer : labels.newTransfer}</h2>
-          <p>{labels.transferLead}</p>
-        </div>
-        <button className="ghost-button" onClick={onCancel} type="button">
-          {labels.cancel}
-        </button>
-      </div>
-      {accounts.length < 2 ? <p className="attention-note">{labels.twoAccountsNeeded}</p> : null}
-      <div className="transaction-form-grid transfer-form-grid">
-        <label>
-          {labels.fromAccount}
-          <select
-            onChange={(event) => {
-              const nextSourceId = event.target.value;
-              setDraft((current) => {
-                const nextDestinationId =
-                  nextSourceId === current.destinationAccountId
-                    ? current.sourceAccountId
-                    : current.destinationAccountId;
-                const nextSource = accounts.find(
-                  (account) => account.account_id === Number(nextSourceId),
-                );
-                const nextDestination = accounts.find(
-                  (account) => account.account_id === Number(nextDestinationId),
-                );
-                return {
-                  ...current,
-                  sourceAccountId: nextSourceId,
-                  destinationAccountId: nextDestinationId,
-                  destinationAmount:
-                    nextSource?.currency === nextDestination?.currency
-                      ? current.sourceAmount
-                      : current.destinationAmount,
-                  sourceConvertedAmount: "",
-                };
-              });
-            }}
-            required
-            value={draft.sourceAccountId}
-          >
-            <option value="">{labels.chooseAccount}</option>
-            {accounts.map((account) => (
-              <option
-                key={account.account_id}
-                value={account.account_id}
-              >
-                {account.name} · {account.currency}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {labels.toAccount}
-          <select
-            onChange={(event) => {
-              const nextDestinationId = event.target.value;
-              setDraft((current) => {
-                const nextSourceId =
-                  nextDestinationId === current.sourceAccountId
-                    ? current.destinationAccountId
-                    : current.sourceAccountId;
-                const nextSource = accounts.find(
-                  (account) => account.account_id === Number(nextSourceId),
-                );
-                const nextDestination = accounts.find(
-                  (account) => account.account_id === Number(nextDestinationId),
-                );
-                return {
-                  ...current,
-                  sourceAccountId: nextSourceId,
-                  destinationAccountId: nextDestinationId,
-                  destinationAmount:
-                    nextSource?.currency === nextDestination?.currency
-                      ? current.sourceAmount
-                      : current.destinationAmount,
-                  destinationConvertedAmount: "",
-                };
-              });
-            }}
-            required
-            value={draft.destinationAccountId}
-          >
-            <option value="">{labels.chooseAccount}</option>
-            {accounts.map((account) => (
-              <option
-                key={account.account_id}
-                value={account.account_id}
-              >
-                {account.name} · {account.currency}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {labels.date}
-          <input
-            onChange={(event) => setDraft({ ...draft, transactionDate: event.target.value })}
-            required
-            type="date"
-            value={draft.transactionDate}
-          />
-        </label>
-        <label>
-          {labels.transferPurpose}
-          <select
-            onChange={(event) =>
-              setDraft({ ...draft, purpose: event.target.value as TransferPurpose })
-            }
-            value={draft.purpose}
-          >
-            <option value="internal">{labels.purposeInternal}</option>
-            <option value="savings">{labels.purposeSavings}</option>
-            <option value="investment">{labels.purposeInvestment}</option>
-            <option value="credit_card_payment">{labels.purposeCard}</option>
-            <option value="debt_repayment">{labels.purposeDebt}</option>
-          </select>
-        </label>
-        <label className="description-field">
-          {labels.description}
-          <input
-            autoFocus
-            onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-            required
-            value={draft.description}
-          />
-        </label>
-        <label>
-          {labels.amount} {sourceAccount ? `(${sourceAccount.currency})` : ""}
-          <input
-            inputMode="decimal"
-            onChange={(event) =>
-              setDraft({
-                ...draft,
-                sourceAmount: event.target.value,
-                destinationAmount: sameCurrency ? event.target.value : draft.destinationAmount,
-              })
-            }
-            pattern="[0-9]+([.,][0-9]{1,4})?"
-            required
-            value={draft.sourceAmount}
-          />
-        </label>
-        <label>
-          {labels.receivedAmount} {destinationAccount ? `(${destinationAccount.currency})` : ""}
-          <input
-            inputMode="decimal"
-            onChange={(event) => setDraft({ ...draft, destinationAmount: event.target.value })}
-            pattern="[0-9]+([.,][0-9]{1,4})?"
-            readOnly={sameCurrency}
-            required
-            value={draft.destinationAmount}
-          />
-        </label>
-        <label>
-          {labels.sourcePostingDate}
-          <input
-            onChange={(event) =>
-              setDraft({ ...draft, sourcePostingDate: event.target.value })
-            }
-            required
-            type="date"
-            value={draft.sourcePostingDate}
-          />
-        </label>
-        <label>
-          {labels.destinationPostingDate}
-          <input
-            onChange={(event) =>
-              setDraft({ ...draft, destinationPostingDate: event.target.value })
-            }
-            required
-            type="date"
-            value={draft.destinationPostingDate}
-          />
-        </label>
-      </div>
-      {sourceAccount?.currency !== baseCurrency ? (
-        <label className="conversion-field">
-          {labels.convertedAmount} · {labels.fromAccount} ({baseCurrency})
-          <input
-            inputMode="decimal"
-            onChange={(event) =>
-              setDraft({ ...draft, sourceConvertedAmount: event.target.value })
-            }
-            pattern="[0-9]+([.,][0-9]{1,4})?"
-            value={draft.sourceConvertedAmount}
-          />
-        </label>
-      ) : null}
-      {destinationAccount?.currency !== baseCurrency ? (
-        <label className="conversion-field">
-          {labels.convertedAmount} · {labels.toAccount} ({baseCurrency})
-          <input
-            inputMode="decimal"
-            onChange={(event) =>
-              setDraft({ ...draft, destinationConvertedAmount: event.target.value })
-            }
-            pattern="[0-9]+([.,][0-9]{1,4})?"
-            value={draft.destinationConvertedAmount}
-          />
-          <small>{labels.transferValueHelp}</small>
-        </label>
-      ) : null}
-      <details className="optional-fields">
-        <summary>{labels.optional}</summary>
-        <div className="optional-grid">
-          <label>
-            {labels.reference}
-            <input
-              onChange={(event) =>
-                setDraft({ ...draft, sourceReference: event.target.value })
-              }
-              value={draft.sourceReference}
-            />
-          </label>
-          <label>
-            {labels.notes}
-            <input
-              onChange={(event) => setDraft({ ...draft, notes: event.target.value })}
-              value={draft.notes}
-            />
-          </label>
-        </div>
-      </details>
-      <div className="editor-actions">
-        <button className="secondary-button" onClick={onCancel} type="button">
-          {labels.cancel}
-        </button>
-        <button
-          className="primary-button"
-          disabled={working || accounts.length < 2}
-          type="submit"
-        >
-          {editing ? labels.update : labels.saveTransfer}
-        </button>
-      </div>
-    </form>
-  );
-}
 
-function InlineCreate({ label, name, labels, onChange, onCreate }: { label: string; name: string; labels: Labels; onChange: (value: string) => void; onCreate: () => Promise<void> }) {
-  return <div className="inline-create"><label>{label} · {labels.name}<input onChange={(event) => onChange(event.target.value)} required value={name} /></label><button className="secondary-button" disabled={!name.trim()} onClick={() => void onCreate()} type="button">{labels.add}</button></div>;
-}
 
-function EntryList({ accounts, categories, environment, labels, language, providers, transactions, transfers, onEdit, onEditTransfer, onRecovery, onReload, onError }: { accounts: Account[]; categories: Category[]; environment: Environment; labels: Labels; language: Language; providers: Provider[]; transactions: Transaction[]; transfers: Transfer[]; onEdit: (transaction: Transaction) => void; onEditTransfer: (transfer: Transfer) => void; onRecovery: (transaction: Transaction, kind: RecoveryKind) => void; onReload: () => void; onError: (message: string) => void }) {
-  const accountNames = new Map(accounts.map((item) => [item.account_id, item.name]));
-  const categoryNames = new Map(categories.map((item) => [item.category_id, item.name]));
-  const providerNames = new Map(providers.map((item) => [item.provider_id, item.name]));
-  const entries = [
-    ...transactions.map((transaction) => ({
-      type: "transaction" as const,
-      id: transaction.transaction_id,
-      date: transaction.transaction_date,
-      transaction,
-    })),
-    ...transfers.map((transfer) => ({
-      type: "transfer" as const,
-      id: transfer.transfer_link_id,
-      date: transfer.transaction_date,
-      transfer,
-    })),
-  ].sort((left, right) => right.date.localeCompare(left.date) || right.id - left.id);
-  return (
-    <div className="transaction-list">
-      {entries.map((entry) => {
-        if (entry.type === "transaction") {
-          const transaction = entry.transaction;
-          const recovery = transaction.transaction_kind === "refund" || transaction.transaction_kind === "reimbursement";
-          const archiveRequest = recovery ? setRecoveryArchived : setTransactionArchived;
-          const secondaryBase = recovery
-            ? `${transaction.transaction_kind === "refund" ? labels.refund : labels.reimbursement} · ${labels.linkedExpense} #${transaction.linked_expense_id}`
-            : providerNames.get(transaction.provider_id ?? -1) ?? categoryNames.get(transaction.category_id ?? -1) ?? accountNames.get(transaction.account_id);
-          const secondary = transaction.is_split
-            ? `${secondaryBase} · ${transaction.splits.length} ${labels.parts}`
-            : secondaryBase;
-          return <article className={`transaction-row ${transaction.status}`} key={`transaction-${transaction.transaction_id}`}><time dateTime={transaction.transaction_date}>{formatDate(transaction.transaction_date, language)}</time><div className="transaction-main"><strong>{transaction.description}</strong><span>{secondary}</span>{transaction.fx_rate_status === "missing" ? <em>{labels.missingFx}</em> : null}</div><div className={`transaction-value ${transaction.transaction_kind}`}><strong>{transaction.transaction_kind === "expense" ? "−" : "+"}{formatMoney(transaction.original_amount, transaction.original_currency, language)}</strong>{transaction.converted_amount && transaction.original_currency !== transaction.base_currency ? <span>{formatMoney(transaction.converted_amount, transaction.base_currency, language)}</span> : null}</div><div className="row-actions">{transaction.transaction_kind === "expense" && transaction.status === "active" ? <><button className="ghost-button" onClick={() => onRecovery(transaction, "refund")} type="button">{labels.refund}</button><button className="ghost-button" onClick={() => onRecovery(transaction, "reimbursement")} type="button">{labels.reimbursement}</button></> : null}<button className="ghost-button" disabled={transaction.status === "archived" || recovery} onClick={() => onEdit(transaction)} type="button">{labels.edit}</button><button className="ghost-button" onClick={() => void archiveRequest(environment, transaction.transaction_id, transaction.status === "active").then(onReload).catch((reason) => onError(reason instanceof Error ? reason.message : "Transaction request failed."))} type="button">{transaction.status === "active" ? labels.archive : labels.restore}</button></div></article>;
-        }
-        const transfer = entry.transfer;
-        const missingFx = transfer.source_fx_rate_status === "missing" || transfer.destination_fx_rate_status === "missing";
-        return <article className={`transaction-row transfer-row ${transfer.status}`} key={`transfer-${transfer.transfer_link_id}`}><time dateTime={transfer.transaction_date}>{formatDate(transfer.transaction_date, language)}</time><div className="transaction-main"><strong>{transfer.description}</strong><span>{accountNames.get(transfer.source_account_id)} → {accountNames.get(transfer.destination_account_id)} · {purposeLabel(transfer.purpose, labels)}</span>{missingFx ? <em>{labels.missingFx}</em> : null}</div><div className="transaction-value transfer"><strong>{formatMoney(transfer.source_amount, transfer.source_currency, language)} → {formatMoney(transfer.destination_amount, transfer.destination_currency, language)}</strong><span>{labels.transfer}</span></div><div className="row-actions"><button className="ghost-button" disabled={transfer.status === "archived"} onClick={() => onEditTransfer(transfer)} type="button">{labels.edit}</button><button className="ghost-button" onClick={() => void setTransferArchived(environment, transfer.transfer_link_id, transfer.status === "active").then(onReload).catch((reason) => onError(reason instanceof Error ? reason.message : "Transfer request failed."))} type="button">{transfer.status === "active" ? labels.archive : labels.restore}</button></div></article>;
-      })}
-    </div>
-  );
-}
 
-function emptyDraft(baseCurrency: string): Draft {
-  const today = localDate(new Date());
-  return { accountId: "", providerId: "", kind: "expense", transactionDate: today, postingDate: today, description: "", amount: "", currency: baseCurrency, convertedAmount: "", categoryId: "", tagIds: [], isBaseCost: false, sourceReference: "", notes: "", splitMode: false, splits: initialSplits(), sharingAllocations: [] };
-}
 
-function initialSplits(): SplitDraft[] {
-  return [newSplitDraft(), newSplitDraft()];
-}
 
-function newSplitDraft(): SplitDraft {
-  return {
-    key: crypto.randomUUID(),
-    amount: "",
-    categoryId: "",
-    tagIds: [],
-    isBaseCost: false,
-    memo: "",
-    sharingAllocations: [],
-  };
-}
 
-function emptyTransferDraft(): TransferDraft {
-  const today = localDate(new Date());
-  return {
-    sourceAccountId: "",
-    destinationAccountId: "",
-    purpose: "internal",
-    transactionDate: today,
-    sourcePostingDate: today,
-    destinationPostingDate: today,
-    description: "",
-    sourceAmount: "",
-    destinationAmount: "",
-    sourceConvertedAmount: "",
-    destinationConvertedAmount: "",
-    sourceReference: "",
-    notes: "",
-  };
-}
 
-function purposeLabel(purpose: TransferPurpose, labels: Labels): string {
-  return {
-    internal: labels.purposeInternal,
-    savings: labels.purposeSavings,
-    investment: labels.purposeInvestment,
-    credit_card_payment: labels.purposeCard,
-    debt_repayment: labels.purposeDebt,
-  }[purpose];
-}
 
-function currentMonth(): { from: string; to: string } {
-  const today = new Date();
-  return { from: localDate(new Date(today.getFullYear(), today.getMonth(), 1)), to: localDate(new Date(today.getFullYear(), today.getMonth() + 1, 0)) };
-}
 
-function localDate(value: Date): string {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
-}
 
-function numberOrNull(value: string): number | null { return value ? Number(value) : null; }
-function normalizeDecimalInput(value: string): string { return value.replace(",", "."); }
-function formatMoney(value: string, currency: string, language: Language): string { return new Intl.NumberFormat(language === "sv" ? "sv-SE" : "en-SE", { style: "currency", currency }).format(Number(value)); }
-function formatDate(value: string, language: Language): string { return new Intl.DateTimeFormat(language === "sv" ? "sv-SE" : "en-SE", { day: "numeric", month: "short" }).format(new Date(`${value}T12:00:00`)); }

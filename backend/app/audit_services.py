@@ -17,6 +17,7 @@ from app.models import (
     Budget,
     Category,
     Provider,
+    RecurringDefinition,
     SharingParty,
     Tag,
     Transaction,
@@ -29,6 +30,7 @@ AUDITED_TYPES = (
     Budget,
     Category,
     Provider,
+    RecurringDefinition,
     SharingParty,
     Tag,
     Transaction,
@@ -49,6 +51,7 @@ def record_audit(
         entity_id=entity_id,
         action=action,
         change_source=source,
+        actor_user_id=db.info.get("actor_user_id"),
         changes=_json_value(changes),
     )
     db.add(event)

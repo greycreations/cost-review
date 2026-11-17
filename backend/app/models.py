@@ -58,6 +58,12 @@ class ArchiveMixin:
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class UserRole(StrEnum):
+    OWNER = "owner"
+    MEMBER = "member"
+    VIEWER = "viewer"
+
+
 class EnvironmentKind(StrEnum):
     PRODUCTION = "production"
     TEST = "test"
@@ -186,7 +192,7 @@ class AuditEvent(Base):
         CheckConstraint(
             "action IN ('created', 'updated', 'archived', 'restored', "
             "'balance_adjusted', 'permanently_deleted', 'password_changed', "
-            "'password_reset', 'deleted')",
+            "'password_reset', 'deleted', 'imported', 'import_undone')",
             name="action_allowed",
         ),
         CheckConstraint(
@@ -195,6 +201,7 @@ class AuditEvent(Base):
         ),
         Index("ix_audit_events_entity", "entity_type", "entity_id", "created_at"),
         Index("ix_audit_events_created_at", "created_at"),
+        Index("ix_audit_events_actor_user_id", "actor_user_id"),
     )
 
     audit_event_id: Mapped[int] = mapped_column(
@@ -204,6 +211,7 @@ class AuditEvent(Base):
     entity_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     action: Mapped[str] = mapped_column(String(32))
     change_source: Mapped[str] = mapped_column(String(16), default="user")
+    actor_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     changes: Mapped[dict[str, object]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -212,13 +220,27 @@ class AuditEvent(Base):
 
 class User(TimestampMixin, Base):
     __tablename__ = "users"
-    __table_args__ = (Index("ix_users_normalized_username", "normalized_username", unique=True),)
+    __table_args__ = (
+        Index("ix_users_normalized_username", "normalized_username", unique=True),
+        CheckConstraint("role IN ('owner', 'member', 'viewer')", name="role_allowed"),
+        CheckConstraint("failed_login_count >= 0", name="failed_login_count_non_negative"),
+    )
 
     user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(64))
     normalized_username: Mapped[str] = mapped_column(String(64))
     password_hash: Mapped[str] = mapped_column(String(512))
-    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    role: Mapped[str] = mapped_column(String(16), default="member", server_default="member")
+    failed_login_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    @property
+    def is_owner(self) -> bool:
+        return self.role == UserRole.OWNER
+
+    @property
+    def can_write(self) -> bool:
+        return self.role in (UserRole.OWNER, UserRole.MEMBER)
 
     settings: Mapped[AppSettings] = relationship(
         back_populates="user", cascade="all, delete-orphan", uselist=False
@@ -572,10 +594,10 @@ class SharingParty(ArchiveMixin, TimestampMixin, Base):
         Index("ix_sharing_parties_normalized_name", "normalized_name"),
         Index("ix_sharing_parties_status", "status"),
         Index(
-            "uq_sharing_parties_active_self",
-            "is_self",
+            "uq_sharing_parties_active_user",
+            "user_id",
             unique=True,
-            postgresql_where=text("is_self AND status = 'active'"),
+            postgresql_where=text("user_id IS NOT NULL AND status = 'active'"),
         ),
     )
 
@@ -584,8 +606,16 @@ class SharingParty(ArchiveMixin, TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(120))
     normalized_name: Mapped[str] = mapped_column(String(240))
-    is_self: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True
+    )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    user: Mapped[User | None] = relationship()
+
+    @property
+    def username(self) -> str | None:
+        return self.user.username if self.user is not None else None
 
 
 class AnalysisGroup(ArchiveMixin, TimestampMixin, Base):
@@ -1049,3 +1079,275 @@ class ReimbursementLink(TimestampMixin, Base):
     reimbursement_transaction_id: Mapped[int] = mapped_column(
         ForeignKey("transactions.transaction_id", ondelete="RESTRICT")
     )
+
+
+class ImportRowStatus(StrEnum):
+    READY = "ready"
+    DUPLICATE = "duplicate"
+    INVALID = "invalid"
+    SKIPPED = "skipped"
+    COMMITTED = "committed"
+
+
+class ImportProfile(ArchiveMixin, TimestampMixin, Base):
+    """A reusable description of one bank's export layout."""
+
+    __tablename__ = "import_profiles"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'archived')", name="status_allowed"),
+        CheckConstraint("decimal_separator IN (',', '.')", name="decimal_separator_allowed"),
+        CheckConstraint("amount_sign IN ('as_is', 'inverted')", name="amount_sign_allowed"),
+        CheckConstraint("header_row >= 1", name="header_row_positive"),
+        CheckConstraint(
+            "amount_column IS NOT NULL OR debit_column IS NOT NULL OR credit_column IS NOT NULL",
+            name="amount_source_required",
+        ),
+        Index("ix_import_profiles_normalized_name", "normalized_name"),
+    )
+
+    import_profile_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    name: Mapped[str] = mapped_column(String(120))
+    normalized_name: Mapped[str] = mapped_column(String(240))
+    delimiter: Mapped[str | None] = mapped_column(String(1), nullable=True)
+    header_row: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    date_column: Mapped[str] = mapped_column(String(120))
+    description_column: Mapped[str] = mapped_column(String(120))
+    amount_column: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    debit_column: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    credit_column: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    posting_date_column: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    currency_column: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    reference_column: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    date_format: Mapped[str] = mapped_column(String(32), default="%Y-%m-%d")
+    decimal_separator: Mapped[str] = mapped_column(String(1), default=",")
+    amount_sign: Mapped[str] = mapped_column(String(10), default="as_is")
+    default_account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.account_id", ondelete="SET NULL"), nullable=True
+    )
+    header_signature: Mapped[str] = mapped_column(Text)
+
+
+class ImportBatch(TimestampMixin, Base):
+    """One uploaded file, its staged rows and what was committed from it."""
+
+    __tablename__ = "import_batches"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('staged', 'committed', 'undone')", name="status_allowed"
+        ),
+        CheckConstraint("row_count >= 0", name="row_count_non_negative"),
+        Index("ix_import_batches_created_at", "created_at"),
+        Index("ix_import_batches_file_sha256", "file_sha256"),
+    )
+
+    import_batch_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    import_profile_id: Mapped[int | None] = mapped_column(
+        ForeignKey("import_profiles.import_profile_id", ondelete="SET NULL"), nullable=True
+    )
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.account_id", ondelete="RESTRICT")
+    )
+    filename: Mapped[str] = mapped_column(String(255))
+    file_sha256: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default="staged", server_default="staged")
+    row_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    mapping: Mapped[dict[str, object]] = mapped_column(JSON)
+    created_by_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    undone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    rows: Mapped[list[ImportRow]] = relationship(
+        back_populates="batch",
+        cascade="all, delete-orphan",
+        order_by="ImportRow.row_number",
+    )
+
+
+class ImportRow(TimestampMixin, Base):
+    """A staged source row: original values, interpretation and review state."""
+
+    __tablename__ = "import_rows"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('ready', 'duplicate', 'invalid', 'skipped', 'committed')",
+            name="status_allowed",
+        ),
+        CheckConstraint(
+            "duplicate_confidence IS NULL OR duplicate_confidence BETWEEN 0 AND 100",
+            name="duplicate_confidence_range",
+        ),
+        CheckConstraint(
+            "status <> 'committed' OR transaction_id IS NOT NULL",
+            name="committed_row_has_transaction",
+        ),
+        Index("ix_import_rows_batch", "import_batch_id", "row_number", unique=True),
+        Index("ix_import_rows_fingerprint", "fingerprint"),
+        Index("uq_import_rows_transaction", "transaction_id", unique=True),
+    )
+
+    import_row_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    import_batch_id: Mapped[int] = mapped_column(
+        ForeignKey("import_batches.import_batch_id", ondelete="CASCADE")
+    )
+    row_number: Mapped[int] = mapped_column(Integer)
+    raw: Mapped[dict[str, object]] = mapped_column(JSON)
+    transaction_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    posting_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    description: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    reference: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.category_id", ondelete="SET NULL"), nullable=True
+    )
+    provider_id: Mapped[int | None] = mapped_column(
+        ForeignKey("providers.provider_id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(16))
+    errors: Mapped[list[str]] = mapped_column(JSON, default=list)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    duplicate_transaction_id: Mapped[int | None] = mapped_column(
+        ForeignKey("transactions.transaction_id", ondelete="SET NULL"), nullable=True
+    )
+    duplicate_confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duplicate_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    transaction_id: Mapped[int | None] = mapped_column(
+        ForeignKey("transactions.transaction_id", ondelete="RESTRICT"), nullable=True
+    )
+
+    batch: Mapped[ImportBatch] = relationship(back_populates="rows")
+    transaction: Mapped[Transaction | None] = relationship(foreign_keys=[transaction_id])
+
+
+class RecurringFrequency(StrEnum):
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    QUARTERLY = "quarterly"
+    YEARLY = "yearly"
+
+
+class RecurringDefinition(ArchiveMixin, TimestampMixin, Base):
+    """A known future income or expense, such as rent, salary or insurance.
+
+    A definition never creates Ledger events by itself. Its occurrences are
+    derived on demand as Expected events and only become Actual when a household
+    member confirms them.
+    """
+
+    __tablename__ = "recurring_definitions"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'archived')", name="status_allowed"),
+        CheckConstraint(
+            "transaction_kind IN ('expense', 'income')", name="transaction_kind_allowed"
+        ),
+        CheckConstraint(
+            "frequency IN ('weekly', 'monthly', 'quarterly', 'yearly')",
+            name="frequency_allowed",
+        ),
+        CheckConstraint("interval_count BETWEEN 1 AND 52", name="interval_count_range"),
+        CheckConstraint("end_date IS NULL OR end_date >= start_date", name="end_after_start"),
+        CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency_iso_shape"),
+        CheckConstraint(
+            "tolerance_percent >= 0 AND tolerance_percent <= 100", name="tolerance_range"
+        ),
+    )
+
+    recurring_definition_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    name: Mapped[str] = mapped_column(String(160))
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.account_id", ondelete="RESTRICT")
+    )
+    provider_id: Mapped[int | None] = mapped_column(
+        ForeignKey("providers.provider_id", ondelete="SET NULL"), nullable=True
+    )
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.category_id", ondelete="SET NULL"), nullable=True
+    )
+    transaction_kind: Mapped[str] = mapped_column(String(16))
+    currency: Mapped[str] = mapped_column(String(3))
+    frequency: Mapped[str] = mapped_column(String(16))
+    interval_count: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    tolerance_percent: Mapped[Decimal] = mapped_column(
+        Numeric(7, 4), default=Decimal("10"), server_default="10"
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    versions: Mapped[list[RecurringVersion]] = relationship(
+        back_populates="definition",
+        cascade="all, delete-orphan",
+        order_by="RecurringVersion.effective_from",
+    )
+
+
+class RecurringVersion(TimestampMixin, Base):
+    """The expected amount from a given date. Earlier versions stay as history."""
+
+    __tablename__ = "recurring_versions"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="amount_positive"),
+        CheckConstraint("amount_type IN ('fixed', 'variable')", name="amount_type_allowed"),
+        Index(
+            "uq_recurring_versions_effective",
+            "recurring_definition_id",
+            "effective_from",
+            unique=True,
+        ),
+    )
+
+    recurring_version_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    recurring_definition_id: Mapped[int] = mapped_column(
+        ForeignKey("recurring_definitions.recurring_definition_id", ondelete="CASCADE")
+    )
+    effective_from: Mapped[date] = mapped_column(Date)
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 4))
+    amount_type: Mapped[str] = mapped_column(String(16), default="fixed")
+
+    definition: Mapped[RecurringDefinition] = relationship(back_populates="versions")
+
+
+class RecurringOccurrence(TimestampMixin, Base):
+    """A decision about one due date: confirmed as an Actual event or skipped."""
+
+    __tablename__ = "recurring_occurrences"
+    __table_args__ = (
+        CheckConstraint("status IN ('confirmed', 'skipped')", name="status_allowed"),
+        CheckConstraint(
+            "(status = 'confirmed' AND transaction_id IS NOT NULL) OR "
+            "(status = 'skipped' AND transaction_id IS NULL)",
+            name="confirmed_has_transaction",
+        ),
+        Index(
+            "uq_recurring_occurrences_due",
+            "recurring_definition_id",
+            "due_date",
+            unique=True,
+        ),
+        Index("uq_recurring_occurrences_transaction", "transaction_id", unique=True),
+    )
+
+    recurring_occurrence_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    recurring_definition_id: Mapped[int] = mapped_column(
+        ForeignKey("recurring_definitions.recurring_definition_id", ondelete="CASCADE")
+    )
+    due_date: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(16))
+    expected_amount: Mapped[Decimal] = mapped_column(Numeric(20, 4))
+    transaction_id: Mapped[int | None] = mapped_column(
+        ForeignKey("transactions.transaction_id", ondelete="RESTRICT"), nullable=True
+    )
+    deviation_percent: Mapped[Decimal | None] = mapped_column(Numeric(9, 4), nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    transaction: Mapped[Transaction | None] = relationship(foreign_keys=[transaction_id])
