@@ -12,7 +12,7 @@ from app.backup_services import (
     resolve_backup_path,
     validate_backup,
 )
-from app.dependencies import Auth, CsrfAuth, DatabaseSession, RuntimeSettings
+from app.dependencies import DatabaseSession, OwnerAuth, OwnerCsrfAuth, RuntimeSettings
 from app.errors import ApiError
 from app.schemas import BackupRead, BackupValidationRead
 
@@ -20,13 +20,13 @@ router = APIRouter(prefix="/backups", tags=["backup-and-restore"])
 
 
 @router.get("", response_model=list[BackupRead])
-def get_backups(_: Auth, settings: RuntimeSettings) -> list[dict[str, object]]:
+def get_backups(_: OwnerAuth, settings: RuntimeSettings) -> list[dict[str, object]]:
     return list_backups(settings)
 
 
 @router.post("", response_model=BackupRead, status_code=201)
 def post_backup(
-    _: CsrfAuth,
+    _: OwnerCsrfAuth,
     db: DatabaseSession,
     settings: RuntimeSettings,
 ) -> dict[str, object]:
@@ -35,7 +35,7 @@ def post_backup(
 
 @router.post("/import", response_model=BackupValidationRead, status_code=201)
 def post_import_backup(
-    _: CsrfAuth,
+    _: OwnerCsrfAuth,
     settings: RuntimeSettings,
     file: Annotated[UploadFile, File()],
 ) -> dict[str, object]:
@@ -47,14 +47,14 @@ def post_import_backup(
 @router.post("/{filename}/validate", response_model=BackupValidationRead)
 def post_validate_backup(
     filename: str,
-    _: CsrfAuth,
+    _: OwnerCsrfAuth,
     settings: RuntimeSettings,
 ) -> dict[str, object]:
     return validate_backup(settings, filename)
 
 
 @router.get("/{filename}/download", response_class=FileResponse)
-def download_backup(filename: str, _: Auth, settings: RuntimeSettings) -> FileResponse:
+def download_backup(filename: str, _: OwnerAuth, settings: RuntimeSettings) -> FileResponse:
     path = resolve_backup_path(settings, filename)
     return FileResponse(
         path,

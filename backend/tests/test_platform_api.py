@@ -28,7 +28,7 @@ def test_health_and_setup_status_expose_persistent_test_identity(client: TestCli
     assert health.json()["database"] == "reachable"
     assert status.status_code == 200
     assert status.json()["setup_required"] is True
-    assert status.json()["registration_allowed"] is True
+    assert status.json()["registration_allowed"] is False
     assert status.json()["data_plane_id"] == health.json()["data_plane_id"]
 
 
@@ -39,7 +39,7 @@ def test_setup_locks_and_creates_environment_scoped_session(
 
     assert response.status_code == 201
     assert response.json()["username"] == "platform-owner"
-    assert response.json()["is_admin"] is True
+    assert response.json()["role"] == "owner"
     assert response.json()["environment"] == "test"
     assert client.cookies.get(settings.session_cookie_name)
     assert client.cookies.get(settings.csrf_cookie_name)
@@ -53,9 +53,22 @@ def test_setup_locks_and_creates_environment_scoped_session(
     assert current.json()["settings"]["timezone"] == "Europe/Stockholm"
 
 
-def test_self_registration_creates_a_non_admin_account(
-    client: TestClient, settings: Settings
+def test_self_registration_is_disabled_by_default(client: TestClient) -> None:
+    client.post("/api/v1/setup", json=SETUP_PAYLOAD)
+    client.cookies.clear()
+
+    denied = client.post(
+        "/api/v1/auth/register",
+        json={"username": "stranger", "password": "a long stranger password"},
+    )
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "registration_disabled"
+
+
+def test_self_registration_creates_a_member_account(
+    registration_client: TestClient, settings: Settings
 ) -> None:
+    client = registration_client
     client.post("/api/v1/setup", json=SETUP_PAYLOAD)
     owner_id = client.get("/api/v1/users").json()[0]["user_id"]
     client.cookies.clear()
@@ -70,13 +83,13 @@ def test_self_registration_creates_a_non_admin_account(
     )
     assert registered.status_code == 201
     assert registered.json()["username"] == "household-member"
-    assert registered.json()["is_admin"] is False
+    assert registered.json()["role"] == "member"
     assert registered.json()["settings"]["language"] == "en"
 
     csrf_token = client.cookies.get(settings.csrf_cookie_name)
     denied = client.get("/api/v1/users")
     assert denied.status_code == 403
-    assert denied.json()["error"]["code"] == "admin_required"
+    assert denied.json()["error"]["code"] == "owner_required"
 
     denied_delete = client.request(
         "DELETE",
@@ -85,7 +98,7 @@ def test_self_registration_creates_a_non_admin_account(
         headers={"X-CSRF-Token": csrf_token},
     )
     assert denied_delete.status_code == 403
-    assert denied_delete.json()["error"]["code"] == "admin_required"
+    assert denied_delete.json()["error"]["code"] == "owner_required"
 
     changed = client.patch(
         "/api/v1/auth/password",
@@ -110,7 +123,7 @@ def test_self_registration_creates_a_non_admin_account(
     assert new_login.status_code == 200
 
 
-def test_admin_can_fully_manage_other_accounts(client: TestClient, settings: Settings) -> None:
+def test_owner_can_fully_manage_other_accounts(client: TestClient, settings: Settings) -> None:
     client.post("/api/v1/setup", json=SETUP_PAYLOAD)
     csrf_token = client.cookies.get(settings.csrf_cookie_name)
     headers = {"X-CSRF-Token": csrf_token}
@@ -120,7 +133,7 @@ def test_admin_can_fully_manage_other_accounts(client: TestClient, settings: Set
         json={
             "username": "managed-user",
             "password": "managed user password",
-            "is_admin": False,
+            "role": "member",
         },
         headers=headers,
     )
@@ -133,12 +146,12 @@ def test_admin_can_fully_manage_other_accounts(client: TestClient, settings: Set
 
     updated = client.patch(
         f"/api/v1/users/{user_id}",
-        json={"username": "renamed-user", "is_admin": True},
+        json={"username": "renamed-user", "role": "owner"},
         headers=headers,
     )
     assert updated.status_code == 200
     assert updated.json()["username"] == "renamed-user"
-    assert updated.json()["is_admin"] is True
+    assert updated.json()["role"] == "owner"
 
     reset = client.post(
         f"/api/v1/users/{user_id}/reset-password",
@@ -166,7 +179,7 @@ def test_admin_can_fully_manage_other_accounts(client: TestClient, settings: Set
     ]
 
 
-def test_admin_guards_own_account_and_the_final_admin(
+def test_owner_guards_own_account_and_the_final_owner(
     client: TestClient, settings: Settings
 ) -> None:
     setup = client.post("/api/v1/setup", json=SETUP_PAYLOAD)
@@ -176,11 +189,11 @@ def test_admin_guards_own_account_and_the_final_admin(
 
     demote = client.patch(
         f"/api/v1/users/{owner['user_id']}",
-        json={"is_admin": False},
+        json={"role": "member"},
         headers=headers,
     )
     assert demote.status_code == 409
-    assert demote.json()["error"]["code"] == "last_admin_required"
+    assert demote.json()["error"]["code"] == "last_owner_required"
 
     delete_self = client.request(
         "DELETE",
@@ -190,7 +203,7 @@ def test_admin_guards_own_account_and_the_final_admin(
     )
     assert delete_self.status_code == 422
     assert delete_self.json()["error"]["code"] == "cannot_delete_self"
-    assert setup.json()["is_admin"] is True
+    assert setup.json()["role"] == "owner"
 
 
 def test_invalid_credentials_and_csrf_are_rejected(client: TestClient, settings: Settings) -> None:

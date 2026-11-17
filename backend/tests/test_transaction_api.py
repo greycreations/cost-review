@@ -248,15 +248,16 @@ def test_sharing_allocations_drive_total_and_my_share_analysis(
 ) -> None:
     headers = authenticate(client, settings)
     data = seed_master_data(client, headers)
+    owner_id = client.get("/api/v1/auth/session").json()["user_id"]
     me = client.post(
         "/api/v1/sharing-parties",
         headers=headers,
-        json={"name": "Jag", "is_self": True},
+        json={"name": "Jag", "user_id": owner_id},
     ).json()
     partner = client.post(
         "/api/v1/sharing-parties",
         headers=headers,
-        json={"name": "Partner", "is_self": False},
+        json={"name": "Partner"},
     ).json()
     allocations = [
         {"sharing_party_id": me["sharing_party_id"], "percentage": "40"},
@@ -277,12 +278,12 @@ def test_sharing_allocations_drive_total_and_my_share_analysis(
         {
             "sharing_party_id": me["sharing_party_id"],
             "percentage": "40.0000",
-            "is_self": True,
+            "user_id": owner_id,
         },
         {
             "sharing_party_id": partner["sharing_party_id"],
             "percentage": "60.0000",
-            "is_self": False,
+            "user_id": None,
         },
     ]
 
