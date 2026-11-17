@@ -155,13 +155,13 @@ unset GHCR_TOKEN
 
 Never copy a development machine's `.env` to another installation.
 
-### Upgrade an existing installation to 0.8.0
+### Upgrade an existing installation to 0.9.0
 
 Keep the existing `.env` so database passwords, backup keys, and installation
 identity remain unchanged. Create a current backup, then change only this line:
 
 ```sh
-COST_REVIEW_VERSION=0.8.0
+COST_REVIEW_VERSION=0.9.0
 ```
 
 Pull and recreate the application containers from the installation folder:
@@ -172,13 +172,9 @@ docker compose up --detach --wait
 docker compose ps
 ```
 
-No new database migration is required when upgrading from 0.7.0. The API containers still apply all
-available migrations independently to
-Production and Demo/Test before they start. The oldest existing account in each data plane becomes
-administrator automatically. Existing stock positions are preserved and marked as stocks; database,
-attachment and backup volumes are unchanged. Add `ALLOW_SELF_REGISTRATION=false` to the existing
-`.env` only if administrator-created accounts are preferred; omission keeps the trusted-network
-default enabled.
+No new database migration is required when upgrading from 0.8.0. The API still
+checks and applies any outstanding migrations independently in Production and
+Demo/Test, and reuses the existing database, attachment, and backup volumes.
 
 ### Build from source for development
 
